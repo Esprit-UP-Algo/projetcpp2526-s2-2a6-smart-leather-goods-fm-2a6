@@ -312,7 +312,7 @@ QLabel#lbl_stockage {
     <item>
      <widget class="QTabWidget" name="tabWidget">
       <property name="currentIndex">
-       <number>3</number>
+       <number>2</number>
       </property>
       <widget class="QWidget" name="tab_employes">
        <attribute name="title">
@@ -326,7 +326,7 @@ QLabel#lbl_stockage {
       </widget>
       <widget class="QWidget" name="tab_matieres">
        <attribute name="title">
-        <string>Stocks Cuir</string>
+        <string>Matières Premières</string>
        </attribute>
       </widget>
       <widget class="QWidget" name="tab_planning">
