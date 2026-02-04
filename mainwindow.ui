@@ -282,6 +282,26 @@ QLabel#lbl_stockage {
         </widget>
        </item>
        <item>
+        <widget class="QPushButton" name="btn_recherche">
+         <property name="text">
+          <string>●   Recherche</string>
+         </property>
+         <property name="class" stdset="0">
+          <string>sidebar_btn</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="btn_trier">
+         <property name="text">
+          <string>●   Tri</string>
+         </property>
+         <property name="class" stdset="0">
+          <string>sidebar_btn</string>
+         </property>
+        </widget>
+       </item>
+       <item>
         <spacer name="verticalSpacer_sidebar">
          <property name="orientation">
           <enum>Qt::Orientation::Vertical</enum>
@@ -320,7 +340,7 @@ QLabel#lbl_stockage {
     <item>
      <widget class="QTabWidget" name="tabWidget">
       <property name="currentIndex">
-       <number>3</number>
+       <number>4</number>
       </property>
       <widget class="QWidget" name="tab_employes">
        <attribute name="title">
