@@ -115,14 +115,14 @@ QGroupBox::title {
 }
 
 /* 5. CHAMPS DE SAISIE */
-QLineEdit, QComboBox, QDateEdit, QDateTimeEdit {
+QLineEdit, QComboBox, QDateEdit, QDateTimeEdit, QDoubleSpinBox {
     background-color: #fffdf9; /* Blanc chaud */
     border: 1px solid #bcaaa4; /* Bordure marron clair */
     border-radius: 15px;
     padding: 6px 15px;
     color: #3e2723;
 }
-QLineEdit:focus, QComboBox:focus, QDateEdit:focus {
+QLineEdit:focus, QComboBox:focus, QDateEdit:focus, QDoubleSpinBox:focus {
     border: 2px solid #5d4037; /* Bordure marron foncé au focus */
     background-color: #ffffff;
 }
@@ -155,6 +155,14 @@ QPushButton#btn_conflit {
 }
 QPushButton#btn_conflit:hover { background-color: #d84315; }
 
+/* Bouton Créer Etape (Vert) */
+QPushButton#btn_add_etape {
+    background-color: #2e7d32;
+    color: white;
+    font-weight: bold;
+    border-radius: 15px;
+    padding: 8px 20px;
+}
 
 /* 7. TABLEAU (Style Clean) */
 QTableWidget {
@@ -229,7 +237,7 @@ QLabel#lbl_stockage {
        <item>
         <widget class="QLabel" name="label_logo">
          <property name="text">
-          <string>👜 SMART LEATHER</string>
+          <string>👜 FIL D'OR</string>
          </property>
          <property name="alignment">
           <set>Qt::AlignmentFlag::AlignCenter</set>
@@ -312,7 +320,7 @@ QLabel#lbl_stockage {
     <item>
      <widget class="QTabWidget" name="tabWidget">
       <property name="currentIndex">
-       <number>2</number>
+       <number>3</number>
       </property>
       <widget class="QWidget" name="tab_employes">
        <attribute name="title">
@@ -586,6 +594,130 @@ QLabel#lbl_stockage {
           <column>
            <property name="text">
             <string>Statut</string>
+           </property>
+          </column>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="tab_etapes">
+       <attribute name="title">
+        <string>Gestion des Étapes</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="verticalLayout_etapes">
+        <property name="spacing">
+         <number>20</number>
+        </property>
+        <property name="leftMargin">
+         <number>30</number>
+        </property>
+        <property name="topMargin">
+         <number>20</number>
+        </property>
+        <property name="rightMargin">
+         <number>30</number>
+        </property>
+        <property name="bottomMargin">
+         <number>30</number>
+        </property>
+        <item>
+         <widget class="QGroupBox" name="gb_gest_etap">
+          <property name="title">
+           <string>Référentiel : Définition d'une Étape Standard</string>
+          </property>
+          <layout class="QHBoxLayout" name="hl_etap_input">
+           <property name="spacing">
+            <number>15</number>
+           </property>
+           <item>
+            <widget class="QLabel" name="le_nom_l">
+             <property name="text">
+              <string>Nom Étape :</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLineEdit" name="le_nom_etape">
+             <property name="placeholderText">
+              <string>Ex: Découpe Laser</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="le_duree_l">
+             <property name="text">
+              <string>Durée (h) :</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QDoubleSpinBox" name="sb_duree_std"/>
+           </item>
+           <item>
+            <widget class="QLabel" name="le_mach_l">
+             <property name="text">
+              <string>Machine :</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QComboBox" name="cb_mach_defaut">
+             <property name="placeholderText">
+              <string>Choisir...</string>
+             </property>
+             <item>
+              <property name="text">
+               <string>M-01 (Piqueuse)</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>M-02 (Presse)</string>
+              </property>
+             </item>
+             <item>
+              <property name="text">
+               <string>M-03 (Manuelle)</string>
+              </property>
+             </item>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btn_add_etape">
+             <property name="text">
+              <string>+ Créer</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+        <item>
+         <widget class="QTableWidget" name="tableEtapes">
+          <property name="alternatingRowColors">
+           <bool>true</bool>
+          </property>
+          <property name="selectionBehavior">
+           <enum>QAbstractItemView::SelectionBehavior::SelectRows</enum>
+          </property>
+          <column>
+           <property name="text">
+            <string>ID</string>
+           </property>
+          </column>
+          <column>
+           <property name="text">
+            <string>Nom Étape</string>
+           </property>
+          </column>
+          <column>
+           <property name="text">
+            <string>Durée Standard (h)</string>
+           </property>
+          </column>
+          <column>
+           <property name="text">
+            <string>Machine Par Défaut</string>
            </property>
           </column>
          </widget>
