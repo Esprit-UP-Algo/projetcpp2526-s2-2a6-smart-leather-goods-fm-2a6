@@ -2,15 +2,6 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
-<<<<<<< HEAD
-
-QT_BEGIN_NAMESPACE
-namespace Ui {
-class MainWindow;
-}
-QT_END_NAMESPACE
-
-=======
 #include <QTableWidget>
 #include <QVector>
 #include <QDate>
@@ -49,7 +40,6 @@ struct CommandeInfo {
     int etatEtape;
 };
 
->>>>>>> bc47573 (nouvelle modification)
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -60,9 +50,6 @@ public:
 
 private:
     Ui::MainWindow *ui;
-<<<<<<< HEAD
-};
-=======
     QVector<CommandeInfo> mesCommandes;
     ColorDelegate *myColorDelegate;
     int indexCommandeSelectionnee = -1;
@@ -77,5 +64,4 @@ private:
     void calculerEtAfficherStats();
 };
 
->>>>>>> bc47573 (nouvelle modification)
 #endif // MAINWINDOW_H
