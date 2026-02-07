@@ -1,7 +1,4 @@
 #include "mainwindow.h"
-<<<<<<< HEAD
-#include "./ui_mainwindow.h"
-=======
 #include "ui_mainwindow.h"
 #include <QDate>
 #include <QTableWidgetItem>
@@ -9,20 +6,12 @@
 #include <QDebug>
 #include <QMessageBox>
 #include <QPixmap>
->>>>>>> bc47573 (nouvelle modification)
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
-<<<<<<< HEAD
-}
-
-MainWindow::~MainWindow()
-{
-    delete ui;
-=======
 
     // --- LOGOS ---
     QPixmap logo("logo.png");
@@ -280,5 +269,4 @@ void MainWindow::dessinerBarre(int r, int c, int d, QString txt, QColor bg, QCol
     it->setTextAlignment(Qt::AlignCenter);
     ui->tableTimeline->setItem(r, c, it);
     if(d > 1) ui->tableTimeline->setSpan(r, c, 1, d);
->>>>>>> bc47573 (nouvelle modification)
 }
