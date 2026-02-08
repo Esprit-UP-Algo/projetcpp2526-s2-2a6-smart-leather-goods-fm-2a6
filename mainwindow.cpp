@@ -6,6 +6,7 @@
 #include <QDebug>
 #include <QMessageBox>
 #include <QPixmap>
+#include <algorithm> // Pour std::sort
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -16,9 +17,7 @@ MainWindow::MainWindow(QWidget *parent)
     // --- LOGOS ---
     QPixmap logo("logo.png");
     if(!logo.isNull()) {
-        // Petit logo Header
         ui->l_logo_img->setPixmap(logo.scaled(40, 40, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-        // Grand logo Accueil
         ui->lbl_big_logo->setPixmap(logo.scaled(150, 150, Qt::KeepAspectRatio, Qt::SmoothTransformation));
         ui->lbl_big_logo->setText("");
     } else {
@@ -26,17 +25,21 @@ MainWindow::MainWindow(QWidget *parent)
         ui->l_logo_img->setText("IMG");
     }
 
-    // --- COULEURS ---
     myColorDelegate = new ColorDelegate(this);
     ui->tableTimeline->setItemDelegate(myColorDelegate);
 
-    // --- DONNÉES ---
+    // --- DONNÉES TEST PLANIF ---
     mesCommandes.append({"OF-101", "Sac Voyage Cuir", 50, "Cuir Vachette", QDate::currentDate(), "10/02/2026", "En cours", "", 0});
     mesCommandes.append({"OF-102", "Portefeuille Luxe", 120, "Cuir Agneau", QDate::currentDate().addDays(1), "12/02/2026", "Planifié", "", 0});
-    mesCommandes.append({"OF-103", "Ceinture Homme", 200, "Cuir Vachette", QDate::currentDate().addDays(2), "15/02/2026", "Planifié", "", 0});
+
+    // --- DONNÉES TEST PRODUITS ---
+    mesProduits.append({"REF-001", "Sac Voyage Cuir", 120.50, "Hiver 2026", "Vachette Pleine Fleur", 5});
+    mesProduits.append({"REF-002", "Portefeuille Luxe", 45.00, "Intemporel", "Agneau Plongé", 2});
+    mesProduits.append({"REF-003", "Ceinture Homme", 25.00, "Été 2026", "Vachette Pleine Fleur", 1});
 
     rafraichirListeCommandes();
     configurerTimelineGantt();
+    rafraichirListeProduits();
 
     // --- NAVIGATION ---
     ui->stackedWidget->setCurrentWidget(ui->page_home);
@@ -48,17 +51,150 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->btn_nav_fab, &QPushButton::clicked, [=](){
         configurerTimelineGantt(); ui->stackedWidget->setCurrentWidget(ui->page_fab_list);
     });
+    // Nav Produit
+    connect(ui->btn_nav_produit, &QPushButton::clicked, [=](){
+        rafraichirListeProduits(); ui->stackedWidget->setCurrentWidget(ui->page_produit_list);
+    });
+
     connect(ui->btn_start_app, &QPushButton::clicked, [=](){
         rafraichirListeCommandes(); ui->stackedWidget->setCurrentWidget(ui->page_planif_list);
     });
 
+    // Boutons Retour
     connect(ui->btn_back_planif, &QPushButton::clicked, [=](){ ui->stackedWidget->setCurrentWidget(ui->page_planif_list); });
+    connect(ui->btn_back_prod, &QPushButton::clicked, [=](){ ui->stackedWidget->setCurrentWidget(ui->page_produit_list); });
     connect(ui->btn_back_fab, &QPushButton::clicked, [=](){ ui->stackedWidget->setCurrentWidget(ui->page_fab_list); });
     connect(ui->btn_back_stats, &QPushButton::clicked, [=](){ ui->stackedWidget->setCurrentWidget(ui->page_planif_list); });
     connect(ui->btn_stat_plan, &QPushButton::clicked, [=](){ calculerEtAfficherStats(); ui->stackedWidget->setCurrentWidget(ui->page_stats); });
 
-    // --- CREATION / MODIF ---
-    auto preparerNouveau = [=](){
+    // ==========================================
+    // === MODULE PRODUITS (LOGIQUE) ===
+    // ==========================================
+
+    // 1. Ouvrir Formulaire Ajout
+    connect(ui->btn_add_produit, &QPushButton::clicked, [=](){
+        modeModifProd = false;
+        indexModifProd = -1;
+        ui->gb_prod->setTitle("Nouveau Produit");
+        ui->btn_valider_produit->setText("AJOUTER AU CATALOGUE");
+        // Reset
+        ui->le_ref_prod->clear();
+        ui->le_nom_prod->clear();
+        ui->sb_cout_prod->setValue(0);
+        ui->sb_temps_prod->setValue(0);
+        ui->lbl_cout_total->setText("0.00 €");
+        ui->stackedWidget->setCurrentWidget(ui->page_produit_form);
+    });
+
+    // 2. Ouvrir Formulaire Modif
+    connect(ui->btn_edit_produit, &QPushButton::clicked, [=](){
+        int row = ui->tableProduits->currentRow();
+        if(row < 0) { QMessageBox::warning(this, "Erreur", "Sélectionnez un produit."); return; }
+
+        modeModifProd = true;
+        indexModifProd = row;
+        ProduitInfo p = mesProduits[row];
+
+        ui->le_ref_prod->setText(p.ref);
+        ui->le_nom_prod->setText(p.nom);
+        ui->sb_cout_prod->setValue(p.coutMatiere);
+        ui->cb_coll_prod->setCurrentText(p.collection);
+        ui->cb_cuir_prod->setCurrentText(p.cuir);
+        ui->sb_temps_prod->setValue(p.temps);
+
+        ui->gb_prod->setTitle("Modifier : " + p.nom);
+        ui->btn_valider_produit->setText("ENREGISTRER MODIFICATIONS");
+        ui->stackedWidget->setCurrentWidget(ui->page_produit_form);
+    });
+
+    // 3. Valider (Ajout ou Modif)
+    connect(ui->btn_valider_produit, &QPushButton::clicked, [=](){
+        QString ref = ui->le_ref_prod->text();
+        QString nom = ui->le_nom_prod->text();
+        if(ref.isEmpty() || nom.isEmpty()) {
+            QMessageBox::warning(this, "Erreur", "Référence et Nom obligatoires."); return;
+        }
+
+        if(modeModifProd) {
+            mesProduits[indexModifProd].ref = ref;
+            mesProduits[indexModifProd].nom = nom;
+            mesProduits[indexModifProd].coutMatiere = ui->sb_cout_prod->value();
+            mesProduits[indexModifProd].collection = ui->cb_coll_prod->currentText();
+            mesProduits[indexModifProd].cuir = ui->cb_cuir_prod->currentText();
+            mesProduits[indexModifProd].temps = ui->sb_temps_prod->value();
+            QMessageBox::information(this, "Succès", "Produit modifié !");
+        } else {
+            ProduitInfo p;
+            p.ref = ref; p.nom = nom;
+            p.coutMatiere = ui->sb_cout_prod->value();
+            p.collection = ui->cb_coll_prod->currentText();
+            p.cuir = ui->cb_cuir_prod->currentText();
+            p.temps = ui->sb_temps_prod->value();
+            mesProduits.append(p);
+            QMessageBox::information(this, "Succès", "Produit ajouté !");
+        }
+        ui->stackedWidget->setCurrentWidget(ui->page_produit_list);
+        rafraichirListeProduits();
+    });
+
+    // 4. Supprimer
+    connect(ui->btn_delete_produit, &QPushButton::clicked, [=](){
+        int r = ui->tableProduits->currentRow();
+        if(r >= 0 && QMessageBox::question(this,"Supprimer","Confirmer ?") == QMessageBox::Yes) {
+            mesProduits.removeAt(r);
+            rafraichirListeProduits();
+        }
+    });
+
+    // 5. INNOVATION 1 : Calcul Coût Automatique
+    auto updateCout = [=](){
+        double matiere = ui->sb_cout_prod->value();
+        int heures = ui->sb_temps_prod->value();
+        double tauxHoraire = 25.0; // 25€ de l'heure
+        double total = matiere + (heures * tauxHoraire);
+        ui->lbl_cout_total->setText(QString::number(total, 'f', 2) + " €");
+    };
+    connect(ui->sb_cout_prod, &QDoubleSpinBox::textChanged, updateCout);
+    connect(ui->sb_temps_prod, &QSpinBox::textChanged, updateCout);
+
+    // 6. INNOVATION 2 : Historique Mode
+    connect(ui->btn_innovation_mode, &QPushButton::clicked, [=](){
+        QMessageBox::information(this, "Tendances & Historique",
+                                 "🔮 TENDANCES FIL D'OR :\n\n"
+                                 "• 2024 : Retour du cuir grainé et couleurs terre.\n"
+                                 "• 2025 : Minimalisme, boucles dorées fines.\n"
+                                 "• 2026 (Prévu) : Cuirs exotiques et formats mini.\n\n"
+                                 "💡 Conseil IA : Augmentez la production de 'Sac Voyage' pour l'hiver.");
+    });
+
+    // 7. Tri par Prix
+    connect(ui->btn_sort_price, &QPushButton::clicked, [=](){
+        std::sort(mesProduits.begin(), mesProduits.end(), [](const ProduitInfo &a, const ProduitInfo &b){
+            return a.coutMatiere < b.coutMatiere;
+        });
+        rafraichirListeProduits();
+    });
+
+    // 8. Recherche Collection
+    connect(ui->btn_search_col, &QPushButton::clicked, [=](){
+        QString filter = ui->le_search_coll->text().toLower();
+        for(int i=0; i<ui->tableProduits->rowCount(); i++) {
+            bool match = ui->tableProduits->item(i, 3)->text().toLower().contains(filter);
+            ui->tableProduits->setRowHidden(i, !match);
+        }
+    });
+
+    // 9. PDF (Simulation)
+    connect(ui->btn_pdf_catalogue, &QPushButton::clicked, [=](){
+        QMessageBox::information(this, "Export PDF", "Catalogue exporté : 'Catalogue_FilDor_2026.pdf'");
+    });
+
+
+    // ==========================================
+    // === MODULE PLANIFICATION (EXISTANT) ===
+    // ==========================================
+
+    auto preparerNouveauPlanif = [=](){
         modeModification = false;
         indexModification = -1;
         ui->gb_form->setTitle("Nouvelle Commande");
@@ -70,13 +206,12 @@ MainWindow::MainWindow(QWidget *parent)
         ui->stackedWidget->setCurrentWidget(ui->page_planif_form);
     };
 
-    connect(ui->btn_to_add_planif, &QPushButton::clicked, preparerNouveau);
+    connect(ui->btn_to_add_planif, &QPushButton::clicked, preparerNouveauPlanif);
 
     connect(ui->btn_modifier_planif, &QPushButton::clicked, [=](){
         int row = ui->tablePlanif->currentRow();
         if(row < 0 || row >= mesCommandes.size()) {
-            QMessageBox::warning(this, "Erreur", "Veuillez sélectionner une ligne.");
-            return;
+            QMessageBox::warning(this, "Erreur", "Sélectionnez une ligne."); return;
         }
         modeModification = true;
         indexModification = row;
@@ -189,6 +324,23 @@ MainWindow::MainWindow(QWidget *parent)
 MainWindow::~MainWindow() { delete ui; }
 
 // --- FONCTIONS ---
+
+void MainWindow::rafraichirListeProduits() {
+    ui->tableProduits->setRowCount(0);
+    ui->tableProduits->setColumnCount(6);
+    ui->tableProduits->setHorizontalHeaderLabels({"Référence", "Désignation", "Coût Mat.", "Collection", "Type Cuir", "Temps (h)"});
+
+    for(int i=0; i<mesProduits.size(); i++) {
+        ui->tableProduits->insertRow(i);
+        ui->tableProduits->setItem(i, 0, new QTableWidgetItem(mesProduits[i].ref));
+        ui->tableProduits->setItem(i, 1, new QTableWidgetItem(mesProduits[i].nom));
+        ui->tableProduits->setItem(i, 2, new QTableWidgetItem(QString::number(mesProduits[i].coutMatiere) + " €"));
+        ui->tableProduits->setItem(i, 3, new QTableWidgetItem(mesProduits[i].collection));
+        ui->tableProduits->setItem(i, 4, new QTableWidgetItem(mesProduits[i].cuir));
+        ui->tableProduits->setItem(i, 5, new QTableWidgetItem(QString::number(mesProduits[i].temps)));
+    }
+}
+
 void MainWindow::calculerEtAfficherStats() {
     int total = mesCommandes.size();
     ui->lbl_stat_total_cmd->setText(QString::number(total));
