@@ -79,7 +79,7 @@
        <item><widget class="QPushButton" name="btn_nav_dashboard"><property name="text"><string>   ACCUEIL</string></property><property name="class" stdset="0"><string>nav_btn</string></property></widget></item>
        <item><widget class="QPushButton" name="btn_nav_produit"><property name="text"><string>   CATALOGUE PRODUITS</string></property><property name="class" stdset="0"><string>nav_btn</string></property></widget></item>
        <item><widget class="QPushButton" name="btn_nav_planif"><property name="text"><string>   PLANIFICATION</string></property><property name="class" stdset="0"><string>nav_btn</string></property></widget></item>
-       <item><widget class="QPushButton" name="btn_nav_fab"><property name="text"><string>   PLANNING &amp; SUIVI</string></property><property name="class" stdset="0"><string>nav_btn</string></property></widget></item>
+       <item><widget class="QPushButton" name="btn_nav_fab"><property name="text"><string>   FABRICATION &amp; SUIVI</string></property><property name="class" stdset="0"><string>nav_btn</string></property></widget></item>
        <item><spacer name="vs"><property name="orientation"><enum>Qt::Vertical</enum></property></spacer></item>
       </layout>
      </widget>
