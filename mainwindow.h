@@ -8,11 +8,16 @@
 #include <QStyledItemDelegate>
 #include <QPainter>
 
+// --- BIBLIOTHÈQUES POUR LE PDF ---
+#include <QPrinter>
+#include <QFileDialog>
+// ---------------------------------
+
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 
-// Delegate
+// --- DELEGATE POUR LES COULEURS (Gantt) ---
 class ColorDelegate : public QStyledItemDelegate {
 public:
     using QStyledItemDelegate::QStyledItemDelegate;
@@ -28,6 +33,9 @@ public:
     }
 };
 
+// --- STRUCTURES DE DONNÉES ---
+
+// 1. Module Produits
 struct ProduitInfo {
     QString ref;
     QString nom;
@@ -37,6 +45,7 @@ struct ProduitInfo {
     int temps;
 };
 
+// 2. Module Planification
 struct CommandeInfo {
     QString id;
     QString produit;
@@ -46,8 +55,22 @@ struct CommandeInfo {
     QString dateFinEstimee;
     QString statut;
     QString etapeAuditee;
-    int etatEtape;
+    int etatEtape; // 0=Neutre, 1=OK, 2=Retard
 };
+
+// 3. Module Employés (RH)
+struct EmployeInfo {
+    QString id;
+    QString nom;
+    QString prenom;
+    QString poste;
+    QString departement;
+    QDate dateEmbauche;
+    double salaire;
+    QString rfid;
+};
+
+// --- CLASSE PRINCIPALE ---
 
 class MainWindow : public QMainWindow
 {
@@ -59,25 +82,48 @@ public:
 
 private:
     Ui::MainWindow *ui;
+
+    // --- VECTEURS DE STOCKAGE ---
     QVector<CommandeInfo> mesCommandes;
     QVector<ProduitInfo> mesProduits;
+    QVector<EmployeInfo> mesEmployes;
 
+    // --- OUTILS ---
     ColorDelegate *myColorDelegate;
 
+    // --- VARIABLES D'ÉTATS (Sélection & Modification) ---
+
+    // Pour Planification
     int indexCommandeSelectionnee = -1;
     bool modeModification = false;
     int indexModification = -1;
+
+    // Pour Produits
     bool modeModifProd = false;
     int indexModifProd = -1;
 
+    // Pour Employés
+    bool modeModifEmp = false;
+    int indexModifEmp = -1;
+
+    // --- FONCTIONS MÉTIERS ---
+
+    // 1. Fonctions Planification & Fabrication
     void rafraichirListeCommandes();
     void configurerTimelineGantt();
     void dessinerBarre(int ligne, int colDebut, int duree, QString texte, QColor bgCol, QColor textCol);
     void calculerEtAfficherStats();
 
-    // NOUVELLES FONCTIONS PRODUITS
+    // 2. Fonctions Produits
     void rafraichirListeProduits();
-    void calculerStatsProduits(); // <--- ICI
+    void calculerStatsProduits();
+
+    // 3. Fonctions Employés (RH)
+    void rafraichirListeEmployes();
+    void reponseChatbot();
+
+    // 4. Fonction Générique PDF
+    void exporterPDF(QTableWidget *table, QString titreDocument);
 };
 
 #endif // MAINWINDOW_H
