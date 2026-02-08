@@ -12,7 +12,7 @@ QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 
-// Delegate couleurs
+// Delegate
 class ColorDelegate : public QStyledItemDelegate {
 public:
     using QStyledItemDelegate::QStyledItemDelegate;
@@ -28,7 +28,6 @@ public:
     }
 };
 
-// STRUCT PRODUIT
 struct ProduitInfo {
     QString ref;
     QString nom;
@@ -61,26 +60,24 @@ public:
 private:
     Ui::MainWindow *ui;
     QVector<CommandeInfo> mesCommandes;
-    QVector<ProduitInfo> mesProduits; // Vecteur Produits
+    QVector<ProduitInfo> mesProduits;
 
     ColorDelegate *myColorDelegate;
 
     int indexCommandeSelectionnee = -1;
     bool modeModification = false;
     int indexModification = -1;
-
-    // Var pour modif produit
     bool modeModifProd = false;
     int indexModifProd = -1;
 
-    // Fonctions Planification
     void rafraichirListeCommandes();
     void configurerTimelineGantt();
     void dessinerBarre(int ligne, int colDebut, int duree, QString texte, QColor bgCol, QColor textCol);
     void calculerEtAfficherStats();
 
-    // Fonctions Produits
+    // NOUVELLES FONCTIONS PRODUITS
     void rafraichirListeProduits();
+    void calculerStatsProduits(); // <--- ICI
 };
 
 #endif // MAINWINDOW_H
