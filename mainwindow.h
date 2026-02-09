@@ -7,17 +7,28 @@
 #include <QDate>
 #include <QStyledItemDelegate>
 #include <QPainter>
-
-// --- BIBLIOTHÈQUES POUR LE PDF ---
 #include <QPrinter>
 #include <QFileDialog>
-// ---------------------------------
+
+// --- INCLUDES ---
+#include <QDialog>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QFormLayout>
+#include <QLabel>
+#include <QLineEdit>
+#include <QComboBox>
+#include <QPushButton>
+#include <QSpinBox>
+#include <QDoubleSpinBox>
+#include <QGroupBox>
+#include <QTextEdit>
+#include <QHeaderView>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 
-// --- DELEGATE POUR LES COULEURS (Gantt) ---
 class ColorDelegate : public QStyledItemDelegate {
 public:
     using QStyledItemDelegate::QStyledItemDelegate;
@@ -33,44 +44,10 @@ public:
     }
 };
 
-// --- STRUCTURES DE DONNÉES ---
-
-// 1. Module Produits
-struct ProduitInfo {
-    QString ref;
-    QString nom;
-    double coutMatiere;
-    QString collection;
-    QString cuir;
-    int temps;
-};
-
-// 2. Module Planification
-struct CommandeInfo {
-    QString id;
-    QString produit;
-    int quantite;
-    QString matiere;
-    QDate dateDebut;
-    QString dateFinEstimee;
-    QString statut;
-    QString etapeAuditee;
-    int etatEtape; // 0=Neutre, 1=OK, 2=Retard
-};
-
-// 3. Module Employés (RH)
-struct EmployeInfo {
-    QString id;
-    QString nom;
-    QString prenom;
-    QString poste;
-    QString departement;
-    QDate dateEmbauche;
-    double salaire;
-    QString rfid;
-};
-
-// --- CLASSE PRINCIPALE ---
+struct ProduitInfo { QString ref; QString nom; double coutMatiere; QString collection; QString cuir; int temps; };
+struct CommandeInfo { QString id; QString produit; int quantite; QString matiere; QDate dateDebut; QString dateFinEstimee; QString statut; QString etapeAuditee; int etatEtape; };
+struct EmployeInfo { QString id; QString nom; QString prenom; QString poste; QString departement; QDate dateEmbauche; double salaire; QString rfid; };
+struct MatiereInfo { QString code; QString categorie; QString etat; QString couleur; QString qualite; double quantite; QString unite; QString zone; QString allee; QString typeStock; QDate dateRec; };
 
 class MainWindow : public QMainWindow
 {
@@ -83,47 +60,45 @@ public:
 private:
     Ui::MainWindow *ui;
 
-    // --- VECTEURS DE STOCKAGE ---
     QVector<CommandeInfo> mesCommandes;
     QVector<ProduitInfo> mesProduits;
     QVector<EmployeInfo> mesEmployes;
+    QVector<MatiereInfo> mesMatieres;
 
-    // --- OUTILS ---
     ColorDelegate *myColorDelegate;
 
-    // --- VARIABLES D'ÉTATS (Sélection & Modification) ---
-
-    // Pour Planification
     int indexCommandeSelectionnee = -1;
-    bool modeModification = false;
-    int indexModification = -1;
+    bool modeModification = false; int indexModification = -1;
+    bool modeModifProd = false; int indexModifProd = -1;
+    bool modeModifEmp = false; int indexModifEmp = -1;
+    bool modeModifStock = false; int indexModifStock = -1;
 
-    // Pour Produits
-    bool modeModifProd = false;
-    int indexModifProd = -1;
+    // Fonctions Communes
+    void exporterPDF(QTableWidget *table, QString titreDocument);
 
-    // Pour Employés
-    bool modeModifEmp = false;
-    int indexModifEmp = -1;
-
-    // --- FONCTIONS MÉTIERS ---
-
-    // 1. Fonctions Planification & Fabrication
+    // Module Planif
     void rafraichirListeCommandes();
     void configurerTimelineGantt();
     void dessinerBarre(int ligne, int colDebut, int duree, QString texte, QColor bgCol, QColor textCol);
     void calculerEtAfficherStats();
 
-    // 2. Fonctions Produits
+    // Module Produits
     void rafraichirListeProduits();
     void calculerStatsProduits();
+    void showProdSimDialog(); // [NOUVEAU]
+    void showPlanifIaDialog(); // [NOUVEAU] Pop-up IA Planification
 
-    // 3. Fonctions Employés (RH)
+    // Module RH
     void rafraichirListeEmployes();
+    void calculerStatsRH();
     void reponseChatbot();
+    void showEmpEvalDialog(); // [NOUVEAU]
 
-    // 4. Fonction Générique PDF
-    void exporterPDF(QTableWidget *table, QString titreDocument);
+    // Module Stock (EXISTANT)
+    void rafraichirListeMatieres();
+    void calculerStatsStock();
+    void showCompareDialog();
+    void showBesoinDialog();
 };
 
 #endif // MAINWINDOW_H
