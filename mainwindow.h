@@ -48,6 +48,8 @@ struct ProduitInfo { QString ref; QString nom; double coutMatiere; QString colle
 struct CommandeInfo { QString id; QString produit; int quantite; QString matiere; QDate dateDebut; QString dateFinEstimee; QString statut; QString etapeAuditee; int etatEtape; };
 struct EmployeInfo { QString id; QString nom; QString prenom; QString poste; QString departement; QDate dateEmbauche; double salaire; QString rfid; };
 struct MatiereInfo { QString code; QString categorie; QString etat; QString couleur; QString qualite; double quantite; QString unite; QString zone; QString allee; QString typeStock; QDate dateRec; };
+struct ClientInfo { QString id; QString nom; QString telephone; QString adresse; QString email; int pointsFidelite; };
+struct DepotInfo { QString id; QString emplacement; QString etagere; double capaciteMax; double quantiteActuelle; QString typeStockage; };
 
 class MainWindow : public QMainWindow
 {
@@ -64,6 +66,8 @@ private:
     QVector<ProduitInfo> mesProduits;
     QVector<EmployeInfo> mesEmployes;
     QVector<MatiereInfo> mesMatieres;
+    QVector<ClientInfo> mesClients;
+    QVector<DepotInfo> mesDepots;
 
     ColorDelegate *myColorDelegate;
 
@@ -72,9 +76,12 @@ private:
     bool modeModifProd = false; int indexModifProd = -1;
     bool modeModifEmp = false; int indexModifEmp = -1;
     bool modeModifStock = false; int indexModifStock = -1;
+    bool modeModifClient = false; int indexModifClient = -1;
+    bool modeModifDepot = false; int indexModifDepot = -1;
 
     // Fonctions Communes
     void exporterPDF(QTableWidget *table, QString titreDocument);
+    void exporterCSV(QTableWidget *table, const QString &titreDocument);
 
     // Module Planif
     void rafraichirListeCommandes();
@@ -85,7 +92,9 @@ private:
     // Module Produits
     void rafraichirListeProduits();
     void calculerStatsProduits();
-    void showProdSimDialog(); // [NOUVEAU]
+    void showProdSimDialog(); // (déjà existant)
+    void showProduitCoutDialog();
+    void showHistoriqueModeDialog();
     void showPlanifIaDialog(); // [NOUVEAU] Pop-up IA Planification
 
     // Module RH
@@ -93,6 +102,19 @@ private:
     void calculerStatsRH();
     void reponseChatbot();
     void showEmpEvalDialog(); // [NOUVEAU]
+
+    // Module Clients
+    void rafraichirListeClients();
+    void calculerStatsClients();
+    void exporterFactureClient();
+    void showClientIaDialog();
+    void showFideliteDialog();
+
+    // Module Dépôt
+    void rafraichirListeDepots();
+    void calculerStatsDepots();
+    void showOptimizeSpaceDialog();
+    void showRavitaillementDialog();
 
     // Module Stock (EXISTANT)
     void rafraichirListeMatieres();
