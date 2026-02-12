@@ -602,7 +602,7 @@ QLabel#lbl_fire_status, QLabel#lbl_rfid_status {
           </column>
           <column>
            <property name="text">
-            <string>Points</string>
+            <string>Point</string>
            </property>
           </column>
           <column>
