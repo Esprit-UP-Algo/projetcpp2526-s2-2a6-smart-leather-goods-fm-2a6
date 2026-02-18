@@ -213,7 +213,7 @@
         <number>0</number>
        </property>
        <item>
-        <layout class="QHBoxLayout" name="hl_logo">
+        <layout class="QHBoxLayout" name="logo.png">
          <property name="spacing">
           <number>15</number>
          </property>

@@ -1,8 +1,9 @@
 #include "mainwindow.h"
-
 #include <QApplication>
 #include <QLocale>
 #include <QTranslator>
+#include <QMessageBox>
+#include "connexion.h" // <--- Ajout
 
 int main(int argc, char *argv[])
 {
@@ -17,6 +18,16 @@ int main(int argc, char *argv[])
             break;
         }
     }
+
+    // --- CONNEXION BDD ---
+    Connexion c;
+    bool etat = c.createconnect();
+    if (!etat) {
+        QMessageBox::critical(nullptr, "Erreur Base de Données", "Impossible de se connecter à Oracle.\nVérifiez que la base est lancée.");
+        // On continue quand même pour voir l'interface, ou return -1 pour quitter
+    }
+    // ---------------------
+
     MainWindow w;
     w.show();
     return a.exec();

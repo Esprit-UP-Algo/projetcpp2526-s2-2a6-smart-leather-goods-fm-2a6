@@ -1,5 +1,6 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
+#include "ordrefabrication.h"
 
 #include <QMainWindow>
 #include <QTableWidget>
@@ -61,6 +62,7 @@ public:
 
 private:
     Ui::MainWindow *ui;
+    OrdreFabrication tmpOrdre; // <--- AJOUTER CETTE LIGNE
 
     QVector<CommandeInfo> mesCommandes;
     QVector<ProduitInfo> mesProduits;
@@ -121,6 +123,25 @@ private:
     void calculerStatsStock();
     void showCompareDialog();
     void showBesoinDialog();
+    // AJOUTER CETTE FONCTION :
+    void ouvrirDialoguePlanif(bool estModification);
+    void ouvrirDialogueProduit(bool estModif);
+    void ouvrirDialogueEmploye(bool estModif);
+    void ouvrirDialogueStock(bool estModif);
+    void ouvrirDialogueClient(bool estModif);
+    void ouvrirDialogueDepot(bool estModif);
+
+    // ... (vos variables existantes) ...
+
+    // AJOUTER CES LIGNES POUR LES STATS POP-UP :
+    void ouvrirStatsProduits();
+    void ouvrirStatsRH();
+    void ouvrirStatsStock();
+    void ouvrirStatsClients();
+    void ouvrirStatsDepot();
+
+    // Une petite fonction utilitaire pour le design des cartes KPI
+    QFrame* creerCarteStat(QString icone, QString val, QString titre, QString couleurFond);
 };
 
 #endif // MAINWINDOW_H

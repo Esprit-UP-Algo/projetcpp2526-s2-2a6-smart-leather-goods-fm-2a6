@@ -1,5 +1,8 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
+#include "connexion.h"
+#include <QSqlRecord>
+#include <QSqlQueryModel>
 #include <QDate>
 #include <QTableWidgetItem>
 #include <QHeaderView>
@@ -29,6 +32,9 @@
 #include <QColor>
 #include <QFont>
 #include <QEasingCurve>
+#include <QSqlRecord>      // <--- Indispensable pour utiliser .record()
+#include <QSqlQueryModel>  // <--- Indispensable pour utiliser le modèle
+#include <QSqlError>
 
 #include <QtCharts/QBarCategoryAxis>
 #include <QtCharts/QBarSeries>
@@ -339,6 +345,10 @@ MainWindow::MainWindow(QWidget *parent)
     , ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
+    Connexion c;
+    if(!c.createconnect()) {
+        QMessageBox::warning(this, "Erreur BDD", "Impossible de se connecter à la base Oracle.");
+    }
 
     // Enable sorting (used by the A→Z sort buttons)
     ui->tablePlanif->setSortingEnabled(true);
@@ -366,7 +376,7 @@ MainWindow::MainWindow(QWidget *parent)
         ui->lbl_big_logo->setText("");
     } else {
         ui->lbl_big_logo->setText("FIL D'OR");
-        ui->l_logo_img->setText("IMG");
+        ui->l_logo_img->setText("logo.png");
     }
 
     myColorDelegate = new ColorDelegate(this);
@@ -479,12 +489,12 @@ MainWindow::MainWindow(QWidget *parent)
 
     // --- MODULES ---
     // A→Z sorting buttons
-    connect(ui->btn_sort_alpha_planif, &QPushButton::clicked, [=](){ ui->tablePlanif->sortItems(1, Qt::AscendingOrder); });   // Produit
-    connect(ui->btn_sort_alpha_prod, &QPushButton::clicked, [=](){ ui->tableProduits->sortItems(1, Qt::AscendingOrder); });    // Désignation
-    connect(ui->btn_sort_alpha_emp, &QPushButton::clicked, [=](){ ui->tableEmployes->sortItems(1, Qt::AscendingOrder); });     // Nom
-    connect(ui->btn_sort_alpha_stock, &QPushButton::clicked, [=](){ ui->tableStock->sortItems(0, Qt::AscendingOrder); });      // Code MP
-    connect(ui->btn_sort_alpha_client, &QPushButton::clicked, [=](){ ui->tableClients->sortItems(1, Qt::AscendingOrder); });   // Nom
-    connect(ui->btn_sort_alpha_depot, &QPushButton::clicked, [=](){ ui->tableDepot->sortItems(1, Qt::AscendingOrder); });      // Emplacement
+    connect(ui->btn_sort_alpha_planif, &QPushButton::clicked, [=](){ ui->tablePlanif->sortItems(1, Qt::AscendingOrder); });    // Produit
+    connect(ui->btn_sort_alpha_prod, &QPushButton::clicked, [=](){ ui->tableProduits->sortItems(1, Qt::AscendingOrder); });     // Désignation
+    connect(ui->btn_sort_alpha_emp, &QPushButton::clicked, [=](){ ui->tableEmployes->sortItems(1, Qt::AscendingOrder); });      // Nom
+    connect(ui->btn_sort_alpha_stock, &QPushButton::clicked, [=](){ ui->tableStock->sortItems(0, Qt::AscendingOrder); });       // Code MP
+    connect(ui->btn_sort_alpha_client, &QPushButton::clicked, [=](){ ui->tableClients->sortItems(1, Qt::AscendingOrder); });    // Nom
+    connect(ui->btn_sort_alpha_depot, &QPushButton::clicked, [=](){ ui->tableDepot->sortItems(1, Qt::AscendingOrder); });       // Emplacement
 
     connect(ui->btn_stat_plan, &QPushButton::clicked, [=](){ calculerEtAfficherStats(); ui->stackedWidget->setCurrentWidget(ui->page_stats); });
     connect(ui->btn_pdf, &QPushButton::clicked, [=](){ exporterPDF(ui->tablePlanif, "Planning Production"); });
@@ -495,7 +505,9 @@ MainWindow::MainWindow(QWidget *parent)
     // PRODUITS
     connect(ui->btn_cout_produit, &QPushButton::clicked, this, &MainWindow::showProduitCoutDialog);
     connect(ui->btn_hist_mode, &QPushButton::clicked, this, &MainWindow::showHistoriqueModeDialog);
-    connect(ui->btn_stats_prod, &QPushButton::clicked, [=](){ calculerStatsProduits(); ui->stackedWidget->setCurrentWidget(ui->page_stats_prod); });
+    connect(ui->btn_stats_prod, &QPushButton::clicked, [=](){
+        ouvrirStatsProduits();
+    });
     connect(ui->btn_pdf_catalogue, &QPushButton::clicked, [=](){ exporterPDF(ui->tableProduits, "Catalogue 2026"); });
     connect(ui->btn_export_excel_prod, &QPushButton::clicked, [=](){ exporterCSV(ui->tableProduits, "Catalogue 2026"); });
     connect(ui->btn_print_prod, &QPushButton::clicked, [=](){ exporterPDF(ui->tableProduits, "Catalogue 2026"); });
@@ -504,36 +516,19 @@ MainWindow::MainWindow(QWidget *parent)
     // RH
     connect(ui->btn_open_eval, &QPushButton::clicked, this, &MainWindow::showEmpEvalDialog); // [NOUVEAU]
     connect(ui->btn_stats_emp, &QPushButton::clicked, [=](){
-        ui->lbl_title_se->setText("🤖 Assistant RH");
-        ui->st_rh1->setVisible(false);
-        ui->st_rh2->setVisible(false);
-        ui->gb_chart_dept->setVisible(false);
-        ui->gb_chat->setVisible(true);
-        if(ui->hl_chat_area) {
-            ui->hl_chat_area->setStretch(0, 0);
-            ui->hl_chat_area->setStretch(1, 1);
-        }
-        ui->stackedWidget->setCurrentWidget(ui->page_stats_emp);
+        ouvrirStatsRH();
     });
     connect(ui->btn_stats_emp_stats, &QPushButton::clicked, [=](){
-        calculerStatsRH();
-        ui->lbl_title_se->setText("📊 Statistiques RH");
-        ui->st_rh1->setVisible(true);
-        ui->st_rh2->setVisible(true);
-        ui->gb_chart_dept->setVisible(true);
-        ui->gb_chat->setVisible(false);
-        if(ui->hl_chat_area) {
-            ui->hl_chat_area->setStretch(0, 1);
-            ui->hl_chat_area->setStretch(1, 0);
-        }
-        ui->stackedWidget->setCurrentWidget(ui->page_stats_emp);
+        ouvrirStatsRH();
     });
     connect(ui->btn_pdf_emp, &QPushButton::clicked, [=](){ exporterPDF(ui->tableEmployes, "Registre Personnel"); });
 
     // STOCK
     connect(ui->btn_open_compare, &QPushButton::clicked, this, &MainWindow::showCompareDialog); // [RESTITUÉ]
     connect(ui->btn_open_calcul, &QPushButton::clicked, this, &MainWindow::showBesoinDialog);   // [RESTITUÉ]
-    connect(ui->btn_stats_stock, &QPushButton::clicked, [=](){ calculerStatsStock(); ui->stackedWidget->setCurrentWidget(ui->page_stock_stats); });
+    connect(ui->btn_stats_stock, &QPushButton::clicked, [=](){
+        ouvrirStatsStock();
+    });
     connect(ui->btn_pdf_stock, &QPushButton::clicked, [=](){ exporterPDF(ui->tableStock, "Inventaire Stock"); });
     connect(ui->btn_export_excel_stock, &QPushButton::clicked, [=](){ exporterCSV(ui->tableStock, "Inventaire Stock"); });
     connect(ui->btn_print_stock, &QPushButton::clicked, [=](){ exporterPDF(ui->tableStock, "Inventaire Stock"); });
@@ -542,7 +537,9 @@ MainWindow::MainWindow(QWidget *parent)
     // CLIENTS
     connect(ui->btn_open_client_ia, &QPushButton::clicked, this, &MainWindow::showClientIaDialog);
     connect(ui->btn_open_fidelite, &QPushButton::clicked, this, &MainWindow::showFideliteDialog);
-    connect(ui->btn_stats_client, &QPushButton::clicked, [=](){ calculerStatsClients(); ui->stackedWidget->setCurrentWidget(ui->page_stats_client); });
+    connect(ui->btn_stats_client, &QPushButton::clicked, [=](){
+        ouvrirStatsClients();
+    });
     connect(ui->btn_pdf_facture, &QPushButton::clicked, [=](){ exporterFactureClient(); });
     connect(ui->btn_export_excel_client, &QPushButton::clicked, [=](){ exporterCSV(ui->tableClients, "Clients"); });
     connect(ui->btn_print_client, &QPushButton::clicked, [=](){ exporterPDF(ui->tableClients, "Clients"); });
@@ -551,7 +548,9 @@ MainWindow::MainWindow(QWidget *parent)
     // DEPOT
     connect(ui->btn_open_optimize, &QPushButton::clicked, this, &MainWindow::showOptimizeSpaceDialog);
     connect(ui->btn_open_ravit, &QPushButton::clicked, this, &MainWindow::showRavitaillementDialog);
-    connect(ui->btn_stats_depot, &QPushButton::clicked, [=](){ calculerStatsDepots(); ui->stackedWidget->setCurrentWidget(ui->page_stats_depot); });
+    connect(ui->btn_stats_depot, &QPushButton::clicked, [=](){
+        ouvrirStatsDepot();
+    });
     connect(ui->btn_pdf_depot, &QPushButton::clicked, [=](){ exporterPDF(ui->tableDepot, "Inventaire Dépôt"); });
     connect(ui->btn_export_excel_depot, &QPushButton::clicked, [=](){ exporterCSV(ui->tableDepot, "Inventaire Dépôt"); });
     connect(ui->btn_print_depot, &QPushButton::clicked, [=](){ exporterPDF(ui->tableDepot, "Inventaire Dépôt"); });
@@ -560,48 +559,137 @@ MainWindow::MainWindow(QWidget *parent)
     // --- CRUD ---
     // Planif CRUD
     auto prepNewPlanif = [=](){ modeModification=false; ui->le_fin_prevue->clear(); ui->stackedWidget->setCurrentWidget(ui->page_planif_form); };
-    connect(ui->btn_to_add_planif, &QPushButton::clicked, prepNewPlanif);
+    // Remplacement du bouton AJOUTER
+    connect(ui->btn_to_add_planif, &QPushButton::clicked, [=](){
+        // Plus besoin de changer de page !
+        // ui->stackedWidget->setCurrentWidget(ui->page_planif_form); // <--- On enlève ça
+
+        ouvrirDialoguePlanif(false); // false = Mode Ajout
+    });
     connect(ui->btn_valider_planif, &QPushButton::clicked, [=](){
-        QString p=ui->cb_produit->currentText(), m=ui->cb_matiere->currentText();
-        if(modeModification && indexModification >= 0 && indexModification < mesCommandes.size()) {
-            mesCommandes[indexModification].produit = p;
-            mesCommandes[indexModification].quantite = ui->sb_qte->value();
-            mesCommandes[indexModification].matiere = m;
-            mesCommandes[indexModification].dateDebut = ui->dt_lancement->date();
-            mesCommandes[indexModification].dateFinEstimee = ui->le_fin_prevue->text();
+        // 1. Récupération des champs
+        QString prod = ui->cb_produit->currentText();
+        int qte = ui->sb_qte->value();
+        QString mat = ui->cb_matiere->currentText();
+        QDate deb = ui->dt_lancement->date();
+
+        // Gestion Date Fin
+        QString dateFinStr = ui->le_fin_prevue->text();
+        QDate fin = QDate::fromString(dateFinStr, "dd/MM/yyyy");
+        if (!fin.isValid()) fin = deb.addDays(3); // Durée par défaut
+
+        // 2. Création de l'objet métier avec les nouvelles valeurs
+        // Note: Le statut reste "Planifié" ou on pourrait le récupérer de l'interface
+        OrdreFabrication o(prod, qte, mat, deb, fin, "Planifié");
+
+        bool success = false;
+
+        // 3. Logique AJOUT ou MODIFICATION
+        if (modeModification) {
+            // Cas Modification : On utilise l'ID stocké lors du clic sur le crayon
+            // indexModification contient l'index du tableau, on doit récupérer l'ID réel
+            // ATTENTION : il faut récupérer l'ID "OF-105" et en extraire "105"
+            QString idStr = mesCommandes[indexModification].id;
+            int idReel = idStr.replace("OF-", "").toInt();
+
+            success = o.modifier(idReel); // Appel de la fonction UPDATE
+
+            if(success) QMessageBox::information(this, "Mise à jour", "Commande modifiée avec succès !");
+        }
+        else {
+            // Cas Ajout
+            success = o.ajouter(); // Appel de la fonction INSERT
+            if(success) QMessageBox::information(this, "Succès", "Nouvelle commande créée !");
+        }
+
+        // 4. Rafraichissement si ça a marché
+        if (success) {
+            ui->stackedWidget->setCurrentWidget(ui->page_planif_list);
+            rafraichirListeCommandes(); // Recharge tout depuis Oracle
+            configurerTimelineGantt(); // Met à jour le graphique
+
+            // On remet le mode à "Ajout" par défaut pour la prochaine fois
+            modeModification = false;
         } else {
-            mesCommandes.append({"OF-"+QString::number(100+mesCommandes.size()), p, ui->sb_qte->value(), m, ui->dt_lancement->date(), ui->le_fin_prevue->text(), "Planifié", "", 0});
+            QMessageBox::critical(this, "Erreur", "Opération échouée en base de données.");
         }
-        ui->stackedWidget->setCurrentWidget(ui->page_planif_list); rafraichirListeCommandes(); configurerTimelineGantt();
     });
+    // --- BOUTON IA (ESTIMATION INTELLIGENTE) ---
     connect(ui->btn_calculer_ia, &QPushButton::clicked, [=](){
-        if(ui->sb_qte->value() > 0) {
-            // Logique simple : 2 jours de base + 1 jour tous les 100 articles
-            int joursEstimes = 2 + (ui->sb_qte->value() / 100);
+        int qte = ui->sb_qte->value();
 
-            // Calcul et affichage de la date de fin
-            QDate fin = ui->dt_lancement->date().addDays(joursEstimes);
-            ui->le_fin_prevue->setText(fin.toString("dd/MM/yyyy"));
-
-            // Affichage de la durée dans le champ texte qui était vide
-            ui->le_duree_totale->setText(QString::number(joursEstimes) + " Jours");
+        if (qte <= 0) {
+            QMessageBox::warning(this, "IA", "Veuillez entrer une quantité supérieure à 0.");
+            return;
         }
+
+        // 1. Récupération du type de produit pour adapter la vitesse
+        QString typeProduit = ui->cb_produit->currentText();
+
+        // Vitesse de production (pièces par jour)
+        double piecesParJour = 50.0; // Vitesse standard
+
+        if (typeProduit.contains("Sac")) {
+            piecesParJour = 20.0; // Plus long à fabriquer
+        } else if (typeProduit.contains("Portefeuille")) {
+            piecesParJour = 100.0; // Très rapide
+        }
+
+        // 2. Calcul du temps (Arrondi au supérieur avec ceil)
+        // Ex: 25 sacs / 20 par jour = 1.25 jours -> arrondi à 2 jours + 1 jour de prépa
+        int joursProduction = std::ceil((double)qte / piecesParJour);
+        int joursTotal = 1 + joursProduction; // +1 jour de préparation logistique
+
+        // 3. Calcul de la date de fin (en évitant le Weekend si on veut pousser le réalisme, simple ici)
+        QDate dateDeb = ui->dt_lancement->date();
+        QDate dateFin = dateDeb.addDays(joursTotal);
+
+        // 4. Affichage du résultat dans les champs
+        ui->le_fin_prevue->setText(dateFin.toString("dd/MM/yyyy"));
+        ui->le_duree_totale->setText(QString::number(joursTotal) + " Jours (Estimé)");
+
+        // Petit effet visuel pour dire que ça a marché
+        ui->le_fin_prevue->setStyleSheet("background-color: #dcedc8; color: #333; font-weight: bold;");
+        QTimer::singleShot(1000, [=](){ ui->le_fin_prevue->setStyleSheet(""); }); // Remet la couleur normale après 1s
     });
+    // Remplacement du bouton MODIFIER
     connect(ui->btn_modifier_planif, &QPushButton::clicked, [=](){
-        int idx = selectedIndexFromTable(ui->tablePlanif); if(idx < 0 || idx >= mesCommandes.size()) return;
-        modeModification = true; indexModification = idx; CommandeInfo c = mesCommandes[idx];
-        ui->cb_produit->setCurrentText(c.produit); ui->sb_qte->setValue(c.quantite); ui->cb_matiere->setCurrentText(c.matiere);
-        ui->dt_lancement->setDate(c.dateDebut); ui->le_fin_prevue->setText(c.dateFinEstimee);
-        ui->gb_form->setTitle("Modifier l'OF : " + c.id); ui->btn_valider_planif->setText("ENREGISTRER");
-        ui->stackedWidget->setCurrentWidget(ui->page_planif_form);
+        int idx = ui->tablePlanif->currentRow();
+        if(idx < 0) {
+            QMessageBox::warning(this, "Sélection", "Veuillez sélectionner une ligne.");
+            return;
+        }
+
+        // On sauvegarde l'index pour que la fonction sache quoi modifier
+        indexModification = idx;
+
+        ouvrirDialoguePlanif(true); // true = Mode Modification
     });
     connect(ui->btn_supprimer_planif, &QPushButton::clicked, [=](){
-        int idx = selectedIndexFromTable(ui->tablePlanif);
-        if(idx >= 0 && idx < mesCommandes.size()) { mesCommandes.removeAt(idx); rafraichirListeCommandes(); configurerTimelineGantt(); }
+        int r = ui->tablePlanif->currentRow();
+        if(r < 0) return;
+
+        QTableWidgetItem *it = ui->tablePlanif->item(r, 0); // Colonne ID
+        if(!it) return;
+
+        int idToDelete = it->text().toInt(); // Récupère l'ID réel de la base
+
+        OrdreFabrication o;
+        if(o.supprimer(idToDelete)) {
+            QMessageBox::information(this, "Succès", "Commande supprimée.");
+            rafraichirListeCommandes();
+            configurerTimelineGantt();
+        } else {
+            QMessageBox::critical(this, "Erreur", "Impossible de supprimer.");
+        }
     });
 
     // Prod CRUD
-    connect(ui->btn_add_produit, &QPushButton::clicked, [=](){ modeModifProd=false; ui->stackedWidget->setCurrentWidget(ui->page_produit_form); });
+    // Produits
+    connect(ui->btn_add_produit, &QPushButton::clicked, [=](){
+        ouvrirDialogueProduit(false);
+    });
+
     connect(ui->btn_valider_produit, &QPushButton::clicked, [=](){
         ProduitInfo p;
         p.ref = ui->le_ref_prod->text().trimmed();
@@ -617,18 +705,17 @@ MainWindow::MainWindow(QWidget *parent)
         ui->stackedWidget->setCurrentWidget(ui->page_produit_list); rafraichirListeProduits();
     });
     connect(ui->btn_edit_produit, &QPushButton::clicked, [=](){
-        int idx = selectedIndexFromTable(ui->tableProduits);
-        if(idx < 0 || idx >= mesProduits.size()) return;
-        modeModifProd = true;
-        indexModifProd = idx;
-        const ProduitInfo &p = mesProduits[idx];
-        ui->le_ref_prod->setText(p.ref);
-        ui->le_nom_prod->setText(p.nom);
-        ui->sb_cout_prod->setValue(p.coutMatiere);
-        ui->cb_coll_prod->setCurrentText(p.collection);
-        ui->cb_cuir_prod->setCurrentText(p.cuir);
-        ui->sb_temps_prod->setValue(p.temps);
-        ui->stackedWidget->setCurrentWidget(ui->page_produit_form);
+        int idx = ui->tableProduits->currentRow();
+        if(idx < 0) {
+            QMessageBox::warning(this, "Sélection", "Sélectionnez un produit à modifier.");
+            return;
+        }
+
+        // On récupère l'index pour savoir quel produit modifier
+        indexModifProd = ui->tableProduits->item(idx, 0)->data(Qt::UserRole).toInt();
+
+        // ON OUVRE UNIQUEMENT LA POP-UP (On ne change plus de page !)
+        ouvrirDialogueProduit(true);
     });
     connect(ui->btn_delete_produit, &QPushButton::clicked, [=](){
         int idx = selectedIndexFromTable(ui->tableProduits);
@@ -636,7 +723,21 @@ MainWindow::MainWindow(QWidget *parent)
     });
 
     // RH CRUD
-    connect(ui->btn_add_emp, &QPushButton::clicked, [=](){ modeModifEmp=false; ui->stackedWidget->setCurrentWidget(ui->page_employe_form); });
+    // Employés
+    connect(ui->btn_add_emp, &QPushButton::clicked, [=](){
+        ouvrirDialogueEmploye(false);
+    });
+    connect(ui->btn_edit_emp, &QPushButton::clicked, [=](){
+        int idx = ui->tableEmployes->currentRow();
+        if(idx < 0) {
+            QMessageBox::warning(this, "Sélection", "Sélectionnez un employé.");
+            return;
+        }
+        indexModifEmp = ui->tableEmployes->item(idx, 0)->data(Qt::UserRole).toInt();
+
+        // UNIQUEMENT LA POP-UP
+        ouvrirDialogueEmploye(true);
+    });
     connect(ui->btn_valider_emp, &QPushButton::clicked, [=](){
         EmployeInfo e;
         e.id = ui->le_id_emp->text().trimmed();
@@ -653,22 +754,7 @@ MainWindow::MainWindow(QWidget *parent)
         else mesEmployes.append(e);
         ui->stackedWidget->setCurrentWidget(ui->page_employe_list); rafraichirListeEmployes();
     });
-    connect(ui->btn_edit_emp, &QPushButton::clicked, [=](){
-        int idx = selectedIndexFromTable(ui->tableEmployes);
-        if(idx < 0 || idx >= mesEmployes.size()) return;
-        modeModifEmp = true;
-        indexModifEmp = idx;
-        const EmployeInfo &e = mesEmployes[idx];
-        ui->le_id_emp->setText(e.id);
-        ui->le_nom_emp->setText(e.nom);
-        ui->le_prenom_emp->setText(e.prenom);
-        ui->cb_poste_emp->setCurrentText(e.poste);
-        ui->cb_dept_emp->setCurrentText(e.departement);
-        ui->dt_embauche->setDate(e.dateEmbauche);
-        ui->sb_salaire_emp->setValue(e.salaire);
-        ui->le_rfid_emp->setText(e.rfid);
-        ui->stackedWidget->setCurrentWidget(ui->page_employe_form);
-    });
+
     connect(ui->btn_delete_emp, &QPushButton::clicked, [=](){
         int idx = selectedIndexFromTable(ui->tableEmployes);
         if(idx >= 0 && idx < mesEmployes.size()) { mesEmployes.removeAt(idx); rafraichirListeEmployes(); }
@@ -676,7 +762,21 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->btn_send_chat, &QPushButton::clicked, [=](){ reponseChatbot(); });
 
     // Stock CRUD
-    connect(ui->btn_add_stock, &QPushButton::clicked, [=](){ modeModifStock=false; ui->stackedWidget->setCurrentWidget(ui->page_stock_form); });
+    // Stock
+    connect(ui->btn_add_stock, &QPushButton::clicked, [=](){
+        ouvrirDialogueStock(false);
+    });
+    connect(ui->btn_edit_stock, &QPushButton::clicked, [=](){
+        int idx = ui->tableStock->currentRow();
+        if(idx < 0) {
+            QMessageBox::warning(this, "Sélection", "Sélectionnez une matière.");
+            return;
+        }
+        indexModifStock = ui->tableStock->item(idx, 0)->data(Qt::UserRole).toInt();
+
+        // UNIQUEMENT LA POP-UP
+        ouvrirDialogueStock(true);
+    });
     connect(ui->btn_valider_stock, &QPushButton::clicked, [=](){
         MatiereInfo m;
         m.code = ui->le_code_mp->text().trimmed();
@@ -695,28 +795,26 @@ MainWindow::MainWindow(QWidget *parent)
         else mesMatieres.append(m);
         ui->stackedWidget->setCurrentWidget(ui->page_stock_list); rafraichirListeMatieres();
     });
-    connect(ui->btn_edit_stock, &QPushButton::clicked, [=](){
-        int idx = selectedIndexFromTable(ui->tableStock); if(idx < 0 || idx >= mesMatieres.size()) return;
-        modeModifStock=true; indexModifStock=idx; MatiereInfo m = mesMatieres[idx];
-        ui->le_code_mp->setText(m.code); ui->cb_cat_mp->setCurrentText(m.categorie);
-        ui->cb_etat_mp->setCurrentText(m.etat); ui->le_coul_mp->setText(m.couleur);
-        ui->cb_qual_mp->setCurrentText(m.qualite); ui->sb_qte_mp->setValue(m.quantite);
-        ui->cb_unite_mp->setCurrentText(m.unite); ui->cb_zone_mp->setCurrentText(m.zone);
-        ui->le_allee_mp->setText(m.allee); ui->cb_type_stock->setCurrentText(m.typeStock);
-        ui->dt_rec_mp->setDate(m.dateRec);
-        ui->stackedWidget->setCurrentWidget(ui->page_stock_form);
-    });
     connect(ui->btn_delete_stock, &QPushButton::clicked, [=](){
         int idx = selectedIndexFromTable(ui->tableStock);
         if(idx >= 0 && idx < mesMatieres.size()) { mesMatieres.removeAt(idx); rafraichirListeMatieres(); }
     });
 
     // Clients CRUD
+    // Clients
     connect(ui->btn_add_client, &QPushButton::clicked, [=](){
-        modeModifClient = false; indexModifClient = -1;
-        ui->le_id_client->clear(); ui->le_nom_client->clear(); ui->le_tel_client->clear();
-        ui->le_adresse_client->clear(); ui->le_email_client->clear(); ui->sb_points_client->setValue(0);
-        ui->stackedWidget->setCurrentWidget(ui->page_client_form);
+        ouvrirDialogueClient(false);
+    });
+    connect(ui->btn_edit_client, &QPushButton::clicked, [=](){
+        int idx = ui->tableClients->currentRow();
+        if(idx < 0) {
+            QMessageBox::warning(this, "Sélection", "Sélectionnez un client.");
+            return;
+        }
+        indexModifClient = ui->tableClients->item(idx, 0)->data(Qt::UserRole).toInt();
+
+        // UNIQUEMENT LA POP-UP
+        ouvrirDialogueClient(true);
     });
     connect(ui->btn_valider_client, &QPushButton::clicked, [=](){
         ClientInfo c;
@@ -741,24 +839,7 @@ MainWindow::MainWindow(QWidget *parent)
         ui->stackedWidget->setCurrentWidget(ui->page_client_list);
         rafraichirListeClients();
     });
-    connect(ui->btn_edit_client, &QPushButton::clicked, [=](){
-        int r = ui->tableClients->currentRow();
-        if(r < 0) return;
-        QTableWidgetItem *it = ui->tableClients->item(r, 0);
-        if(!it) return;
-        int idx = it->data(Qt::UserRole).toInt();
-        if(idx < 0 || idx >= mesClients.size()) return;
-        modeModifClient = true; indexModifClient = idx;
 
-        const ClientInfo &c = mesClients[idx];
-        ui->le_id_client->setText(c.id);
-        ui->le_nom_client->setText(c.nom);
-        ui->le_tel_client->setText(c.telephone);
-        ui->le_adresse_client->setText(c.adresse);
-        ui->le_email_client->setText(c.email);
-        ui->sb_points_client->setValue(c.pointsFidelite);
-        ui->stackedWidget->setCurrentWidget(ui->page_client_form);
-    });
     connect(ui->btn_delete_client, &QPushButton::clicked, [=](){
         int r = ui->tableClients->currentRow();
         if(r < 0) return;
@@ -778,12 +859,20 @@ MainWindow::MainWindow(QWidget *parent)
     });
 
     // Dépôt CRUD
+    // Dépôt
     connect(ui->btn_add_depot, &QPushButton::clicked, [=](){
-        modeModifDepot = false; indexModifDepot = -1;
-        ui->le_id_depot->clear(); ui->le_emplacement_depot->clear(); ui->le_etagere_depot->clear();
-        ui->sb_capacite_depot->setValue(0.0); ui->sb_qte_depot->setValue(0.0);
-        ui->cb_type_depot->setCurrentIndex(0);
-        ui->stackedWidget->setCurrentWidget(ui->page_depot_form);
+        ouvrirDialogueDepot(false);
+    });
+    connect(ui->btn_edit_depot, &QPushButton::clicked, [=](){
+        int idx = ui->tableDepot->currentRow();
+        if(idx < 0) {
+            QMessageBox::warning(this, "Sélection", "Sélectionnez un emplacement.");
+            return;
+        }
+        indexModifDepot = ui->tableDepot->item(idx, 0)->data(Qt::UserRole).toInt();
+
+        // UNIQUEMENT LA POP-UP
+        ouvrirDialogueDepot(true);
     });
     connect(ui->btn_valider_depot, &QPushButton::clicked, [=](){
         DepotInfo d;
@@ -810,24 +899,7 @@ MainWindow::MainWindow(QWidget *parent)
         ui->stackedWidget->setCurrentWidget(ui->page_depot_list);
         rafraichirListeDepots();
     });
-    connect(ui->btn_edit_depot, &QPushButton::clicked, [=](){
-        int r = ui->tableDepot->currentRow();
-        if(r < 0) return;
-        QTableWidgetItem *it = ui->tableDepot->item(r, 0);
-        if(!it) return;
-        int idx = it->data(Qt::UserRole).toInt();
-        if(idx < 0 || idx >= mesDepots.size()) return;
-        modeModifDepot = true; indexModifDepot = idx;
-
-        const DepotInfo &d = mesDepots[idx];
-        ui->le_id_depot->setText(d.id);
-        ui->le_emplacement_depot->setText(d.emplacement);
-        ui->le_etagere_depot->setText(d.etagere);
-        ui->sb_capacite_depot->setValue(d.capaciteMax);
-        ui->sb_qte_depot->setValue(d.quantiteActuelle);
-        ui->cb_type_depot->setCurrentText(d.typeStockage);
-        ui->stackedWidget->setCurrentWidget(ui->page_depot_form);
-    });
+    // --- NOUVELLE FONCTION : FORMULAIRE EN POP-UP ---
     connect(ui->btn_delete_depot, &QPushButton::clicked, [=](){
         int r = ui->tableDepot->currentRow();
         if(r < 0) return;
@@ -1310,6 +1382,139 @@ void MainWindow::showBesoinDialog()
 // =================================================================
 // === POP-UPS (NOUVEAUX: PRODUITS & RH) ===
 // =================================================================
+// --- NOUVELLE FONCTION : FORMULAIRE EN POP-UP ---
+void MainWindow::ouvrirDialoguePlanif(bool estModification) {
+    // 1. Création de la fenêtre (Dialog)
+    QDialog *d = new QDialog(this);
+    d->setWindowTitle(estModification ? "Modifier une Commande" : "Nouvelle Planification");
+    d->setMinimumWidth(500);
+    d->setStyleSheet("background-color: #f3f0eb; font-family: 'Segoe UI'; color: #3e2723;");
+
+    QVBoxLayout *layout = new QVBoxLayout(d);
+
+    // Titre
+    QLabel *titre = new QLabel(estModification ? "MODIFICATION" : "NOUVEL ORDRE");
+    titre->setStyleSheet("font-size: 18px; font-weight: bold; color: #8d5524; margin-bottom: 10px;");
+    titre->setAlignment(Qt::AlignCenter);
+    layout->addWidget(titre);
+
+    // Formulaire
+    QFormLayout *form = new QFormLayout();
+    form->setSpacing(15);
+
+    QComboBox *cbProd = new QComboBox();
+    cbProd->addItems({"Sac Voyage Cuir", "Portefeuille Luxe", "Ceinture Homme", "Sac à Main Femme"});
+    cbProd->setStyleSheet("padding: 8px; border: 1px solid #ccc; border-radius: 4px; background: white;");
+
+    QSpinBox *sbQte = new QSpinBox();
+    sbQte->setRange(1, 10000); sbQte->setValue(50);
+    sbQte->setStyleSheet("padding: 8px; border: 1px solid #ccc; border-radius: 4px; background: white;");
+
+    QComboBox *cbMat = new QComboBox();
+    cbMat->addItems({"Cuir Vachette", "Cuir Agneau", "Cuir Premium"});
+    cbMat->setStyleSheet("padding: 8px; border: 1px solid #ccc; border-radius: 4px; background: white;");
+
+    QDateEdit *dtDeb = new QDateEdit(QDate::currentDate());
+    dtDeb->setCalendarPopup(true);
+    dtDeb->setStyleSheet("padding: 8px; border: 1px solid #ccc; border-radius: 4px; background: white;");
+
+    // Ligne pour la date de fin et l'IA
+    QHBoxLayout *hl_fin = new QHBoxLayout();
+    QLineEdit *leFin = new QLineEdit();
+    leFin->setPlaceholderText("jj/MM/yyyy");
+    leFin->setStyleSheet("padding: 8px; border: 1px solid #ccc; border-radius: 4px; background: white;");
+
+    QPushButton *btnIA = new QPushButton("⚡ IA");
+    btnIA->setCursor(Qt::PointingHandCursor);
+    btnIA->setToolTip("Calculer la date de fin estimée");
+    btnIA->setStyleSheet("background-color: #7b1fa2; color: white; border-radius: 4px; padding: 8px 12px; font-weight: bold;");
+
+    hl_fin->addWidget(leFin);
+    hl_fin->addWidget(btnIA);
+
+    // Ajout au formulaire
+    form->addRow("Produit :", cbProd);
+    form->addRow("Quantité :", sbQte);
+    form->addRow("Matière :", cbMat);
+    form->addRow("Début :", dtDeb);
+    form->addRow("Fin (Est.) :", hl_fin);
+
+    layout->addLayout(form);
+
+    // --- LOGIQUE IA (INTEGRÉE) ---
+    connect(btnIA, &QPushButton::clicked, [=](){
+        double vitesse = cbProd->currentText().contains("Sac") ? 20.0 : 50.0;
+        int jours = std::ceil(sbQte->value() / vitesse) + 1;
+        QDate fin = dtDeb->date().addDays(jours);
+        leFin->setText(fin.toString("dd/MM/yyyy"));
+        leFin->setStyleSheet("background-color: #dcedc8; padding: 8px; border: 1px solid #8bc34a; border-radius: 4px;");
+    });
+
+    // Pré-remplissage si modification
+    int idToEdit = -1;
+    if(estModification && indexModification >= 0 && indexModification < mesCommandes.size()) {
+        CommandeInfo c = mesCommandes[indexModification];
+        // Extraction de l'ID réel (enlever "OF-")
+        idToEdit = c.id.replace("OF-", "").toInt();
+
+        cbProd->setCurrentText(c.produit);
+        sbQte->setValue(c.quantite);
+        // Note: Pour la matière, idéalement il faudrait matcher le texte avec l'ID, ici on simplifie
+        dtDeb->setDate(c.dateDebut);
+        leFin->setText(c.dateFinEstimee);
+    }
+
+    // Boutons Action
+    QHBoxLayout *hl_btns = new QHBoxLayout();
+    QPushButton *btnCancel = new QPushButton("Annuler");
+    btnCancel->setStyleSheet("background-color: #b71c1c; color: white; padding: 10px; border-radius: 5px; font-weight: bold;");
+
+    QPushButton *btnSave = new QPushButton(estModification ? "Modifier" : "Ajouter");
+    btnSave->setStyleSheet("background-color: #8d5524; color: white; padding: 10px; border-radius: 5px; font-weight: bold;");
+
+    hl_btns->addStretch();
+    hl_btns->addWidget(btnCancel);
+    hl_btns->addWidget(btnSave);
+    layout->addSpacing(10);
+    layout->addLayout(hl_btns);
+
+    // --- LOGIQUE SAUVEGARDE ---
+    connect(btnCancel, &QPushButton::clicked, d, &QDialog::reject);
+    connect(btnSave, &QPushButton::clicked, [=](){
+        // 1. Récupération
+        QString p = cbProd->currentText();
+        int q = sbQte->value();
+        QString m = cbMat->currentText(); // Texte envoyé (ID forcé à 1 dans la classe pour l'instant)
+        QDate d1 = dtDeb->date();
+        QDate d2 = QDate::fromString(leFin->text(), "dd/MM/yyyy");
+        if(!d2.isValid()) d2 = d1.addDays(3);
+
+        // 2. Appel SQL
+        OrdreFabrication o(p, q, m, d1, d2, "Planifié");
+        bool ok = false;
+
+        if(estModification) {
+            ok = o.modifier(idToEdit);
+        } else {
+            ok = o.ajouter();
+        }
+
+        if(ok) {
+            QMessageBox::information(d, "Succès", estModification ? "Commande modifiée !" : "Commande ajoutée !");
+            rafraichirListeCommandes(); // Mise à jour du tableau derrière
+            configurerTimelineGantt();
+            d->accept(); // Ferme la fenêtre
+        } else {
+            QMessageBox::critical(d, "Erreur", "Opération échouée en base de données.");
+        }
+    });
+
+    // Affichage Modale (Bloque le reste tant que pas fermé)
+    d->exec();
+
+    // Nettoyage mémoire auto à la fin de la fonction
+    delete d;
+}
 
 // 3. SIMULATEUR RENTABILITÉ (Produits)
 void MainWindow::showProdSimDialog() {
@@ -2338,19 +2543,64 @@ void MainWindow::calculerStatsProduits() {
     ui->pb_cuir_croco->setValue(croco);
 }
 void MainWindow::rafraichirListeCommandes() {
-    ui->tablePlanif->setRowCount(0); ui->tablePlanif->setColumnCount(7); ui->tablePlanif->setHorizontalHeaderLabels({"ID","Prod","Qté","Mat","Deb","Fin","Stat"});
-    for(int i=0; i<mesCommandes.size(); i++) {
-        ui->tablePlanif->insertRow(i);
-        auto *it0 = new QTableWidgetItem(mesCommandes[i].id);
-        it0->setData(Qt::UserRole, i);
-        ui->tablePlanif->setItem(i,0,it0);
-        ui->tablePlanif->setItem(i,1,new QTableWidgetItem(mesCommandes[i].produit));
-        ui->tablePlanif->setItem(i,2,new QTableWidgetItem(QString::number(mesCommandes[i].quantite)));
-        ui->tablePlanif->setItem(i,3,new QTableWidgetItem(mesCommandes[i].matiere));
-        ui->tablePlanif->setItem(i,4,new QTableWidgetItem(mesCommandes[i].dateDebut.toString("dd/MM")));
-        ui->tablePlanif->setItem(i,5,new QTableWidgetItem(mesCommandes[i].dateFinEstimee));
-        ui->tablePlanif->setItem(i,6,new QTableWidgetItem(mesCommandes[i].statut));
+    // 1. Récupérer les données de la base
+    QSqlQueryModel *model = tmpOrdre.afficher();
+
+    // 2. Vider la liste locale et le tableau
+    mesCommandes.clear();
+    ui->tablePlanif->setRowCount(0);
+
+    // 3. Configurer le tableau
+    ui->tablePlanif->setColumnCount(7);
+    ui->tablePlanif->setHorizontalHeaderLabels({"ID", "Produit", "Qté", "Matière", "Début", "Fin", "Statut"});
+
+    int rows = model->rowCount();
+    ui->tablePlanif->setRowCount(rows);
+
+    for(int i = 0; i < rows; i++) {
+        // --- CORRECTION DES NOMS DE COLONNES ICI ---
+        QString idStr = model->record(i).value("ID_COMMANDE").toString();
+
+        // Nom corrigé : REF_PRODUIT au lieu de ID_PRODUIT
+        QString prod = model->record(i).value("REF_PRODUIT").toString();
+
+        int qte = model->record(i).value("QUANTITE").toInt();
+
+        // On lit maintenant le CODE (texte) récupéré grâce au JOIN
+        QString mat = model->record(i).value("CODE_MP").toString();
+
+        // Si jamais le code est vide (ex: matière supprimée), on met un texte par défaut
+        if(mat.isEmpty()) mat = "Inconnu/Supprimé";
+
+        QDate deb = model->record(i).value("DATE_LANCEMENT").toDate();
+        QDate fin = model->record(i).value("DATE_FIN_PREVUE").toDate();
+        QString stat = model->record(i).value("STATUT").toString();
+        QString finStr = fin.toString("dd/MM/yyyy");
+
+        // Remplissage du tableau graphique
+        ui->tablePlanif->setItem(i, 0, new QTableWidgetItem(idStr));
+        ui->tablePlanif->setItem(i, 1, new QTableWidgetItem(prod));
+        ui->tablePlanif->setItem(i, 2, new QTableWidgetItem(QString::number(qte)));
+        ui->tablePlanif->setItem(i, 3, new QTableWidgetItem(mat)); // Affiche "1" pour l'instant (l'ID)
+        ui->tablePlanif->setItem(i, 4, new QTableWidgetItem(deb.toString("dd/MM/yyyy")));
+        ui->tablePlanif->setItem(i, 5, new QTableWidgetItem(finStr));
+        ui->tablePlanif->setItem(i, 6, new QTableWidgetItem(stat));
+
+        // Mise à jour de la liste locale pour le Gantt
+        CommandeInfo c;
+        c.id = "OF-" + idStr;
+        c.produit = prod;
+        c.quantite = qte;
+        c.matiere = mat;
+        c.dateDebut = deb;
+        c.dateFinEstimee = finStr;
+        c.statut = stat;
+        c.etatEtape = 0;
+
+        mesCommandes.append(c);
     }
+
+    delete model;
 }
 void MainWindow::calculerEtAfficherStats() {
     const int total = mesCommandes.size();
@@ -2471,79 +2721,645 @@ void MainWindow::showPlanifIaDialog() {
 
     d.exec();
 }
+// =========================================================
+// ===    FORMULAIRES POP-UP AVEC DESIGN "FIL D'OR"    ===
+// =========================================================
+
+// Style commun pour éviter la répétition
+static QString stylePopup() {
+    return "QDialog { background-color: #f3f0eb; font-family: 'Segoe UI'; color: #3e2723; }"
+           "QLabel { font-size: 14px; font-weight: bold; color: #5d4037; }"
+           "QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit { "
+           "    background-color: white; border: 1px solid #d7ccc8; border-radius: 6px; padding: 8px; font-size: 13px; color: #3e2723;"
+           "}"
+           "QLineEdit:focus, QComboBox:focus { border: 2px solid #8d5524; }";
+}
+
+static QString styleBtnSave() {
+    return "QPushButton { background-color: #8d5524; color: white; border-radius: 6px; padding: 10px 20px; font-weight: bold; font-size: 13px; }"
+           "QPushButton:hover { background-color: #a1887f; }";
+}
+
+static QString styleBtnCancel() {
+    return "QPushButton { background-color: #b71c1c; color: white; border-radius: 6px; padding: 10px 20px; font-weight: bold; font-size: 13px; }"
+           "QPushButton:hover { background-color: #d32f2f; }";
+}
+
+// --- 1. MODULE PRODUITS ---
+void MainWindow::ouvrirDialogueProduit(bool estModif) {
+    QDialog d(this);
+    d.setWindowTitle(estModif ? "Modifier Produit" : "Nouveau Produit");
+    d.setMinimumWidth(450);
+    d.setStyleSheet(stylePopup());
+
+    QVBoxLayout *l = new QVBoxLayout(&d);
+
+    // Titre
+    QLabel *titre = new QLabel(estModif ? "ÉDITION PRODUIT" : "CRÉATION PRODUIT");
+    titre->setStyleSheet("font-size: 18px; font-weight: 800; color: #8d5524; margin-bottom: 10px;");
+    titre->setAlignment(Qt::AlignCenter);
+    l->addWidget(titre);
+
+    QFormLayout *f = new QFormLayout();
+    f->setSpacing(15);
+
+    QLineEdit *leRef = new QLineEdit(); leRef->setPlaceholderText("Ex: SAC-H-2026");
+    QLineEdit *leNom = new QLineEdit();
+    QDoubleSpinBox *sbCout = new QDoubleSpinBox(); sbCout->setMaximum(10000);
+    QComboBox *cbColl = new QComboBox(); cbColl->addItems({"Hiver 2026", "Étè 2026", "Intemporel"});
+    QComboBox *cbCuir = new QComboBox(); cbCuir->addItems({"Vachette", "Agneau", "Croco", "Exotique"});
+    QSpinBox *sbTemps = new QSpinBox();
+
+    f->addRow("Référence :", leRef);
+    f->addRow("Désignation :", leNom);
+    f->addRow("Coût Matière (€) :", sbCout);
+    f->addRow("Collection :", cbColl);
+    f->addRow("Type Cuir :", cbCuir);
+    f->addRow("Temps Fab. (h) :", sbTemps);
+    l->addLayout(f);
+
+    if(estModif && indexModifProd >= 0 && indexModifProd < mesProduits.size()) {
+        const auto &p = mesProduits[indexModifProd];
+        leRef->setText(p.ref); leNom->setText(p.nom); sbCout->setValue(p.coutMatiere);
+        cbColl->setCurrentText(p.collection); cbCuir->setCurrentText(p.cuir); sbTemps->setValue(p.temps);
+    }
+
+    // Boutons Custom
+    QHBoxLayout *hl = new QHBoxLayout();
+    QPushButton *btnCancel = new QPushButton("Annuler"); btnCancel->setStyleSheet(styleBtnCancel());
+    QPushButton *btnSave = new QPushButton(estModif ? "Modifier" : "Ajouter"); btnSave->setStyleSheet(styleBtnSave());
+    hl->addStretch(); hl->addWidget(btnCancel); hl->addWidget(btnSave);
+    l->addSpacing(10); l->addLayout(hl);
+
+    connect(btnCancel, &QPushButton::clicked, &d, &QDialog::reject);
+    connect(btnSave, &QPushButton::clicked, [&](){
+        if(leRef->text().isEmpty() || leNom->text().isEmpty()) {
+            QMessageBox::warning(&d, "Erreur", "Référence et Nom sont obligatoires.");
+            return;
+        }
+        ProduitInfo p = {leRef->text(), leNom->text(), sbCout->value(), cbColl->currentText(), cbCuir->currentText(), sbTemps->value()};
+
+        if(estModif) mesProduits[indexModifProd] = p;
+        else mesProduits.append(p);
+
+        rafraichirListeProduits();
+        d.accept();
+    });
+    d.exec();
+}
+
+// --- 2. MODULE EMPLOYÉS (RH) ---
+void MainWindow::ouvrirDialogueEmploye(bool estModif) {
+    QDialog d(this);
+    d.setWindowTitle(estModif ? "Modifier Employé" : "Recrutement");
+    d.setMinimumWidth(450);
+    d.setStyleSheet(stylePopup());
+
+    QVBoxLayout *l = new QVBoxLayout(&d);
+
+    QLabel *titre = new QLabel(estModif ? "DOSSIER EMPLOYÉ" : "RECRUTEMENT");
+    titre->setStyleSheet("font-size: 18px; font-weight: 800; color: #8d5524; margin-bottom: 10px;");
+    titre->setAlignment(Qt::AlignCenter);
+    l->addWidget(titre);
+
+    QFormLayout *f = new QFormLayout();
+    f->setSpacing(15);
+
+    QLineEdit *leId = new QLineEdit();
+    QLineEdit *leNom = new QLineEdit();
+    QLineEdit *lePre = new QLineEdit();
+    QComboBox *cbPoste = new QComboBox(); cbPoste->addItems({"Artisan Maroquinier", "Coupeur", "Chef Atelier", "Contrôle Qualité", "Designer"});
+    QComboBox *cbDept = new QComboBox(); cbDept->addItems({"Production", "Logistique", "Bureau Études", "Commercial"});
+    QDateEdit *dtEmb = new QDateEdit(QDate::currentDate()); dtEmb->setCalendarPopup(true);
+    QDoubleSpinBox *sbSal = new QDoubleSpinBox(); sbSal->setMaximum(100000); sbSal->setSingleStep(50);
+    QLineEdit *leRfid = new QLineEdit(); leRfid->setPlaceholderText("Scan Badge...");
+
+    f->addRow("ID Unique :", leId);
+    f->addRow("Nom :", leNom);
+    f->addRow("Prénom :", lePre);
+    f->addRow("Poste :", cbPoste);
+    f->addRow("Département :", cbDept);
+    f->addRow("Date Embauche :", dtEmb);
+    f->addRow("Salaire (€) :", sbSal);
+    f->addRow("Badge RFID :", leRfid);
+    l->addLayout(f);
+
+    if(estModif && indexModifEmp >= 0 && indexModifEmp < mesEmployes.size()) {
+        const auto &e = mesEmployes[indexModifEmp];
+        leId->setText(e.id); leNom->setText(e.nom); lePre->setText(e.prenom);
+        cbPoste->setCurrentText(e.poste); cbDept->setCurrentText(e.departement);
+        dtEmb->setDate(e.dateEmbauche); sbSal->setValue(e.salaire); leRfid->setText(e.rfid);
+    }
+
+    QHBoxLayout *hl = new QHBoxLayout();
+    QPushButton *btnCancel = new QPushButton("Annuler"); btnCancel->setStyleSheet(styleBtnCancel());
+    QPushButton *btnSave = new QPushButton(estModif ? "Enregistrer" : "Recruter"); btnSave->setStyleSheet(styleBtnSave());
+    hl->addStretch(); hl->addWidget(btnCancel); hl->addWidget(btnSave);
+    l->addSpacing(10); l->addLayout(hl);
+
+    connect(btnCancel, &QPushButton::clicked, &d, &QDialog::reject);
+    connect(btnSave, &QPushButton::clicked, [&](){
+        if(leId->text().isEmpty() || leNom->text().isEmpty()) return;
+        EmployeInfo e = {leId->text(), leNom->text(), lePre->text(), cbPoste->currentText(), cbDept->currentText(), dtEmb->date(), sbSal->value(), leRfid->text()};
+
+        if(estModif) mesEmployes[indexModifEmp] = e;
+        else mesEmployes.append(e);
+
+        rafraichirListeEmployes();
+        d.accept();
+    });
+    d.exec();
+}
+
+// --- 3. MODULE STOCK ---
+void MainWindow::ouvrirDialogueStock(bool estModif) {
+    QDialog d(this);
+    d.setWindowTitle(estModif ? "Modifier Matière" : "Nouvelle Matière");
+    d.setMinimumWidth(450);
+    d.setStyleSheet(stylePopup());
+
+    QVBoxLayout *l = new QVBoxLayout(&d);
+
+    QLabel *titre = new QLabel(estModif ? "MODIFIER STOCK" : "AJOUT STOCK");
+    titre->setStyleSheet("font-size: 18px; font-weight: 800; color: #8d5524; margin-bottom: 10px;");
+    titre->setAlignment(Qt::AlignCenter);
+    l->addWidget(titre);
+
+    QFormLayout *f = new QFormLayout();
+    f->setSpacing(15);
+
+    QLineEdit *leCode = new QLineEdit();
+    QComboBox *cbCat = new QComboBox(); cbCat->addItems({"Cuir", "Teinture", "Fil", "Accessoire Métal", "Produit Chimique"});
+    QComboBox *cbEtat = new QComboBox(); cbEtat->addItems({"BRUT", "TEINT", "TRAITÉ", "FINI"});
+    QLineEdit *leCoul = new QLineEdit();
+    QComboBox *cbQual = new QComboBox(); cbQual->addItems({"A (Premium)", "B (Standard)", "C (Eco)"});
+    QDoubleSpinBox *sbQte = new QDoubleSpinBox(); sbQte->setMaximum(100000);
+    QComboBox *cbUnite = new QComboBox(); cbUnite->addItems({"M2", "Kg", "Litre", "Pièce"});
+    QComboBox *cbZone = new QComboBox(); cbZone->addItems({"Zone A", "Zone B", "Zone C", "Zone Frigo"});
+
+    f->addRow("Code Matière :", leCode);
+    f->addRow("Catégorie :", cbCat);
+    f->addRow("État :", cbEtat);
+    f->addRow("Couleur :", leCoul);
+    f->addRow("Qualité :", cbQual);
+    f->addRow("Quantité :", sbQte);
+    f->addRow("Unité :", cbUnite);
+    f->addRow("Zone Stockage :", cbZone);
+    l->addLayout(f);
+
+    if(estModif && indexModifStock >= 0 && indexModifStock < mesMatieres.size()) {
+        const auto &m = mesMatieres[indexModifStock];
+        leCode->setText(m.code); cbCat->setCurrentText(m.categorie); cbEtat->setCurrentText(m.etat);
+        leCoul->setText(m.couleur); cbQual->setCurrentText(m.qualite); sbQte->setValue(m.quantite);
+        cbUnite->setCurrentText(m.unite); cbZone->setCurrentText(m.zone);
+    }
+
+    QHBoxLayout *hl = new QHBoxLayout();
+    QPushButton *btnCancel = new QPushButton("Annuler"); btnCancel->setStyleSheet(styleBtnCancel());
+    QPushButton *btnSave = new QPushButton("Valider"); btnSave->setStyleSheet(styleBtnSave());
+    hl->addStretch(); hl->addWidget(btnCancel); hl->addWidget(btnSave);
+    l->addSpacing(10); l->addLayout(hl);
+
+    connect(btnCancel, &QPushButton::clicked, &d, &QDialog::reject);
+    connect(btnSave, &QPushButton::clicked, [&](){
+        if(leCode->text().isEmpty()) return;
+        MatiereInfo m = {leCode->text(), cbCat->currentText(), cbEtat->currentText(), leCoul->text(), cbQual->currentText(), sbQte->value(), cbUnite->currentText(), cbZone->currentText(), "", "Standard", QDate::currentDate()};
+
+        if(estModif) mesMatieres[indexModifStock] = m;
+        else mesMatieres.append(m);
+
+        rafraichirListeMatieres();
+        d.accept();
+    });
+    d.exec();
+}
+
+// --- 4. MODULE CLIENTS ---
+void MainWindow::ouvrirDialogueClient(bool estModif) {
+    QDialog d(this);
+    d.setWindowTitle(estModif ? "Fiche Client" : "Nouveau Client");
+    d.setMinimumWidth(450);
+    d.setStyleSheet(stylePopup());
+
+    QVBoxLayout *l = new QVBoxLayout(&d);
+
+    QLabel *titre = new QLabel(estModif ? "MODIFIER CLIENT" : "NOUVEAU CLIENT");
+    titre->setStyleSheet("font-size: 18px; font-weight: 800; color: #8d5524; margin-bottom: 10px;");
+    titre->setAlignment(Qt::AlignCenter);
+    l->addWidget(titre);
+
+    QFormLayout *f = new QFormLayout();
+    f->setSpacing(15);
+
+    QLineEdit *leId = new QLineEdit();
+    QLineEdit *leNom = new QLineEdit();
+    QLineEdit *leTel = new QLineEdit();
+    QLineEdit *leAdr = new QLineEdit();
+    QLineEdit *leMail = new QLineEdit();
+    QSpinBox *sbPts = new QSpinBox(); sbPts->setMaximum(100000);
+
+    f->addRow("Identifiant :", leId);
+    f->addRow("Nom Complet :", leNom);
+    f->addRow("Téléphone :", leTel);
+    f->addRow("Adresse :", leAdr);
+    f->addRow("Email :", leMail);
+    f->addRow("Points Fidélité :", sbPts);
+    l->addLayout(f);
+
+    if(estModif && indexModifClient >= 0 && indexModifClient < mesClients.size()) {
+        const auto &c = mesClients[indexModifClient];
+        leId->setText(c.id); leNom->setText(c.nom); leTel->setText(c.telephone);
+        leAdr->setText(c.adresse); leMail->setText(c.email); sbPts->setValue(c.pointsFidelite);
+    }
+
+    QHBoxLayout *hl = new QHBoxLayout();
+    QPushButton *btnCancel = new QPushButton("Annuler"); btnCancel->setStyleSheet(styleBtnCancel());
+    QPushButton *btnSave = new QPushButton("Sauvegarder"); btnSave->setStyleSheet(styleBtnSave());
+    hl->addStretch(); hl->addWidget(btnCancel); hl->addWidget(btnSave);
+    l->addSpacing(10); l->addLayout(hl);
+
+    connect(btnCancel, &QPushButton::clicked, &d, &QDialog::reject);
+    connect(btnSave, &QPushButton::clicked, [&](){
+        if(leId->text().isEmpty() || leNom->text().isEmpty()) return;
+        ClientInfo c = {leId->text(), leNom->text(), leTel->text(), leAdr->text(), leMail->text(), sbPts->value()};
+
+        if(estModif) mesClients[indexModifClient] = c;
+        else mesClients.append(c);
+
+        rafraichirListeClients();
+        d.accept();
+    });
+    d.exec();
+}
+
+// --- 5. MODULE DÉPÔT ---
+void MainWindow::ouvrirDialogueDepot(bool estModif) {
+    QDialog d(this);
+    d.setWindowTitle(estModif ? "Gestion Emplacement" : "Nouvel Emplacement");
+    d.setMinimumWidth(450);
+    d.setStyleSheet(stylePopup());
+
+    QVBoxLayout *l = new QVBoxLayout(&d);
+
+    QLabel *titre = new QLabel(estModif ? "DÉTAIL EMPLACEMENT" : "AJOUT EMPLACEMENT");
+    titre->setStyleSheet("font-size: 18px; font-weight: 800; color: #8d5524; margin-bottom: 10px;");
+    titre->setAlignment(Qt::AlignCenter);
+    l->addWidget(titre);
+
+    QFormLayout *f = new QFormLayout();
+    f->setSpacing(15);
+
+    QLineEdit *leId = new QLineEdit();
+    QLineEdit *leEmp = new QLineEdit(); leEmp->setPlaceholderText("Ex: Zone A - Allée 3");
+    QLineEdit *leEta = new QLineEdit();
+    QDoubleSpinBox *sbCap = new QDoubleSpinBox(); sbCap->setMaximum(100000);
+    QDoubleSpinBox *sbAct = new QDoubleSpinBox(); sbAct->setMaximum(100000);
+    QComboBox *cbType = new QComboBox(); cbType->addItems({"Sec", "Froid", "Sécurisé"});
+
+    f->addRow("ID Emplacement :", leId);
+    f->addRow("Zone / Allée :", leEmp);
+    f->addRow("Étagère :", leEta);
+    f->addRow("Capacité Max :", sbCap);
+    f->addRow("Quantité Actuelle :", sbAct);
+    f->addRow("Type de Stockage :", cbType);
+    l->addLayout(f);
+
+    if(estModif && indexModifDepot >= 0 && indexModifDepot < mesDepots.size()) {
+        const auto &dp = mesDepots[indexModifDepot];
+        leId->setText(dp.id); leEmp->setText(dp.emplacement); leEta->setText(dp.etagere);
+        sbCap->setValue(dp.capaciteMax); sbAct->setValue(dp.quantiteActuelle); cbType->setCurrentText(dp.typeStockage);
+    }
+
+    QHBoxLayout *hl = new QHBoxLayout();
+    QPushButton *btnCancel = new QPushButton("Annuler"); btnCancel->setStyleSheet(styleBtnCancel());
+    QPushButton *btnSave = new QPushButton("Confirmer"); btnSave->setStyleSheet(styleBtnSave());
+    hl->addStretch(); hl->addWidget(btnCancel); hl->addWidget(btnSave);
+    l->addSpacing(10); l->addLayout(hl);
+
+    connect(btnCancel, &QPushButton::clicked, &d, &QDialog::reject);
+    connect(btnSave, &QPushButton::clicked, [&](){
+        if(leId->text().isEmpty()) return;
+        DepotInfo dp = {leId->text(), leEmp->text(), leEta->text(), sbCap->value(), sbAct->value(), cbType->currentText()};
+
+        if(estModif) mesDepots[indexModifDepot] = dp;
+        else mesDepots.append(dp);
+
+        rafraichirListeDepots();
+        d.accept();
+    });
+    d.exec();
+}
 // --------------------------- FABRICATION (TIMELINE GANTT) ---------------------------
 void MainWindow::configurerTimelineGantt() {
     QTableWidget *t = ui->tableTimeline;
     t->clear();
     t->setRowCount(0);
 
-    int jours = 30; // Nombre de jours à afficher
-    t->setColumnCount(1 + jours); // 1 colonne Produit + 30 colonnes jours
+    int jours = 31; // On affiche un mois complet
+    t->setColumnCount(1 + jours);
 
-    // Génération des en-têtes avec la date d'aujourd'hui
     QStringList headers;
     headers << "PRODUIT";
 
-    QDate today = QDate::currentDate(); // Date du jour dynamique
+    QDate today = QDate::currentDate();
 
     for(int i = 0; i < jours; i++) {
-        // Affiche le jour (ex: "09" pour le 9 février)
         headers << today.addDays(i).toString("dd");
     }
 
     t->setHorizontalHeaderLabels(headers);
-
-    // Ajustement des largeurs
-    t->setColumnWidth(0, 200); // Colonne Produit large
+    t->setColumnWidth(0, 200);
     for(int i = 1; i <= jours; i++) {
-        t->setColumnWidth(i, 35); // Colonnes jours étroites
+        t->setColumnWidth(i, 35);
     }
 
-    // Remplissage des données (Commandes)
     t->setRowCount(mesCommandes.size());
     for(int i = 0; i < mesCommandes.size(); i++) {
-        // Colonne 0 : Nom de la commande
         t->setItem(i, 0, new QTableWidgetItem(mesCommandes[i].id));
         t->setRowHeight(i, 50);
 
-        // Calcul du décalage (offset) par rapport à aujourd'hui
-        // Si la commande commence aujourd'hui, offset = 0.
-        // Si elle commence demain, offset = 1.
         int offset = today.daysTo(mesCommandes[i].dateDebut);
+        if(offset < 0) offset = 0; // Si c'est commencé avant aujourd'hui, on commence à la col 1
 
-        // Si la commande est dans le passé, on ne l'affiche pas ou on la coupe
-        if(offset < 0) offset = 0;
+        // --- CALCUL DYNAMIQUE ---
+        // 1. On récupère la date de fin réelle stockée en base
+        QDate dateFin = QDate::fromString(mesCommandes[i].dateFinEstimee, "dd/MM/yyyy");
 
-        // Définition des couleurs (Identique à ta demande précédente)
-        QColor c1(41,128,185); // Bleu (Coupe)
-        QColor c2(211,84,0);   // Orange (Assemblage)
-        QColor c3(39,174,96);  // Vert (Couture)
-        QColor c4(241,196,15); // Jaune (Finition)
+        // 2. On calcule la durée totale disponible (en jours)
+        int dureeTotale = mesCommandes[i].dateDebut.daysTo(dateFin);
+        if (dureeTotale < 1) dureeTotale = 1; // Minimum 1 jour
 
-        // Gestion du statut (Retard / OK)
-        if(mesCommandes[i].etatEtape == 2) { // Retard
-            QColor r(192,57,43); // Rouge
-            if(mesCommandes[i].etapeAuditee == "Coupe") c1 = r;
-            else if(mesCommandes[i].etapeAuditee == "Assemblage") c2 = r;
-            else if(mesCommandes[i].etapeAuditee == "Couture") c3 = r;
-            else c4 = r;
-        }
-        else if(mesCommandes[i].etatEtape == 1) { // OK
-            QColor o(46,204,113); // Vert clair
-            if(mesCommandes[i].etapeAuditee == "Coupe") c1 = o;
-            else if(mesCommandes[i].etapeAuditee == "Assemblage") c2 = o;
-            else if(mesCommandes[i].etapeAuditee == "Couture") c3 = o;
-            else c4 = o;
-        }
+        // 3. On répartit cette durée proportionnellement sur les 4 étapes
+        // Coupe (20%), Assemblage (30%), Couture (30%), Finition (reste)
+        int d1 = std::max(1, (int)(dureeTotale * 0.2));
+        int d2 = std::max(1, (int)(dureeTotale * 0.3));
+        int d3 = std::max(1, (int)(dureeTotale * 0.3));
+        int d4 = std::max(1, dureeTotale - d1 - d2 - d3); // Le reste pour tomber juste
 
-        // Dessin des barres (offset + 1 car la colonne 0 est le nom du produit)
-        // Vérification pour ne pas dessiner hors du tableau
-        if(offset < jours) dessinerBarre(i, offset + 1, 2, "Cp", c1, Qt::white);
-        if(offset + 2 < jours) dessinerBarre(i, offset + 3, 3, "As", c2, Qt::white);
-        if(offset + 5 < jours) dessinerBarre(i, offset + 6, 3, "Co", c3, Qt::white);
-        if(offset + 8 < jours) dessinerBarre(i, offset + 9, 2, "Fi", c4, Qt::black);
+        // Couleurs
+        QColor c1(41,128,185), c2(211,84,0), c3(39,174,96), c4(241,196,15);
+        if(mesCommandes[i].etatEtape == 2) { QColor r(192,57,43); c1=c2=c3=c4=r; } // Rouge si retard global
+        else if(mesCommandes[i].etatEtape == 1) { QColor v(46,204,113); c1=c2=c3=c4=v; } // Vert si OK global
+
+        // 4. Dessin des barres (Les unes à la suite des autres)
+        int currentPos = offset + 1; // +1 car la colonne 0 est le nom
+
+        if(currentPos < jours) dessinerBarre(i, currentPos, d1, "Cp", c1, Qt::white);
+        currentPos += d1;
+
+        if(currentPos < jours) dessinerBarre(i, currentPos, d2, "As", c2, Qt::white);
+        currentPos += d2;
+
+        if(currentPos < jours) dessinerBarre(i, currentPos, d3, "Co", c3, Qt::white);
+        currentPos += d3;
+
+        if(currentPos < jours) dessinerBarre(i, currentPos, d4, "Fi", c4, Qt::black);
+    }
+}
+// =========================================================
+// ===      TABLEAUX DE BORD (STATS) EN POP-UP           ===
+// =========================================================
+
+// Utilitaire pour créer une jolie carte (KPI)
+QFrame* MainWindow::creerCarteStat(QString icone, QString val, QString titre, QString couleurFond) {
+    QFrame *f = new QFrame();
+    f->setStyleSheet(QString("QFrame { background: %1; border-radius: 10px; }").arg(couleurFond));
+    f->setMinimumHeight(100);
+    QVBoxLayout *l = new QVBoxLayout(f);
+
+    QLabel *l_ico = new QLabel(icone); l_ico->setStyleSheet("font-size: 24px; border:none; color: white;");
+    QLabel *l_val = new QLabel(val); l_val->setStyleSheet("font-size: 28px; font-weight:900; color: white; border:none;");
+    QLabel *l_tit = new QLabel(titre); l_tit->setStyleSheet("font-size: 13px; font-weight:bold; color: #f0f0f0; border:none;");
+
+    l_ico->setAlignment(Qt::AlignRight);
+    l_val->setAlignment(Qt::AlignCenter);
+    l_tit->setAlignment(Qt::AlignCenter);
+
+    l->addWidget(l_ico);
+    l->addWidget(l_val);
+    l->addWidget(l_tit);
+    return f;
+}
+
+// --- 1. STATS PRODUITS ---
+void MainWindow::ouvrirStatsProduits() {
+    QDialog d(this);
+    d.setWindowTitle("Statistiques Catalogue");
+    d.setMinimumSize(800, 600);
+    d.setStyleSheet("background-color: #f3f0eb; color: #3e2723;");
+
+    QVBoxLayout *mainL = new QVBoxLayout(&d);
+
+    // Titre
+    QLabel *t = new QLabel("DASHBOARD PRODUITS");
+    t->setStyleSheet("font-size: 22px; font-weight: 800; color: #8d5524; margin-bottom: 10px;");
+    t->setAlignment(Qt::AlignCenter); mainL->addWidget(t);
+
+    // Calculs
+    int total = mesProduits.size();
+    double prixTotal = 0;
+    QMap<QString, double> parCollection;
+    QMap<QString, double> parCuir;
+
+    for(const auto &p : mesProduits) {
+        prixTotal += p.coutMatiere;
+        parCollection[p.collection] += 1;
+        parCuir[p.cuir] += 1;
+    }
+    double moy = (total > 0) ? prixTotal / total : 0;
+
+    // Cartes KPI
+    QHBoxLayout *kpiL = new QHBoxLayout();
+    kpiL->addWidget(creerCarteStat("👜", QString::number(total), "Références", "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #d4af37, stop:1 #8d5524)"));
+    kpiL->addWidget(creerCarteStat("💰", QString::number(moy, 'f', 1) + " €", "Coût Moyen", "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #2c3e50, stop:1 #4ca1af)"));
+    mainL->addLayout(kpiL);
+
+    // Graphiques
+    QHBoxLayout *chartsL = new QHBoxLayout();
+
+    QWidget *wPie = new QWidget();
+    QList<QPair<QString, double>> slicesColl;
+    for(auto k : parCollection.keys()) slicesColl.append({k, parCollection[k]});
+    setPieChart(wPie, "Collections", slicesColl);
+
+    QWidget *wBar = new QWidget();
+    QStringList cats = parCuir.keys();
+    QList<double> vals; for(auto k : cats) vals << parCuir[k];
+    setVerticalBarChart(wBar, "Types de Cuir", cats, vals);
+
+    chartsL->addWidget(wPie);
+    chartsL->addWidget(wBar);
+    mainL->addLayout(chartsL);
+
+    // Bouton Fermer
+    QPushButton *btn = new QPushButton("Fermer");
+    btn->setStyleSheet(styleBtnCancel());
+    connect(btn, &QPushButton::clicked, &d, &QDialog::accept);
+    mainL->addWidget(btn, 0, Qt::AlignCenter);
+
+    d.exec();
+}
+
+// --- 2. STATS RH ---
+void MainWindow::ouvrirStatsRH() {
+    QDialog d(this);
+    d.setWindowTitle("Statistiques RH"); d.setMinimumSize(800, 600);
+    d.setStyleSheet("background-color: #f3f0eb; color: #3e2723;");
+    QVBoxLayout *mainL = new QVBoxLayout(&d);
+
+    QLabel *t = new QLabel("ANALYSE RESSOURCES HUMAINES");
+    t->setStyleSheet("font-size: 22px; font-weight: 800; color: #8d5524;");
+    t->setAlignment(Qt::AlignCenter); mainL->addWidget(t);
+
+    int total = mesEmployes.size();
+    double masseSal = 0;
+    QMap<QString, double> parDept;
+
+    for(const auto &e : mesEmployes) {
+        masseSal += e.salaire;
+        parDept[e.departement] += 1;
     }
 
+    QHBoxLayout *kpiL = new QHBoxLayout();
+    kpiL->addWidget(creerCarteStat("👥", QString::number(total), "Employés", "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #11998e, stop:1 #38ef7d)"));
+    kpiL->addWidget(creerCarteStat("💸", QString::number(masseSal) + " €", "Masse Salariale", "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #FF5F6D, stop:1 #FFC371)"));
+    mainL->addLayout(kpiL);
+
+    QWidget *wPie = new QWidget();
+    QList<QPair<QString, double>> slices;
+    for(auto k : parDept.keys()) slices.append({k, parDept[k]});
+    setPieChart(wPie, "Départements", slices);
+    mainL->addWidget(wPie);
+
+    QPushButton *btn = new QPushButton("Fermer"); btn->setStyleSheet(styleBtnCancel());
+    connect(btn, &QPushButton::clicked, &d, &QDialog::accept);
+    mainL->addWidget(btn, 0, Qt::AlignCenter);
+    d.exec();
+}
+
+// --- 3. STATS STOCK ---
+void MainWindow::ouvrirStatsStock() {
+    QDialog d(this);
+    d.setWindowTitle("Statistiques Stock"); d.setMinimumSize(800, 600);
+    d.setStyleSheet("background-color: #f3f0eb; color: #3e2723;");
+    QVBoxLayout *mainL = new QVBoxLayout(&d);
+
+    QLabel *t = new QLabel("ÉTAT DU STOCK");
+    t->setStyleSheet("font-size: 22px; font-weight: 800; color: #8d5524;");
+    t->setAlignment(Qt::AlignCenter); mainL->addWidget(t);
+
+    double volume = 0;
+    QMap<QString, double> parCat;
+    QMap<QString, double> parQual;
+
+    for(const auto &m : mesMatieres) {
+        volume += m.quantite;
+        parCat[m.categorie] += 1;
+        parQual[m.qualite] += 1;
+    }
+
+    QHBoxLayout *kpiL = new QHBoxLayout();
+    kpiL->addWidget(creerCarteStat("📦", QString::number(mesMatieres.size()), "Références MP", "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #4568dc, stop:1 #b06ab3)"));
+    kpiL->addWidget(creerCarteStat("📏", QString::number(volume) + " U", "Volume Total", "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #e1eec3, stop:1 #f05053)"));
+    mainL->addLayout(kpiL);
+
+    QHBoxLayout *chartsL = new QHBoxLayout();
+    QWidget *wPie = new QWidget();
+    QList<QPair<QString, double>> slices;
+    for(auto k : parCat.keys()) slices.append({k, parCat[k]});
+    setPieChart(wPie, "Catégories", slices);
+
+    QWidget *wBar = new QWidget();
+    QStringList cats = parQual.keys();
+    QList<double> vals; for(auto k : cats) vals << parQual[k];
+    setVerticalBarChart(wBar, "Qualité", cats, vals);
+
+    chartsL->addWidget(wPie); chartsL->addWidget(wBar);
+    mainL->addLayout(chartsL);
+
+    QPushButton *btn = new QPushButton("Fermer"); btn->setStyleSheet(styleBtnCancel());
+    connect(btn, &QPushButton::clicked, &d, &QDialog::accept);
+    mainL->addWidget(btn, 0, Qt::AlignCenter);
+    d.exec();
+}
+
+// --- 4. STATS CLIENTS ---
+void MainWindow::ouvrirStatsClients() {
+    QDialog d(this);
+    d.setWindowTitle("Statistiques Clients"); d.setMinimumSize(800, 600);
+    d.setStyleSheet("background-color: #f3f0eb; color: #3e2723;");
+    QVBoxLayout *mainL = new QVBoxLayout(&d);
+
+    QLabel *t = new QLabel("INTELLIGENCE CLIENTS");
+    t->setStyleSheet("font-size: 22px; font-weight: 800; color: #8d5524;");
+    t->setAlignment(Qt::AlignCenter); mainL->addWidget(t);
+
+    int vip = 0;
+    QMap<QString, double> parVille;
+    for(const auto &c : mesClients) {
+        if(c.pointsFidelite >= 100) vip++;
+        // Extraction simplifiée de la ville (basé sur le texte adresse)
+        QString ville = "Autre";
+        if(c.adresse.toLower().contains("tunis")) ville = "Tunis";
+        else if(c.adresse.toLower().contains("sfax")) ville = "Sfax";
+        else if(c.adresse.toLower().contains("sousse")) ville = "Sousse";
+        parVille[ville] += 1;
+    }
+
+    QHBoxLayout *kpiL = new QHBoxLayout();
+    kpiL->addWidget(creerCarteStat("🧾", QString::number(mesClients.size()), "Clients Total", "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #1c92d2, stop:1 #f2fcfe)"));
+    kpiL->addWidget(creerCarteStat("👑", QString::number(vip), "Clients VIP", "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #d4af37, stop:1 #f7f1e3)"));
+    mainL->addLayout(kpiL);
+
+    QWidget *wPie = new QWidget();
+    QList<QPair<QString, double>> slices;
+    for(auto k : parVille.keys()) slices.append({k, parVille[k]});
+    setPieChart(wPie, "Répartition Géographique", slices);
+    mainL->addWidget(wPie);
+
+    QPushButton *btn = new QPushButton("Fermer"); btn->setStyleSheet(styleBtnCancel());
+    connect(btn, &QPushButton::clicked, &d, &QDialog::accept);
+    mainL->addWidget(btn, 0, Qt::AlignCenter);
+    d.exec();
+}
+
+// --- 5. STATS DÉPÔT ---
+void MainWindow::ouvrirStatsDepot() {
+    QDialog d(this);
+    d.setWindowTitle("Statistiques Dépôt"); d.setMinimumSize(800, 600);
+    d.setStyleSheet("background-color: #f3f0eb; color: #3e2723;");
+    QVBoxLayout *mainL = new QVBoxLayout(&d);
+
+    QLabel *t = new QLabel("CAPACITÉ & STOCKAGE");
+    t->setStyleSheet("font-size: 22px; font-weight: 800; color: #8d5524;");
+    t->setAlignment(Qt::AlignCenter); mainL->addWidget(t);
+
+    double totalCap = 0;
+    double currentLoad = 0;
+    QMap<QString, double> parType;
+
+    for(const auto &dp : mesDepots) {
+        totalCap += dp.capaciteMax;
+        currentLoad += dp.quantiteActuelle;
+        parType[dp.typeStockage] += 1;
+    }
+    double taux = (totalCap > 0) ? (currentLoad/totalCap)*100.0 : 0;
+
+    QHBoxLayout *kpiL = new QHBoxLayout();
+    kpiL->addWidget(creerCarteStat("🏭", QString::number(taux, 'f', 1) + "%", "Taux Remplissage", "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #EB3349, stop:1 #F45C43)"));
+    kpiL->addWidget(creerCarteStat("🧊", QString::number(mesDepots.size()), "Emplacements", "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #56ccf2, stop:1 #2f80ed)"));
+    mainL->addLayout(kpiL);
+
+    QWidget *wBar = new QWidget();
+    QStringList types = parType.keys();
+    QList<double> vals; for(auto k : types) vals << parType[k];
+    setVerticalBarChart(wBar, "Types d'emplacement", types, vals);
+    mainL->addWidget(wBar);
+
+    QPushButton *btn = new QPushButton("Fermer"); btn->setStyleSheet(styleBtnCancel());
+    connect(btn, &QPushButton::clicked, &d, &QDialog::accept);
+    mainL->addWidget(btn, 0, Qt::AlignCenter);
+    d.exec();
 }
 void MainWindow::dessinerBarre(int r, int c, int d, QString t, QColor b, QColor f) {
     if(c+d>30) return; QTableWidgetItem *it=new QTableWidgetItem(t); it->setData(Qt::BackgroundRole,b); it->setForeground(f);
