@@ -3,173 +3,179 @@
 cmake_policy(SET CMP0009 NEW)
 
 # _directory_contents at C:/Qt/6.7.3/mingw_64/lib/cmake/Qt6LinguistTools/Qt6LinguistToolsMacros.cmake:55 (file)
-file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/*.c")
+file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/*.c")
 set(OLD_GLOB
   )
 if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
   message("-- GLOB mismatch!")
-  file(TOUCH_NOCREATE "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
+  file(TOUCH_NOCREATE "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
 endif()
 
 # _directory_contents at C:/Qt/6.7.3/mingw_64/lib/cmake/Qt6LinguistTools/Qt6LinguistToolsMacros.cmake:55 (file)
-file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/*.c++")
+file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/*.c++")
 set(OLD_GLOB
   )
 if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
   message("-- GLOB mismatch!")
-  file(TOUCH_NOCREATE "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
+  file(TOUCH_NOCREATE "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
 endif()
 
 # _directory_contents at C:/Qt/6.7.3/mingw_64/lib/cmake/Qt6LinguistTools/Qt6LinguistToolsMacros.cmake:55 (file)
-file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/*.cc")
+file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/*.cc")
 set(OLD_GLOB
   )
 if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
   message("-- GLOB mismatch!")
-  file(TOUCH_NOCREATE "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
+  file(TOUCH_NOCREATE "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
 endif()
 
 # _directory_contents at C:/Qt/6.7.3/mingw_64/lib/cmake/Qt6LinguistTools/Qt6LinguistToolsMacros.cmake:55 (file)
-file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/*.ch")
+file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/*.ch")
 set(OLD_GLOB
   )
 if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
   message("-- GLOB mismatch!")
-  file(TOUCH_NOCREATE "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
+  file(TOUCH_NOCREATE "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
 endif()
 
 # _directory_contents at C:/Qt/6.7.3/mingw_64/lib/cmake/Qt6LinguistTools/Qt6LinguistToolsMacros.cmake:55 (file)
-file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/*.cpp")
+file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/*.cpp")
 set(OLD_GLOB
-  "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/3.30.5/CompilerIdCXX/CMakeCXXCompilerId.cpp"
-  "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/ProjetCpp_autogen/EWIEGA46WW/moc_mainwindow.cpp"
-  "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/ProjetCpp_autogen/mocs_compilation.cpp"
-  "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/main.cpp"
-  "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/mainwindow.cpp"
+  "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/3.30.5/CompilerIdCXX/CMakeCXXCompilerId.cpp"
+  "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/ProjetCpp_autogen/EWIEGA46WW/moc_mainwindow.cpp"
+  "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/ProjetCpp_autogen/EWIEGA46WW/qrc_logo.cpp"
+  "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/ProjetCpp_autogen/mocs_compilation.cpp"
+  "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/connexion.cpp"
+  "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/main.cpp"
+  "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/mainwindow.cpp"
+  "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/ordrefabrication.cpp"
   )
 if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
   message("-- GLOB mismatch!")
-  file(TOUCH_NOCREATE "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
+  file(TOUCH_NOCREATE "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
 endif()
 
 # _directory_contents at C:/Qt/6.7.3/mingw_64/lib/cmake/Qt6LinguistTools/Qt6LinguistToolsMacros.cmake:55 (file)
-file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/*.cxx")
+file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/*.cxx")
 set(OLD_GLOB
   )
 if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
   message("-- GLOB mismatch!")
-  file(TOUCH_NOCREATE "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
+  file(TOUCH_NOCREATE "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
 endif()
 
 # _directory_contents at C:/Qt/6.7.3/mingw_64/lib/cmake/Qt6LinguistTools/Qt6LinguistToolsMacros.cmake:55 (file)
-file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/*.h")
+file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/*.h")
 set(OLD_GLOB
-  "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/ProjetCpp_autogen/include/ui_mainwindow.h"
-  "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/ProjetCpp_autogen/moc_predefs.h"
-  "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/mainwindow.h"
+  "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/ProjetCpp_autogen/include/ui_mainwindow.h"
+  "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/ProjetCpp_autogen/moc_predefs.h"
+  "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/connexion.h"
+  "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/mainwindow.h"
+  "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/ordrefabrication.h"
   )
 if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
   message("-- GLOB mismatch!")
-  file(TOUCH_NOCREATE "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
+  file(TOUCH_NOCREATE "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
 endif()
 
 # _directory_contents at C:/Qt/6.7.3/mingw_64/lib/cmake/Qt6LinguistTools/Qt6LinguistToolsMacros.cmake:55 (file)
-file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/*.h++")
+file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/*.h++")
 set(OLD_GLOB
   )
 if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
   message("-- GLOB mismatch!")
-  file(TOUCH_NOCREATE "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
+  file(TOUCH_NOCREATE "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
 endif()
 
 # _directory_contents at C:/Qt/6.7.3/mingw_64/lib/cmake/Qt6LinguistTools/Qt6LinguistToolsMacros.cmake:55 (file)
-file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/*.hh")
+file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/*.hh")
 set(OLD_GLOB
   )
 if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
   message("-- GLOB mismatch!")
-  file(TOUCH_NOCREATE "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
+  file(TOUCH_NOCREATE "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
 endif()
 
 # _directory_contents at C:/Qt/6.7.3/mingw_64/lib/cmake/Qt6LinguistTools/Qt6LinguistToolsMacros.cmake:55 (file)
-file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/*.hpp")
+file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/*.hpp")
 set(OLD_GLOB
   )
 if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
   message("-- GLOB mismatch!")
-  file(TOUCH_NOCREATE "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
+  file(TOUCH_NOCREATE "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
 endif()
 
 # _directory_contents at C:/Qt/6.7.3/mingw_64/lib/cmake/Qt6LinguistTools/Qt6LinguistToolsMacros.cmake:55 (file)
-file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/*.hxx")
+file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/*.hxx")
 set(OLD_GLOB
   )
 if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
   message("-- GLOB mismatch!")
-  file(TOUCH_NOCREATE "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
+  file(TOUCH_NOCREATE "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
 endif()
 
 # _directory_contents at C:/Qt/6.7.3/mingw_64/lib/cmake/Qt6LinguistTools/Qt6LinguistToolsMacros.cmake:55 (file)
-file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/*.java")
+file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/*.java")
 set(OLD_GLOB
   )
 if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
   message("-- GLOB mismatch!")
-  file(TOUCH_NOCREATE "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
+  file(TOUCH_NOCREATE "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
 endif()
 
 # _directory_contents at C:/Qt/6.7.3/mingw_64/lib/cmake/Qt6LinguistTools/Qt6LinguistToolsMacros.cmake:55 (file)
-file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/*.js")
+file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/*.js")
 set(OLD_GLOB
   )
 if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
   message("-- GLOB mismatch!")
-  file(TOUCH_NOCREATE "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
+  file(TOUCH_NOCREATE "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
 endif()
 
 # _directory_contents at C:/Qt/6.7.3/mingw_64/lib/cmake/Qt6LinguistTools/Qt6LinguistToolsMacros.cmake:55 (file)
-file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/*.jui")
+file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/*.jui")
 set(OLD_GLOB
   )
 if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
   message("-- GLOB mismatch!")
-  file(TOUCH_NOCREATE "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
+  file(TOUCH_NOCREATE "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
 endif()
 
 # _directory_contents at C:/Qt/6.7.3/mingw_64/lib/cmake/Qt6LinguistTools/Qt6LinguistToolsMacros.cmake:55 (file)
-file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/*.qml")
+file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/*.qml")
 set(OLD_GLOB
   )
 if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
   message("-- GLOB mismatch!")
-  file(TOUCH_NOCREATE "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
+  file(TOUCH_NOCREATE "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
 endif()
 
 # _directory_contents at C:/Qt/6.7.3/mingw_64/lib/cmake/Qt6LinguistTools/Qt6LinguistToolsMacros.cmake:55 (file)
-file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/*.qrc")
+file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/*.qrc")
 set(OLD_GLOB
+  "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/logo.qrc"
   )
 if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
   message("-- GLOB mismatch!")
-  file(TOUCH_NOCREATE "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
+  file(TOUCH_NOCREATE "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
 endif()
 
 # _directory_contents at C:/Qt/6.7.3/mingw_64/lib/cmake/Qt6LinguistTools/Qt6LinguistToolsMacros.cmake:55 (file)
-file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/*.qs")
+file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/*.qs")
 set(OLD_GLOB
-  "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/.qtc/package-manager/maintenance_tool_provider.qs"
+  "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/.qtc/package-manager/maintenance_tool_provider.qs"
   )
 if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
   message("-- GLOB mismatch!")
-  file(TOUCH_NOCREATE "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
+  file(TOUCH_NOCREATE "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
 endif()
 
 # _directory_contents at C:/Qt/6.7.3/mingw_64/lib/cmake/Qt6LinguistTools/Qt6LinguistToolsMacros.cmake:55 (file)
-file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/*.ui")
+file(GLOB_RECURSE NEW_GLOB LIST_DIRECTORIES false "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/*.ui")
 set(OLD_GLOB
-  "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/mainwindow.ui"
+  "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/mainwindow.ui"
   )
 if(NOT "${NEW_GLOB}" STREQUAL "${OLD_GLOB}")
   message("-- GLOB mismatch!")
-  file(TOUCH_NOCREATE "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
+  file(TOUCH_NOCREATE "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs")
 endif()

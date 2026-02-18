@@ -1,4 +1,4 @@
-# Install script for directory: C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp
+# Install script for directory: C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -38,7 +38,7 @@ if(NOT DEFINED CMAKE_OBJDUMP)
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/bin" TYPE EXECUTABLE FILES "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/ProjetCpp.exe")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/bin" TYPE EXECUTABLE FILES "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/ProjetCpp.exe")
   if(EXISTS "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/ProjetCpp.exe" AND
      NOT IS_SYMLINK "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/ProjetCpp.exe")
     if(CMAKE_INSTALL_DO_STRIP)
@@ -62,6 +62,6 @@ endif()
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-  file(WRITE "C:/Users/msi/Desktop/Projet_SmartFactory/ProjetCpp/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/${CMAKE_INSTALL_MANIFEST}"
+  file(WRITE "C:/projectt/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")
 endif()
