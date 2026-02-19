@@ -7,7 +7,7 @@ int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
 
-    // TEST DE CONNEXION DIRECT
+    // TEST DE CONNEXION DIRECTtt
     qDebug() << "\n=== TEST DE CONNEXION AVANT LANCEMENT ===\n";
 
     Connexion* db = Connexion::getInstance();

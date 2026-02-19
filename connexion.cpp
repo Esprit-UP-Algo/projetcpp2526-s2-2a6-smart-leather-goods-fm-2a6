@@ -37,7 +37,7 @@ bool Connexion::etablirConnexion()
 
     QString connStr = "DRIVER={Oracle in XE};"
                       "DBQ=XE;"
-                      "UID=Nafissatou;"  // Vérifiez votre nom d'utilisateur
+                      "UID=Nafissatou;"  // Vérifiez votre nom d'utilisateurrrrr
                       "PWD=esprit18;"
                       "SERVER=localhost;"
                       "PORT=1521;";

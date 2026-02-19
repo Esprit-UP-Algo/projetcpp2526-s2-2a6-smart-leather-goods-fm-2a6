@@ -20,4 +20,4 @@ public:
 private:
     Ui::MainWindow *ui;
 };
-#endif // MAINWINDOW_H vvvv
+#endif // MmAINWINDOW_H vvvv

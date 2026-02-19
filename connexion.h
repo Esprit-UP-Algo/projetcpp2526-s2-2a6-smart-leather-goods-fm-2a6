@@ -24,4 +24,4 @@ public:
     ~Connexion();
 };
 
-#endif // CONNEXION_H
+#endif // cCONNEXION_H
