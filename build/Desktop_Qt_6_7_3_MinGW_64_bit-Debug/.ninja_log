@@ -1,0 +1,13 @@
+# ninja log v6
+7	249	7933802481230153	C:/Users/USER/Downloads/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration (2)/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/CMakeFiles/cmake.verify_globs	6923817c841d799c
+259	1420	7933802494277883	ProjetCpp_autogen/timestamp	202a5f17541c1f40
+259	1420	7933802494277883	ProjetCpp_autogen/mocs_compilation.cpp	202a5f17541c1f40
+259	1420	7933802494277883	C:/Users/USER/Downloads/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration (2)/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/ProjetCpp_autogen/timestamp	202a5f17541c1f40
+259	1420	7933802494277883	C:/Users/USER/Downloads/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration (2)/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/ProjetCpp_autogen/mocs_compilation.cpp	202a5f17541c1f40
+1424	1535	7933802496362428	ProjetCpp_autogen/EWIEGA46WW/qrc_logo.cpp	e02bd832f39c7ed6
+1424	1535	7933802496362428	C:/Users/USER/Downloads/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration (2)/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration/build/Desktop_Qt_6_7_3_MinGW_64_bit-Debug/ProjetCpp_autogen/EWIEGA46WW/qrc_logo.cpp	e02bd832f39c7ed6
+1540	3353	7933802496556091	CMakeFiles/ProjetCpp.dir/main.cpp.obj	b65b9eb4bcced890
+1548	3426	7933802496642733	CMakeFiles/ProjetCpp.dir/connexion.cpp.obj	2abec750901e86a8
+1553	3637	7933802496684630	CMakeFiles/ProjetCpp.dir/ordrefabrication.cpp.obj	a79c7d4651f5ceac
+1536	4822	7933802496516131	CMakeFiles/ProjetCpp.dir/ProjetCpp_autogen/mocs_compilation.cpp.obj	976b4fde68951ca9
+1544	12451	7933802496596077	CMakeFiles/ProjetCpp.dir/mainwindow.cpp.obj	4a51f66b1d4f6852
