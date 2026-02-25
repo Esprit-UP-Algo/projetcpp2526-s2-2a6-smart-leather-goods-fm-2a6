@@ -1,6 +1,7 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 #include "ordrefabrication.h"
+#include "matierepremiere.h"
 
 #include <QMainWindow>
 #include <QTableWidget>
@@ -45,13 +46,12 @@ public:
     }
 };
 
-struct ProduitInfo { QString ref; QString nom; double coutMatiere; QString collection; QString cuir; int temps; };
-struct CommandeInfo { QString id; QString produit; int quantite; QString matiere; QDate dateDebut; QString dateFinEstimee; QString statut; QString etapeAuditee; int etatEtape; };
-struct EmployeInfo { QString id; QString nom; QString prenom; QString poste; QString departement; QDate dateEmbauche; double salaire; QString rfid; };
-struct MatiereInfo { QString code; QString categorie; QString etat; QString couleur; QString qualite; double quantite; QString unite; QString zone; QString allee; QString typeStock; QDate dateRec; };
+struct ProduitInfo { QString id_produit; QString designation; double cout; QString collection; QString typeCuir; int tempsFab; QString idClient; QString idEmplacement; };
+struct CommandeInfo { QString id; QString idProduit; int quantite; QString idMatiere; QDate dateDebut; QString dateFinEstimee; QString statut; QString idEmploye; int etatEtape; };
+struct EmployeInfo { QString id; QString nom; QString prenom; QString poste; QString email; QString telephone; QString departement; QDate dateEmbauche; double salaire; QString rfid; };
+struct MatiereInfo { QString id; QString code; QString categorie; QString numLot; QString etat; QString couleur; double quantite; QString typeStockage; QString qualite; };
 struct ClientInfo { QString id; QString nom; QString telephone; QString adresse; QString email; int pointsFidelite; };
 struct DepotInfo { QString id; QString emplacement; QString etagere; double capaciteMax; double quantiteActuelle; QString typeStockage; };
-
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -62,7 +62,8 @@ public:
 
 private:
     Ui::MainWindow *ui;
-    OrdreFabrication tmpOrdre; // <--- AJOUTER CETTE LIGNE
+    OrdreFabrication tmpOrdre;
+    MatierePremiere tmpMatiere;
 
     QVector<CommandeInfo> mesCommandes;
     QVector<ProduitInfo> mesProduits;
@@ -103,33 +104,35 @@ private:
     void rafraichirListeEmployes();
     void calculerStatsRH();
     void reponseChatbot();
-    void showEmpEvalDialog(); // [NOUVEAU]
+    void preparerFormulaireEmploye(bool estModif, int idx = -1);
+    void showEmpEvalTab();
+    void showEmpAncienneteTab();
+    void showEmpAssistantTab();
 
     // Module Clients
     void rafraichirListeClients();
     void calculerStatsClients();
     void exporterFactureClient();
-    void showClientIaDialog();
-    void showFideliteDialog();
+    void showClientFideliteTab();
+    void showClientIaTab();
+
 
     // Module Dépôt
     void rafraichirListeDepots();
     void calculerStatsDepots();
-    void showOptimizeSpaceDialog();
-    void showRavitaillementDialog();
+    void preparerFormulaireDepot(bool estModif, int idx = -1);
+    void showDepotOptimizeTab();
+    void showDepotRavitaillementTab();
 
-    // Module Stock (EXISTANT)
+    // Module Stock (NOUVEAU - SPA avec onglets)
     void rafraichirListeMatieres();
     void calculerStatsStock();
-    void showCompareDialog();
-    void showBesoinDialog();
-    // AJOUTER CETTE FONCTION :
-    void ouvrirDialoguePlanif(bool estModification);
-    void ouvrirDialogueProduit(bool estModif);
-    void ouvrirDialogueEmploye(bool estModif);
-    void ouvrirDialogueStock(bool estModif);
+    void preparerFormulaireStock(bool estModif, int idx = -1);
+    void showStockCompareTab();
+    void showStockCalculTab();
+    void preparerFormulairePlanif(bool estModification);
+    void preparerFormulaireProduit(bool estModif, int idx = -1);
     void ouvrirDialogueClient(bool estModif);
-    void ouvrirDialogueDepot(bool estModif);
 
     // ... (vos variables existantes) ...
 
@@ -139,6 +142,17 @@ private:
     void ouvrirStatsStock();
     void ouvrirStatsClients();
     void ouvrirStatsDepot();
+    void ouvrirStatsPlanification();
+    void preparerFormulaireModif(int idx);
+    void ouvrirIAPrediction();
+    // Dashboard global (Page d'Accueil)
+    void construireDashboardAccueil();
+
+    // --- Alertes personnalisées FIL D'OR ---
+    void alerteSucces(const QString &titre, const QString &message);
+    void alerteErreur(const QString &titre, const QString &message);
+    void alerteWarning(const QString &titre, const QString &message);
+    void alerteInfo(const QString &titre, const QString &message);
 
     // Une petite fonction utilitaire pour le design des cartes KPI
     QFrame* creerCarteStat(QString icone, QString val, QString titre, QString couleurFond);

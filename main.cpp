@@ -19,16 +19,27 @@ int main(int argc, char *argv[])
         }
     }
 
-    // --- CONNEXION BDD ---
-    Connexion c;
-    bool etat = c.createconnect();
-    if (!etat) {
-        QMessageBox::critical(nullptr, "Erreur Base de Données", "Impossible de se connecter à Oracle.\nVérifiez que la base est lancée.");
-        // On continue quand même pour voir l'interface, ou return -1 pour quitter
+    // --- Connexion Singleton ---
+    Connexion *cnx = Connexion::getInstance();
+
+    if (!cnx->ouvrir()) {
+        QMessageBox::critical(nullptr, "Erreur Base de Données",
+            "❌ Impossible de se connecter à Oracle.\n\n"
+            "Vérifiez que :\n"
+            "• Oracle XE est démarré\n"
+            "• Le listener est actif\n"
+            "• Les identifiants sont corrects\n\n"
+            "Erreur : " + cnx->getDatabase().lastError().text());
+        return -1;
     }
-    // ---------------------
 
     MainWindow w;
-    w.show();
-    return a.exec();
+    w.showMaximized();
+
+    int result = a.exec();
+
+    // Fermer la connexion à la fin
+    cnx->fermer();
+
+    return result;
 }
