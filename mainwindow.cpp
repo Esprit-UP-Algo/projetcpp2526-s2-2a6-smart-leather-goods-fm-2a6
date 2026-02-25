@@ -4,6 +4,7 @@
 #include "ordrefabrication.h"
 #include "matierepremiere.h"
 #include "etape.h"
+#include "depot.h"
 
 #include <QSqlRecord>
 #include <QSqlQuery>
@@ -232,6 +233,18 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
 
+    // Logo sidebar - taille agrandie
+    ui->l_logo_img->setMinimumSize(55, 55);
+    ui->l_logo_img->setMaximumSize(55, 55);
+    ui->l_logo_img->setPixmap(QPixmap(":/logo.png").scaled(55, 55, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    ui->l_logo_img->setScaledContents(false);
+    ui->l_logo_img->setAlignment(Qt::AlignCenter);
+    ui->l_logo_img->setStyleSheet("border: none; background: transparent;");
+
+    // Construire les pages d'accueil et de connexion dynamiquement
+    construirePageAccueil();
+    construirePageLogin();
+
     // --- CONNEXION ORACLE (Singleton) ---
     Connexion *cnx = Connexion::getInstance();
     bool test = cnx->estConnecte();
@@ -295,6 +308,165 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->btn_nav_stock, &QPushButton::clicked, [=](){ rafraichirListeMatieres(); ui->stackedWidget->setCurrentWidget(ui->page_stock_list); });
     connect(ui->btn_nav_clients, &QPushButton::clicked, [=](){ rafraichirListeClients(); ui->stackedWidget->setCurrentWidget(ui->page_client_list); });
     connect(ui->btn_nav_depot, &QPushButton::clicked, [=](){ rafraichirListeDepots(); ui->stackedWidget->setCurrentWidget(ui->page_depot_list); });
+
+    // ===================== DEPOT CRUD =====================
+
+    // Bouton + Ajouter (onglet ajout)
+    connect(ui->btn_add_depot, &QPushButton::clicked, [=](){
+        ui->le_depot_emp->clear();
+        ui->le_depot_eta->clear();
+        ui->sb_depot_cap->setValue(0);
+        ui->sb_depot_act->setValue(0);
+        ui->cb_depot_type->setCurrentIndex(0);
+        ui->tabWidgetDepot->setCurrentIndex(1);
+    });
+
+    // AJOUT
+    connect(ui->btn_valider_depot, &QPushButton::clicked, [=](){
+        Depot d(
+            ui->le_depot_eta->text().trimmed(),
+            ui->sb_depot_cap->value(),
+            ui->sb_depot_act->value(),
+            ui->cb_depot_type->currentText()
+        );
+
+        if (d.ajouter()) {
+            alerteSucces("Ajout Dépôt", "Emplacement ajouté avec succès.");
+            rafraichirListeDepots();
+            ui->tabWidgetDepot->setCurrentIndex(0);
+        } else {
+            alerteErreur("Erreur", "Impossible d'ajouter l'emplacement.");
+        }
+    });
+
+    // MODIFIER (pré-remplir)
+    connect(ui->btn_edit_depot, &QPushButton::clicked, [=](){
+        int row = ui->tableDepot->currentRow();
+        if (row < 0) {
+            alerteWarning("Sélection", "Veuillez sélectionner une ligne.");
+            return;
+        }
+
+        int idDb = ui->tableDepot->item(row, 2)->data(Qt::UserRole).toInt();
+
+        ui->le_depot_id_modif->setText(QString::number(idDb));
+        ui->le_depot_emp_modif->setText(ui->tableDepot->item(row, 1)->text());
+        ui->le_depot_eta_modif->setText(ui->tableDepot->item(row, 2)->text());
+        ui->sb_depot_cap_modif->setValue(ui->tableDepot->item(row, 3)->text().toDouble());
+        ui->sb_depot_act_modif->setValue(ui->tableDepot->item(row, 4)->text().toDouble());
+        ui->cb_depot_type_modif->setCurrentText(ui->tableDepot->item(row, 5)->text());
+
+        ui->tabWidgetDepot->setCurrentIndex(2);
+    });
+
+    // VALIDER MODIF
+    connect(ui->btn_valider_modif_depot, &QPushButton::clicked, [=](){
+        int idDb = ui->le_depot_id_modif->text().toInt();
+
+        Depot d(
+            ui->le_depot_eta_modif->text().trimmed(),
+            ui->sb_depot_cap_modif->value(),
+            ui->sb_depot_act_modif->value(),
+            ui->cb_depot_type_modif->currentText()
+        );
+
+        if (d.modifier(idDb)) {
+            alerteSucces("Modification", "Emplacement mis à jour.");
+            rafraichirListeDepots();
+            ui->tabWidgetDepot->setCurrentIndex(0);
+        } else {
+            alerteErreur("Erreur", "Impossible de modifier.");
+        }
+    });
+
+    // SUPPRIMER
+    connect(ui->btn_delete_depot, &QPushButton::clicked, [=](){
+        int row = ui->tableDepot->currentRow();
+        if (row < 0) {
+            alerteWarning("Sélection", "Sélectionnez une ligne.");
+            return;
+        }
+
+        int idDb = ui->tableDepot->item(row, 2)->data(Qt::UserRole).toInt();
+
+        Depot d;
+        if (d.supprimer(idDb)) {
+            alerteSucces("Suppression", "Emplacement supprimé.");
+            rafraichirListeDepots();
+        } else {
+            alerteErreur("Erreur", "Impossible de supprimer.");
+        }
+    });
+
+    // RECHERCHE
+    connect(ui->btn_search_depot, &QPushButton::clicked, [=](){
+        QString critere = ui->le_search_depot->text().trimmed();
+        if (critere.isEmpty()) {
+            rafraichirListeDepots();
+            return;
+        }
+
+        Depot d;
+        QSqlQueryModel *model = d.rechercher(critere);
+
+        ui->tableDepot->setRowCount(0);
+        int rows = model->rowCount();
+        ui->tableDepot->setRowCount(rows);
+
+        for (int i = 0; i < rows; i++) {
+            int idDb = model->record(i).value("ID_EMPLACEMENT").toInt();
+            QString et = model->record(i).value("ETAGERE").toString();
+            double cap = model->record(i).value("CAPACITE_MAX").toDouble();
+            double qte = model->record(i).value("QUANTITE_ACTUELLE").toDouble();
+            QString type = model->record(i).value("TYPE_STOCKAGE").toString();
+
+            QString remplissage = (cap > 0) ? QString::number((qte / cap) * 100.0, 'f', 1) + "%" : "0%";
+
+            ui->tableDepot->setItem(i, 0, new QTableWidgetItem(QString::number(idDb)));
+            ui->tableDepot->setItem(i, 1, new QTableWidgetItem("Empl. " + QString::number(idDb)));
+            ui->tableDepot->setItem(i, 2, new QTableWidgetItem(et));
+            ui->tableDepot->setItem(i, 3, new QTableWidgetItem(QString::number(cap)));
+            ui->tableDepot->setItem(i, 4, new QTableWidgetItem(QString::number(qte)));
+            ui->tableDepot->setItem(i, 5, new QTableWidgetItem(type));
+            ui->tableDepot->setItem(i, 6, new QTableWidgetItem(remplissage));
+
+            ui->tableDepot->item(i, 2)->setData(Qt::UserRole, idDb);
+        }
+
+        delete model;
+    });
+
+    // TRI A-Z
+    connect(ui->btn_sort_alpha_depot, &QPushButton::clicked, [=](){
+        Depot d;
+        QSqlQueryModel *model = d.trierParEtagere();
+
+        ui->tableDepot->setRowCount(0);
+        int rows = model->rowCount();
+        ui->tableDepot->setRowCount(rows);
+
+        for (int i = 0; i < rows; i++) {
+            int idDb = model->record(i).value("ID_EMPLACEMENT").toInt();
+            QString et = model->record(i).value("ETAGERE").toString();
+            double cap = model->record(i).value("CAPACITE_MAX").toDouble();
+            double qte = model->record(i).value("QUANTITE_ACTUELLE").toDouble();
+            QString type = model->record(i).value("TYPE_STOCKAGE").toString();
+
+            QString remplissage = (cap > 0) ? QString::number((qte / cap) * 100.0, 'f', 1) + "%" : "0%";
+
+            ui->tableDepot->setItem(i, 0, new QTableWidgetItem(QString::number(idDb)));
+            ui->tableDepot->setItem(i, 1, new QTableWidgetItem("Empl. " + QString::number(idDb)));
+            ui->tableDepot->setItem(i, 2, new QTableWidgetItem(et));
+            ui->tableDepot->setItem(i, 3, new QTableWidgetItem(QString::number(cap)));
+            ui->tableDepot->setItem(i, 4, new QTableWidgetItem(QString::number(qte)));
+            ui->tableDepot->setItem(i, 5, new QTableWidgetItem(type));
+            ui->tableDepot->setItem(i, 6, new QTableWidgetItem(remplissage));
+
+            ui->tableDepot->item(i, 2)->setData(Qt::UserRole, idDb);
+        }
+
+        delete model;
+    });
 
     // --- LOGIN ---
     connect(ui->btn_start_app, &QPushButton::clicked, [=](){ ui->stackedWidget->setCurrentWidget(ui->page_login); ui->le_login_nom->setFocus(); });
@@ -2216,17 +2388,14 @@ void MainWindow::alerteInfo(const QString &titre, const QString &message) {
 // =========================================================
 // ===       LOGIQUE MÉTIER & AFFICHAGE (TABLEAUX)       ===
 // =========================================================
-
 void MainWindow::construireDashboardAccueil() {
     QWidget *page = ui->page_home;
 
-    // Supprimer l'ancien layout
     if (page->layout()) {
         clearLayout(page->layout());
         delete page->layout();
     }
 
-    // --- FOND ÉLÉGANT (pas trop sombre) ---
     page->setStyleSheet(
         "QWidget#page_home {"
         "  background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1,"
@@ -2234,62 +2403,62 @@ void MainWindow::construireDashboardAccueil() {
         "}"
     );
 
-    QVBoxLayout *mainLayout = new QVBoxLayout(page);
-    mainLayout->setSpacing(18);
-    mainLayout->setContentsMargins(35, 25, 35, 20);
+    // --- SCROLL AREA pour tout le contenu ---
+    QVBoxLayout *pageLayout = new QVBoxLayout(page);
+    pageLayout->setContentsMargins(0, 0, 0, 0);
+
+    QScrollArea *scrollArea = new QScrollArea();
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setStyleSheet(
+        "QScrollArea { border: none; background: transparent; }"
+        "QScrollBar:vertical { width: 8px; background: rgba(0,0,0,0.1); border-radius: 4px; }"
+        "QScrollBar::handle:vertical { background: rgba(212,175,55,0.4); border-radius: 4px; }"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+    );
+
+    QWidget *scrollContent = new QWidget();
+    scrollContent->setStyleSheet("background: transparent;");
+    QVBoxLayout *mainLayout = new QVBoxLayout(scrollContent);
+    mainLayout->setSpacing(12);
+    mainLayout->setContentsMargins(30, 20, 30, 15);
 
     // =============================================
-    // 1. EN-TÊTE : Logo + Titre + Date + Heure
+    // 1. EN-TÊTE
     // =============================================
     QFrame *headerFrame = new QFrame();
     headerFrame->setStyleSheet(
-        "QFrame {"
-        "  background: rgba(0,0,0,0.25);"
-        "  border: 1px solid rgba(212,175,55,0.2);"
-        "  border-radius: 16px;"
-        "}"
+        "QFrame { background: rgba(0,0,0,0.25); border: 1px solid rgba(212,175,55,0.2); border-radius: 14px; }"
     );
     QHBoxLayout *headerLayout = new QHBoxLayout(headerFrame);
-    headerLayout->setContentsMargins(20, 14, 20, 14);
+    headerLayout->setContentsMargins(18, 10, 18, 10);
 
-    // Logo
     QLabel *logoLabel = new QLabel();
     logoLabel->setPixmap(QPixmap(":/logo.png").scaled(45, 45, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-    logoLabel->setStyleSheet("border: none;");
+    logoLabel->setFixedSize(45, 45);
+    logoLabel->setScaledContents(false);
+    logoLabel->setAlignment(Qt::AlignCenter);
+    logoLabel->setStyleSheet("border: none; background: transparent;");
     headerLayout->addWidget(logoLabel);
 
-    // Titres
     QVBoxLayout *titleLayout = new QVBoxLayout();
-    titleLayout->setSpacing(2);
+    titleLayout->setSpacing(1);
     QLabel *titre = new QLabel("✨ FIL D'OR — Tableau de Bord");
-    titre->setStyleSheet(
-        "font-size: 24px; font-weight: 900; color: #d4af37;"
-        "letter-spacing: 2px; border: none;"
-    );
+    titre->setStyleSheet("font-size: 20px; font-weight: 900; color: #d4af37; letter-spacing: 2px; border: none;");
     titleLayout->addWidget(titre);
-
     QLabel *sousTitre = new QLabel("Vue d'ensemble de l'atelier de maroquinerie de luxe");
-    sousTitre->setStyleSheet(
-        "font-size: 12px; color: #bcaaa4; font-style: italic; border: none;"
-    );
+    sousTitre->setStyleSheet("font-size: 11px; color: #bcaaa4; font-style: italic; border: none;");
     titleLayout->addWidget(sousTitre);
     headerLayout->addLayout(titleLayout);
     headerLayout->addStretch();
 
-    // Date & Heure
     QVBoxLayout *dateLayout = new QVBoxLayout();
-    dateLayout->setSpacing(2);
+    dateLayout->setSpacing(1);
     QLabel *dateLabel = new QLabel("📅 " + QDate::currentDate().toString("dddd dd MMMM yyyy"));
-    dateLabel->setStyleSheet(
-        "font-size: 13px; color: #e0c097; font-weight: bold; border: none;"
-    );
+    dateLabel->setStyleSheet("font-size: 12px; color: #e0c097; font-weight: bold; border: none;");
     dateLabel->setAlignment(Qt::AlignRight);
     dateLayout->addWidget(dateLabel);
-
     QLabel *heureLabel = new QLabel("🕐 " + QTime::currentTime().toString("HH:mm"));
-    heureLabel->setStyleSheet(
-        "font-size: 12px; color: #a1887f; border: none;"
-    );
+    heureLabel->setStyleSheet("font-size: 11px; color: #a1887f; border: none;");
     heureLabel->setAlignment(Qt::AlignRight);
     dateLayout->addWidget(heureLabel);
     headerLayout->addLayout(dateLayout);
@@ -2302,6 +2471,8 @@ void MainWindow::construireDashboardAccueil() {
     int totalCommandes = 0, totalPieces = 0, cmdEnCours = 0, cmdRetard = 0, cmdFini = 0;
     int totalEmployes = 0, totalMatieres = 0, totalClients = 0, totalProduits = 0;
     double masseSalariale = 0, volumeStock = 0;
+    int totalDepots = 0, depotCritiques = 0;
+    double totalCapDepot = 0, totalQteDepot = 0;
 
     QSqlQuery q;
 
@@ -2327,55 +2498,47 @@ void MainWindow::construireDashboardAccueil() {
         totalClients = q.value(0).toInt();
     if (q.exec("SELECT COUNT(*) FROM PRODUITS") && q.next())
         totalProduits = q.value(0).toInt();
+    if (q.exec("SELECT COUNT(*), NVL(SUM(CAPACITE_MAX),0), NVL(SUM(QUANTITE_ACTUELLE),0) FROM DEPOTS") && q.next()) {
+        totalDepots = q.value(0).toInt();
+        totalCapDepot = q.value(1).toDouble();
+        totalQteDepot = q.value(2).toDouble();
+    }
+    if (q.exec("SELECT COUNT(*) FROM DEPOTS WHERE CAPACITE_MAX > 0 AND (QUANTITE_ACTUELLE / CAPACITE_MAX) > 0.9") && q.next())
+        depotCritiques = q.value(0).toInt();
 
     double tauxRetard = (totalCommandes > 0) ? (static_cast<double>(cmdRetard) * 100.0 / totalCommandes) : 0;
+    double tauxRempGlobal = (totalCapDepot > 0) ? (totalQteDepot / totalCapDepot) * 100.0 : 0;
 
     // =============================================
-    // 3. HELPER : Créer une carte KPI luxe
+    // 3. HELPER CARTE KPI (compacte)
     // =============================================
     auto creerCarteKPI = [](QString icone, QString valeur, QString label, QString gradientBg, QString borderColor) -> QFrame* {
         QFrame *card = new QFrame();
-        card->setMinimumHeight(110);
-        card->setMaximumHeight(130);
+        card->setMinimumHeight(85);
+        card->setMaximumHeight(95);
         card->setStyleSheet(QString(
-            "QFrame {"
-            "  background: %1;"
-            "  border-radius: 14px;"
-            "  border: 1px solid %2;"
-            "}"
+            "QFrame { background: %1; border-radius: 12px; border: 1px solid %2; }"
         ).arg(gradientBg, borderColor));
 
         QHBoxLayout *hl = new QHBoxLayout(card);
-        hl->setContentsMargins(18, 12, 18, 12);
-        hl->setSpacing(12);
+        hl->setContentsMargins(14, 8, 14, 8);
+        hl->setSpacing(10);
 
-        // Icône à GAUCHE dans un cercle
         QLabel *lblIco = new QLabel(icone);
-        lblIco->setFixedSize(50, 50);
+        lblIco->setFixedSize(40, 40);
         lblIco->setAlignment(Qt::AlignCenter);
-        lblIco->setStyleSheet(
-            "font-size: 26px;"
-            "border: none;"
-            "background: rgba(255,255,255,0.15);"
-            "border-radius: 25px;"
-        );
+        lblIco->setStyleSheet("font-size: 22px; border: none; background: rgba(255,255,255,0.15); border-radius: 20px;");
         hl->addWidget(lblIco);
 
-        // Textes à DROITE
         QVBoxLayout *textLayout = new QVBoxLayout();
-        textLayout->setSpacing(2);
+        textLayout->setSpacing(1);
 
         QLabel *lblVal = new QLabel(valeur);
-        lblVal->setStyleSheet(
-            "font-size: 28px; font-weight: 900; color: white; border: none; letter-spacing: 1px;"
-        );
+        lblVal->setStyleSheet("font-size: 22px; font-weight: 900; color: white; border: none;");
         textLayout->addWidget(lblVal);
 
         QLabel *lblLabel = new QLabel(label);
-        lblLabel->setStyleSheet(
-            "font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.75);"
-            "letter-spacing: 1px; text-transform: uppercase; border: none;"
-        );
+        lblLabel->setStyleSheet("font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.75); letter-spacing: 1px; text-transform: uppercase; border: none;");
         textLayout->addWidget(lblLabel);
 
         hl->addLayout(textLayout, 1);
@@ -2383,129 +2546,101 @@ void MainWindow::construireDashboardAccueil() {
     };
 
     // =============================================
-    // 4. SECTION 1 : PRODUCTION & PLANIFICATION
+    // 4. LIGNE 1 : PRODUCTION
     // =============================================
     QLabel *sec1 = new QLabel("🏭  PRODUCTION & PLANIFICATION");
-    sec1->setStyleSheet(
-        "font-size: 13px; font-weight: 800; color: #d4af37;"
-        "letter-spacing: 2px; border: none; margin-top: 2px;"
-    );
+    sec1->setStyleSheet("font-size: 12px; font-weight: 800; color: #d4af37; letter-spacing: 2px; border: none;");
     mainLayout->addWidget(sec1);
 
     QHBoxLayout *kpiRow1 = new QHBoxLayout();
-    kpiRow1->setSpacing(14);
-
+    kpiRow1->setSpacing(10);
     kpiRow1->addWidget(creerCarteKPI("📋", QString::number(totalCommandes), "Ordres en base",
-        "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #1565c0, stop:1 #0d47a1)",
-        "rgba(21,101,192,0.4)"));
-
+        "qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #1565c0, stop:1 #0d47a1)", "rgba(21,101,192,0.4)"));
     kpiRow1->addWidget(creerCarteKPI("📦", QString::number(totalPieces), "Pièces planifiées",
-        "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #d4af37, stop:1 #8d5524)",
-        "rgba(212,175,55,0.4)"));
-
+        "qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #d4af37, stop:1 #8d5524)", "rgba(212,175,55,0.4)"));
     kpiRow1->addWidget(creerCarteKPI("🔄", QString::number(cmdEnCours), "En production",
-        "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #00897b, stop:1 #00695c)",
-        "rgba(0,137,123,0.4)"));
-
+        "qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #00897b, stop:1 #00695c)", "rgba(0,137,123,0.4)"));
     QString colRetard = (tauxRetard > 20)
-        ? "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #c62828, stop:1 #b71c1c)"
-        : "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #2e7d32, stop:1 #1b5e20)";
+        ? "qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #c62828, stop:1 #b71c1c)"
+        : "qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #2e7d32, stop:1 #1b5e20)";
     QString bordRetard = (tauxRetard > 20) ? "rgba(198,40,40,0.4)" : "rgba(46,125,50,0.4)";
-    kpiRow1->addWidget(creerCarteKPI("⚠️", QString::number(tauxRetard, 'f', 1) + "%", "Taux de retard",
-        colRetard, bordRetard));
-
+    kpiRow1->addWidget(creerCarteKPI("⚠️", QString::number(tauxRetard, 'f', 1) + "%", "Taux de retard", colRetard, bordRetard));
     mainLayout->addLayout(kpiRow1);
 
     // =============================================
-    // 5. SECTION 2 : RESSOURCES & STOCK
+    // 5. LIGNE 2 : RESSOURCES
     // =============================================
-    QLabel *sec2 = new QLabel("👥  RESSOURCES, STOCK & CLIENTS");
-    sec2->setStyleSheet(
-        "font-size: 13px; font-weight: 800; color: #d4af37;"
-        "letter-spacing: 2px; border: none; margin-top: 2px;"
-    );
+    QLabel *sec2 = new QLabel("👥  RESSOURCES & STOCK");
+    sec2->setStyleSheet("font-size: 12px; font-weight: 800; color: #d4af37; letter-spacing: 2px; border: none;");
     mainLayout->addWidget(sec2);
 
     QHBoxLayout *kpiRow2 = new QHBoxLayout();
-    kpiRow2->setSpacing(14);
-
+    kpiRow2->setSpacing(10);
     kpiRow2->addWidget(creerCarteKPI("👥", QString::number(totalEmployes), "Employés actifs",
-        "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #6a1b9a, stop:1 #4a148c)",
-        "rgba(106,27,154,0.4)"));
-
+        "qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #6a1b9a, stop:1 #4a148c)", "rgba(106,27,154,0.4)"));
     kpiRow2->addWidget(creerCarteKPI("💰", QString::number(masseSalariale, 'f', 0) + " €", "Masse salariale",
-        "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #ef6c00, stop:1 #e65100)",
-        "rgba(239,108,0,0.4)"));
-
-    kpiRow2->addWidget(creerCarteKPI("🧵", QString::number(volumeStock, 'f', 0) + " u", "Stock total",
-        "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #00838f, stop:1 #006064)",
-        "rgba(0,131,143,0.4)"));
-
-    kpiRow2->addWidget(creerCarteKPI("🧾", QString::number(totalProduits), "Produits enregistrés",
-        "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #8d5524, stop:1 #5d4037)",
-        "rgba(141,85,36,0.4)"));
-
+        "qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #ef6c00, stop:1 #e65100)", "rgba(239,108,0,0.4)"));
+    kpiRow2->addWidget(creerCarteKPI("🧵", QString::number(volumeStock, 'f', 0) + " u", "Stock matières",
+        "qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #00838f, stop:1 #006064)", "rgba(0,131,143,0.4)"));
+    kpiRow2->addWidget(creerCarteKPI("🧾", QString::number(totalProduits), "Produits",
+        "qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #8d5524, stop:1 #5d4037)", "rgba(141,85,36,0.4)"));
     mainLayout->addLayout(kpiRow2);
 
     // =============================================
-    // 6. SECTION BASSE : Dernières commandes + Alertes
+    // 6. LIGNE 3 : DÉPÔT & CLIENTÈLE
+    // =============================================
+    QLabel *sec3 = new QLabel("🏬  DÉPÔT & CLIENTÈLE");
+    sec3->setStyleSheet("font-size: 12px; font-weight: 800; color: #d4af37; letter-spacing: 2px; border: none;");
+    mainLayout->addWidget(sec3);
+
+    QHBoxLayout *kpiRow3 = new QHBoxLayout();
+    kpiRow3->setSpacing(10);
+    kpiRow3->addWidget(creerCarteKPI("🏬", QString::number(totalDepots), "Emplacements dépôt",
+        "qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #37474f, stop:1 #263238)", "rgba(55,71,79,0.4)"));
+    QString colRemp = (tauxRempGlobal > 85)
+        ? "qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #c62828, stop:1 #b71c1c)"
+        : "qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #2e7d32, stop:1 #1b5e20)";
+    QString bordRemp = (tauxRempGlobal > 85) ? "rgba(198,40,40,0.4)" : "rgba(46,125,50,0.4)";
+    kpiRow3->addWidget(creerCarteKPI("📊", QString::number(tauxRempGlobal, 'f', 1) + "%", "Remplissage global", colRemp, bordRemp));
+    QString colCritDash = (depotCritiques > 0)
+        ? "qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #c62828, stop:1 #b71c1c)"
+        : "qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #2e7d32, stop:1 #1b5e20)";
+    QString bordCritDash = (depotCritiques > 0) ? "rgba(198,40,40,0.4)" : "rgba(46,125,50,0.4)";
+    kpiRow3->addWidget(creerCarteKPI("⚠️", QString::number(depotCritiques), "Zones critiques", colCritDash, bordCritDash));
+    kpiRow3->addWidget(creerCarteKPI("🧾", QString::number(totalClients), "Clients enregistrés",
+        "qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #4e342e, stop:1 #3e2723)", "rgba(78,52,46,0.4)"));
+    mainLayout->addLayout(kpiRow3);
+
+    // =============================================
+    // 7. SECTION BASSE : Commandes + Alertes
     // =============================================
     QHBoxLayout *bottomLayout = new QHBoxLayout();
-    bottomLayout->setSpacing(14);
+    bottomLayout->setSpacing(12);
 
     // --- PANNEAU GAUCHE : Dernières commandes ---
     QFrame *frameRecent = new QFrame();
     frameRecent->setStyleSheet(
-        "QFrame {"
-        "  background: rgba(0,0,0,0.2);"
-        "  border: 1px solid rgba(212,175,55,0.2);"
-        "  border-radius: 14px;"
-        "}"
+        "QFrame { background: rgba(0,0,0,0.2); border: 1px solid rgba(212,175,55,0.2); border-radius: 14px; }"
     );
     QVBoxLayout *recentLayout = new QVBoxLayout(frameRecent);
-    recentLayout->setContentsMargins(16, 14, 16, 14);
-    recentLayout->setSpacing(10);
+    recentLayout->setContentsMargins(14, 12, 14, 12);
+    recentLayout->setSpacing(8);
 
     QLabel *recentTitle = new QLabel("📋  DERNIÈRES COMMANDES");
-    recentTitle->setStyleSheet(
-        "font-size: 14px; font-weight: 900; color: #d4af37;"
-        "letter-spacing: 1px; border: none;"
-    );
+    recentTitle->setStyleSheet("font-size: 13px; font-weight: 900; color: #d4af37; letter-spacing: 1px; border: none;");
     recentLayout->addWidget(recentTitle);
 
-    // Ligne dorée sous le titre
     QFrame *lineGold1 = new QFrame();
-    lineGold1->setStyleSheet("background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #d4af37,stop:1 transparent);"
-                              "border:none; min-height:2px; max-height:2px;");
+    lineGold1->setStyleSheet("background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #d4af37,stop:1 transparent); border:none; min-height:2px; max-height:2px;");
     recentLayout->addWidget(lineGold1);
 
     QTableWidget *tableRecent = new QTableWidget();
     tableRecent->setColumnCount(5);
     tableRecent->setHorizontalHeaderLabels({"Produit", "Qté", "Matière", "Statut", "Fin Prévue"});
     tableRecent->setStyleSheet(
-        "QTableWidget {"
-        "  background: transparent;"
-        "  border: none;"
-        "  color: #e0c097;"
-        "  gridline-color: rgba(212,175,55,0.1);"
-        "  font-size: 12px;"
-        "  selection-background-color: rgba(212,175,55,0.15);"
-        "}"
-        "QTableWidget::item {"
-        "  border-bottom: 1px solid rgba(255,255,255,0.05);"
-        "  padding: 8px 6px;"
-        "}"
-        "QHeaderView::section {"
-        "  background: rgba(212,175,55,0.12);"
-        "  color: #d4af37;"
-        "  border: none;"
-        "  border-bottom: 2px solid rgba(212,175,55,0.3);"
-        "  padding: 10px 6px;"
-        "  font-weight: 900;"
-        "  font-size: 11px;"
-        "  text-transform: uppercase;"
-        "  letter-spacing: 1px;"
-        "}"
+        "QTableWidget { background: transparent; border: none; color: #e0c097; gridline-color: rgba(212,175,55,0.1); font-size: 11px; }"
+        "QTableWidget::item { border-bottom: 1px solid rgba(255,255,255,0.05); padding: 6px; }"
+        "QHeaderView::section { background: rgba(212,175,55,0.12); color: #d4af37; border: none; border-bottom: 2px solid rgba(212,175,55,0.3); padding: 8px 4px; font-weight: 900; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }"
     );
     tableRecent->horizontalHeader()->setStretchLastSection(true);
     tableRecent->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
@@ -2513,9 +2648,7 @@ void MainWindow::construireDashboardAccueil() {
     tableRecent->setSelectionMode(QAbstractItemView::NoSelection);
     tableRecent->setEditTriggers(QAbstractItemView::NoEditTriggers);
     tableRecent->setShowGrid(false);
-    tableRecent->setAlternatingRowColors(false);
 
-    // Charger les 6 dernières commandes (compatible Oracle XE 11g+)
     QSqlQuery qRecent;
     qRecent.exec(
         "SELECT * FROM ("
@@ -2528,172 +2661,115 @@ void MainWindow::construireDashboardAccueil() {
         ") WHERE ROWNUM <= 6"
     );
 
-    // Debug : vérifier si la requête a fonctionné
-    if (qRecent.lastError().isValid()) {
-        qDebug() << "Erreur Dashboard Commandes :" << qRecent.lastError().text();
-    }
-
-    int row = 0;
+    int rowR = 0;
     while (qRecent.next()) {
-        tableRecent->insertRow(row);
+        tableRecent->insertRow(rowR);
 
-        // Produit
         QTableWidgetItem *iProd = new QTableWidgetItem(qRecent.value(0).toString());
         iProd->setForeground(QColor("#e0c097"));
-        QFont fProd; fProd.setBold(true); iProd->setFont(fProd);
-        tableRecent->setItem(row, 0, iProd);
+        QFont fP; fP.setBold(true); iProd->setFont(fP);
+        tableRecent->setItem(rowR, 0, iProd);
 
-        // Quantité
         QTableWidgetItem *iQte = new QTableWidgetItem(qRecent.value(1).toString());
         iQte->setForeground(QColor("#ffffff"));
         iQte->setTextAlignment(Qt::AlignCenter);
-        tableRecent->setItem(row, 1, iQte);
+        tableRecent->setItem(rowR, 1, iQte);
 
-        // Matière
         QTableWidgetItem *iMat = new QTableWidgetItem(qRecent.value(2).toString());
         iMat->setForeground(QColor("#a1887f"));
         iMat->setTextAlignment(Qt::AlignCenter);
-        tableRecent->setItem(row, 2, iMat);
+        tableRecent->setItem(rowR, 2, iMat);
 
-        // Statut avec couleur conditionnelle
         QString statut = qRecent.value(3).toString();
         QTableWidgetItem *iStat = new QTableWidgetItem(statut);
         if (statut.toLower().contains("retard")) {
-            iStat->setForeground(QColor("#ef5350"));
-            iStat->setText("🔴 " + statut);
+            iStat->setForeground(QColor("#ef5350")); iStat->setText("🔴 " + statut);
         } else if (statut.toLower().contains("cours")) {
-            iStat->setForeground(QColor("#66bb6a"));
-            iStat->setText("🟢 " + statut);
+            iStat->setForeground(QColor("#66bb6a")); iStat->setText("🟢 " + statut);
         } else if (statut.toLower().contains("fini") || statut.toLower().contains("termin")) {
-            iStat->setForeground(QColor("#29b6f6"));
-            iStat->setText("✅ " + statut);
+            iStat->setForeground(QColor("#29b6f6")); iStat->setText("✅ " + statut);
         } else {
-            iStat->setForeground(QColor("#ffa726"));
-            iStat->setText("🟡 " + statut);
+            iStat->setForeground(QColor("#ffa726")); iStat->setText("🟡 " + statut);
         }
         iStat->setTextAlignment(Qt::AlignCenter);
-        QFont fStat; fStat.setBold(true); iStat->setFont(fStat);
-        tableRecent->setItem(row, 3, iStat);
+        QFont fS; fS.setBold(true); iStat->setFont(fS);
+        tableRecent->setItem(rowR, 3, iStat);
 
-        // Date fin
         QTableWidgetItem *iFin = new QTableWidgetItem(qRecent.value(4).toString());
         iFin->setForeground(QColor("#bcaaa4"));
         iFin->setTextAlignment(Qt::AlignCenter);
-        tableRecent->setItem(row, 4, iFin);
+        tableRecent->setItem(rowR, 4, iFin);
 
-        tableRecent->setRowHeight(row, 40);
-        row++;
+        tableRecent->setRowHeight(rowR, 34);
+        rowR++;
     }
 
     recentLayout->addWidget(tableRecent, 1);
     bottomLayout->addWidget(frameRecent, 3);
 
-    // --- PANNEAU DROIT : Alertes & Notifications ---
+    // --- PANNEAU DROIT : Alertes ---
     QFrame *frameAlertes = new QFrame();
     frameAlertes->setStyleSheet(
-        "QFrame {"
-        "  background: rgba(0,0,0,0.2);"
-        "  border: 1px solid rgba(212,175,55,0.2);"
-        "  border-radius: 14px;"
-        "}"
+        "QFrame { background: rgba(0,0,0,0.2); border: 1px solid rgba(212,175,55,0.2); border-radius: 14px; }"
     );
     QVBoxLayout *alertLayout = new QVBoxLayout(frameAlertes);
-    alertLayout->setContentsMargins(16, 14, 16, 14);
-    alertLayout->setSpacing(8);
+    alertLayout->setContentsMargins(14, 12, 14, 12);
+    alertLayout->setSpacing(6);
 
     QLabel *alertTitle = new QLabel("🔔  ALERTES & NOTIFICATIONS");
-    alertTitle->setStyleSheet(
-        "font-size: 14px; font-weight: 900; color: #d4af37;"
-        "letter-spacing: 1px; border: none;"
-    );
+    alertTitle->setStyleSheet("font-size: 13px; font-weight: 900; color: #d4af37; letter-spacing: 1px; border: none;");
     alertLayout->addWidget(alertTitle);
 
     QFrame *lineGold2 = new QFrame();
-    lineGold2->setStyleSheet("background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #d4af37,stop:1 transparent);"
-                              "border:none; min-height:2px; max-height:2px;");
+    lineGold2->setStyleSheet("background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #d4af37,stop:1 transparent); border:none; min-height:2px; max-height:2px;");
     alertLayout->addWidget(lineGold2);
 
-    // Helper pour créer une alerte
     auto ajouterAlerte = [&](QString ico, QString texte, QString couleur, QString bgAlpha) {
         QFrame *alertItem = new QFrame();
         alertItem->setStyleSheet(QString(
-            "QFrame {"
-            "  background: %1;"
-            "  border-left: 4px solid %2;"
-            "  border-radius: 10px;"
-            "  margin: 2px 0px;"
-            "}"
+            "QFrame { background: %1; border-left: 3px solid %2; border-radius: 8px; }"
         ).arg(bgAlpha, couleur));
 
         QHBoxLayout *hl = new QHBoxLayout(alertItem);
-        hl->setContentsMargins(12, 10, 12, 10);
-        hl->setSpacing(10);
+        hl->setContentsMargins(8, 6, 8, 6);
+        hl->setSpacing(8);
 
         QLabel *lblIco = new QLabel(ico);
-        lblIco->setStyleSheet("font-size: 20px; border: none;");
-        lblIco->setFixedWidth(30);
+        lblIco->setStyleSheet("font-size: 16px; border: none;");
+        lblIco->setFixedWidth(24);
         hl->addWidget(lblIco);
 
         QLabel *lblTxt = new QLabel(texte);
-        lblTxt->setStyleSheet(QString(
-            "color: %1; font-size: 12px; font-weight: 700; border: none; line-height: 1.4;"
-        ).arg(couleur));
+        lblTxt->setStyleSheet(QString("color: %1; font-size: 11px; font-weight: 700; border: none;").arg(couleur));
         lblTxt->setWordWrap(true);
         hl->addWidget(lblTxt, 1);
 
         alertLayout->addWidget(alertItem);
     };
 
-    // --- Alertes dynamiques depuis Oracle ---
-    int alertCount = 0;
+    // Alertes dynamiques
+    if (cmdRetard > 0)
+        ajouterAlerte("🚨", QString("%1 commande(s) en retard critique !").arg(cmdRetard), "#ef5350", "rgba(239,83,80,0.08)");
 
-    // Retards
-    if (cmdRetard > 0) {
-        ajouterAlerte("🚨", QString("%1 commande(s) en retard critique !").arg(cmdRetard),
-            "#ef5350", "rgba(239,83,80,0.08)");
-        alertCount++;
-    }
+    if (depotCritiques > 0)
+        ajouterAlerte("🏬", QString("%1 zone(s) dépôt en surcharge (>90%) !").arg(depotCritiques), "#ef5350", "rgba(239,83,80,0.08)");
 
-    // Stock bas (< 20 unités)
     QSqlQuery qStockBas;
     qStockBas.exec("SELECT CODE_MP, QUANTITE FROM MATIERES_PREMIERES WHERE QUANTITE < 20 ORDER BY QUANTITE ASC");
-    while (qStockBas.next()) {
-        ajouterAlerte("📉", "Stock critique : " + qStockBas.value(0).toString() +
-                      " — seulement " + qStockBas.value(1).toString() + " unités restantes",
-                      "#ffa726", "rgba(255,167,38,0.08)");
-        alertCount++;
-    }
+    while (qStockBas.next())
+        ajouterAlerte("📉", "Stock bas : " + qStockBas.value(0).toString() + " — " + qStockBas.value(1).toString() + " u", "#ffa726", "rgba(255,167,38,0.08)");
 
-    // En production
-    if (cmdEnCours > 0) {
-        ajouterAlerte("🔄", QString("%1 commande(s) en cours de fabrication.").arg(cmdEnCours),
-            "#66bb6a", "rgba(102,187,106,0.08)");
-        alertCount++;
-    }
+    if (cmdEnCours > 0)
+        ajouterAlerte("🔄", QString("%1 commande(s) en fabrication.").arg(cmdEnCours), "#66bb6a", "rgba(102,187,106,0.08)");
 
-    // Terminées
-    if (cmdFini > 0) {
-        ajouterAlerte("✅", QString("%1 commande(s) terminée(s) avec succès.").arg(cmdFini),
-            "#29b6f6", "rgba(41,182,246,0.08)");
-        alertCount++;
-    }
+    if (cmdFini > 0)
+        ajouterAlerte("✅", QString("%1 commande(s) terminée(s).").arg(cmdFini), "#29b6f6", "rgba(41,182,246,0.08)");
 
-    // Volume stock
-    ajouterAlerte("📊", QString("Volume total en stock : %1 unités sur %2 lots.")
-        .arg(volumeStock, 0, 'f', 0).arg(totalMatieres),
-        "#ce93d8", "rgba(206,147,216,0.08)");
-    alertCount++;
+    if (cmdRetard == 0 && depotCritiques == 0)
+        ajouterAlerte("🌟", "Production optimale — Aucun retard !", "#66bb6a", "rgba(102,187,106,0.08)");
 
-    // Aucune alerte
-    if (cmdRetard == 0 && alertCount <= 3) {
-        ajouterAlerte("🌟", "Production optimale — Aucun retard détecté !",
-            "#66bb6a", "rgba(102,187,106,0.08)");
-    }
-
-    // Résumé clients
-    ajouterAlerte("🧾", QString("%1 client(s) — %2 produit(s) au catalogue.")
-        .arg(totalClients).arg(totalProduits),
-        "#e0c097", "rgba(224,192,151,0.08)");
+    ajouterAlerte("📊", QString("Stock : %1 u / Dépôt : %2%").arg(volumeStock, 0, 'f', 0).arg(tauxRempGlobal, 0, 'f', 1), "#ce93d8", "rgba(206,147,216,0.08)");
+    ajouterAlerte("🧾", QString("%1 client(s) — %2 produit(s)").arg(totalClients).arg(totalProduits), "#e0c097", "rgba(224,192,151,0.08)");
 
     alertLayout->addStretch();
     bottomLayout->addWidget(frameAlertes, 2);
@@ -2701,32 +2777,27 @@ void MainWindow::construireDashboardAccueil() {
     mainLayout->addLayout(bottomLayout, 1);
 
     // =============================================
-    // 7. FOOTER
+    // 8. FOOTER
     // =============================================
     QFrame *footerFrame = new QFrame();
-    footerFrame->setStyleSheet(
-        "QFrame {"
-        "  background: rgba(0,0,0,0.15);"
-        "  border: 1px solid rgba(212,175,55,0.15);"
-        "  border-radius: 10px;"
-        "}"
-    );
+    footerFrame->setStyleSheet("QFrame { background: rgba(0,0,0,0.15); border: 1px solid rgba(212,175,55,0.15); border-radius: 8px; }");
     QHBoxLayout *footerLayout = new QHBoxLayout(footerFrame);
-    footerLayout->setContentsMargins(20, 8, 20, 8);
+    footerLayout->setContentsMargins(16, 6, 16, 6);
 
     QLabel *footerLeft = new QLabel("✨ FIL D'OR — L'Excellence de la Maroquinerie");
-    footerLeft->setStyleSheet("font-size: 11px; color: rgba(212,175,55,0.6); font-style: italic; border: none;");
+    footerLeft->setStyleSheet("font-size: 10px; color: rgba(212,175,55,0.6); font-style: italic; border: none;");
     footerLayout->addWidget(footerLeft);
-
     footerLayout->addStretch();
-
     QLabel *footerRight = new QLabel("© 2026 — Atelier de Production");
-    footerRight->setStyleSheet("font-size: 11px; color: rgba(161,136,127,0.6); border: none;");
+    footerRight->setStyleSheet("font-size: 10px; color: rgba(161,136,127,0.6); border: none;");
     footerLayout->addWidget(footerRight);
 
     mainLayout->addWidget(footerFrame);
-}
 
+    // --- Finaliser le scroll ---
+    scrollArea->setWidget(scrollContent);
+    pageLayout->addWidget(scrollArea);
+}
 void MainWindow::rafraichirListeCommandes() {
     QSqlQueryModel *model = tmpOrdre.afficher();
     mesCommandes.clear();
@@ -2949,23 +3020,42 @@ void MainWindow::rafraichirListeClients() {
     }
 }
 void MainWindow::rafraichirListeDepots() {
+    QSqlQueryModel *model = tmpDepot.afficher();
+
     ui->tableDepot->setRowCount(0);
     ui->tableDepot->setColumnCount(7);
-    ui->tableDepot->setHorizontalHeaderLabels({"ID", "EMPLACEMENT", "ÉTAGÈRE", "CAPACITÉ MAX", "QTÉ ACTUELLE", "TYPE", "REMPLISSAGE"});
-    for(int i=0; i<mesDepots.size(); i++) {
-        ui->tableDepot->insertRow(i);
-        ui->tableDepot->setItem(i,0,new QTableWidgetItem(mesDepots[i].id));
-        ui->tableDepot->item(i,0)->setData(Qt::UserRole, i);
-        ui->tableDepot->setItem(i,1,new QTableWidgetItem(mesDepots[i].emplacement));
-        ui->tableDepot->setItem(i,2,new QTableWidgetItem(mesDepots[i].etagere));
-        ui->tableDepot->setItem(i,3,new QTableWidgetItem(QString::number(mesDepots[i].capaciteMax)));
-        ui->tableDepot->setItem(i,4,new QTableWidgetItem(QString::number(mesDepots[i].quantiteActuelle)));
-        ui->tableDepot->setItem(i,5,new QTableWidgetItem(mesDepots[i].typeStockage));
-        double r = (mesDepots[i].capaciteMax > 0) ? (mesDepots[i].quantiteActuelle/mesDepots[i].capaciteMax)*100 : 0;
-        ui->tableDepot->setItem(i,6,new QTableWidgetItem(QString::number(r, 'f', 1) + "%"));
-    }
-}
+    ui->tableDepot->setHorizontalHeaderLabels({
+        "ID", "Emplacement", "Étagère", "Capacité Max", "Quantité", "Type", "Remplissage"
+    });
 
+    int rows = model->rowCount();
+    ui->tableDepot->setRowCount(rows);
+
+    for (int i = 0; i < rows; i++) {
+        int idDb = model->record(i).value("ID_EMPLACEMENT").toInt();
+        QString et = model->record(i).value("ETAGERE").toString();
+        double cap = model->record(i).value("CAPACITE_MAX").toDouble();
+        double qte = model->record(i).value("QUANTITE_ACTUELLE").toDouble();
+        QString type = model->record(i).value("TYPE_STOCKAGE").toString();
+
+        QString remplissage = (cap > 0)
+            ? QString::number((qte / cap) * 100.0, 'f', 1) + "%"
+            : "0%";
+
+        ui->tableDepot->setItem(i, 0, new QTableWidgetItem(QString::number(idDb)));
+        ui->tableDepot->setItem(i, 1, new QTableWidgetItem("Empl. " + QString::number(idDb)));
+        ui->tableDepot->setItem(i, 2, new QTableWidgetItem(et));
+        ui->tableDepot->setItem(i, 3, new QTableWidgetItem(QString::number(cap)));
+        ui->tableDepot->setItem(i, 4, new QTableWidgetItem(QString::number(qte)));
+        ui->tableDepot->setItem(i, 5, new QTableWidgetItem(type));
+        ui->tableDepot->setItem(i, 6, new QTableWidgetItem(remplissage));
+
+        // Stocker l'ID dans UserRole (sur la colonne Étagère)
+        ui->tableDepot->item(i, 2)->setData(Qt::UserRole, idDb);
+    }
+
+    delete model;
+}
 // Exports
 void MainWindow::exporterPDF(QTableWidget *table, QString titre) {
     if(!table) return;
@@ -4120,4 +4210,344 @@ void MainWindow::showDepotRavitaillementTab() {
     desc->setAlignment(Qt::AlignCenter); l->addWidget(desc, 0, Qt::AlignCenter);
     l->addStretch();
     ui->tabWidgetDepot->setCurrentIndex(5);
+}
+
+// =========================================================
+// ===        PAGES DYNAMIQUES : ACCUEIL & CONNEXION     ===
+// =========================================================
+
+void MainWindow::construirePageAccueil() {
+    QWidget *page = ui->page_home;
+
+    if (page->layout()) {
+        clearLayout(page->layout());
+        delete page->layout();
+    }
+
+    page->setStyleSheet(
+        "QWidget#page_home {"
+        "  background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1,"
+        "    stop:0 #1a1210, stop:0.3 #2c1a16, stop:0.7 #3e2723, stop:1 #2c1a16);"
+        "}"
+    );
+
+    QVBoxLayout *mainL = new QVBoxLayout(page);
+    mainL->setSpacing(0);
+    mainL->setContentsMargins(0, 0, 0, 0);
+
+    // Spacer haut
+    mainL->addStretch(2);
+
+    // CONTENU CENTRAL
+    QVBoxLayout *centerL = new QVBoxLayout();
+    centerL->setSpacing(12);
+    centerL->setAlignment(Qt::AlignCenter);
+
+    QFrame *lineTop = new QFrame();
+    lineTop->setFixedWidth(120);
+    lineTop->setStyleSheet("background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 transparent,stop:0.5 #d4af37,stop:1 transparent);"
+                           "border:none; min-height:2px; max-height:2px;");
+    QHBoxLayout *hlLineTop = new QHBoxLayout();
+    hlLineTop->addStretch();
+    hlLineTop->addWidget(lineTop);
+    hlLineTop->addStretch();
+    centerL->addLayout(hlLineTop);
+
+    // Logo page accueil - grande taille et CENTRÉ
+    QLabel *logo = new QLabel();
+    QPixmap originalLogo(":/logo.png");
+    logo->setPixmap(originalLogo.scaled(180, 180, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    logo->setFixedSize(180, 180);
+    logo->setAlignment(Qt::AlignCenter);
+    logo->setScaledContents(false);
+    logo->setStyleSheet("border: none; background: transparent;");
+
+    QHBoxLayout *hlLogo = new QHBoxLayout();
+    hlLogo->addStretch();
+    hlLogo->addWidget(logo);
+    hlLogo->addStretch();
+    centerL->addLayout(hlLogo);
+
+    QLabel *lblPre = new QLabel("— ATELIER DE MAROQUINERIE DE LUXE —");
+    lblPre->setStyleSheet(
+        "font-size: 11px; font-weight: 700; color: #a1887f;"
+        "letter-spacing: 4px; text-transform: uppercase; border: none;"
+    );
+    lblPre->setAlignment(Qt::AlignCenter);
+    centerL->addWidget(lblPre);
+
+    QLabel *lblTitre = new QLabel("FIL D'OR");
+    lblTitre->setStyleSheet(
+        "font-size: 72px; font-weight: 200; color: #ffffff;"
+        "letter-spacing: 12px; border: none;"
+    );
+    lblTitre->setAlignment(Qt::AlignCenter);
+    centerL->addWidget(lblTitre);
+
+    QFrame *lineGold = new QFrame();
+    lineGold->setFixedWidth(300);
+    lineGold->setStyleSheet("background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 transparent,stop:0.2 #d4af37,stop:0.8 #d4af37,stop:1 transparent);"
+                             "border:none; min-height:2px; max-height:2px;");
+    QHBoxLayout *hlLine = new QHBoxLayout();
+    hlLine->addStretch();
+    hlLine->addWidget(lineGold);
+    hlLine->addStretch();
+    centerL->addLayout(hlLine);
+
+    QLabel *lblSub = new QLabel("L'Excellence de la Maroquinerie");
+    lblSub->setStyleSheet(
+        "font-size: 20px; color: #d4af37; font-style: italic;"
+        "font-weight: 400; letter-spacing: 2px; border: none;"
+    );
+    lblSub->setAlignment(Qt::AlignCenter);
+    centerL->addWidget(lblSub);
+
+    centerL->addSpacing(10);
+
+    QLabel *lblDesc = new QLabel("Gestion complète de la production, des stocks,\ndes ressources humaines et de la relation client.");
+    lblDesc->setStyleSheet(
+        "font-size: 13px; color: #bcaaa4; line-height: 1.6; border: none;"
+    );
+    lblDesc->setAlignment(Qt::AlignCenter);
+    centerL->addWidget(lblDesc);
+
+    centerL->addSpacing(30);
+
+    QPushButton *btnEntrer = new QPushButton("  ENTRER DANS L'ATELIER  ➔  ");
+    btnEntrer->setCursor(Qt::PointingHandCursor);
+    btnEntrer->setMinimumHeight(55);
+    btnEntrer->setMaximumWidth(400);
+    btnEntrer->setStyleSheet(
+        "QPushButton {"
+        "  background: transparent;"
+        "  color: #d4af37;"
+        "  font-size: 16px;"
+        "  font-weight: 800;"
+        "  letter-spacing: 3px;"
+        "  text-transform: uppercase;"
+        "  padding: 15px 40px;"
+        "  border: 2px solid #d4af37;"
+        "  border-radius: 30px;"
+        "}"
+        "QPushButton:hover {"
+        "  background: #d4af37;"
+        "  color: #1a1210;"
+        "  border-color: #d4af37;"
+        "}"
+    );
+
+    QHBoxLayout *hlBtn = new QHBoxLayout();
+    hlBtn->addStretch();
+    hlBtn->addWidget(btnEntrer);
+    hlBtn->addStretch();
+    centerL->addLayout(hlBtn);
+
+    connect(btnEntrer, &QPushButton::clicked, [=](){
+        ui->stackedWidget->setCurrentWidget(ui->page_login);
+    });
+
+    mainL->addLayout(centerL);
+
+    mainL->addStretch(2);
+
+    QLabel *footer = new QLabel("© 2026 FIL D'OR — Tous droits réservés — Atelier de Production");
+    footer->setStyleSheet(
+        "font-size: 10px; color: rgba(161,136,127,0.4); border: none; padding: 12px;"
+    );
+    footer->setAlignment(Qt::AlignCenter);
+    mainL->addWidget(footer);
+}
+
+void MainWindow::construirePageLogin() {
+    QWidget *page = ui->page_login;
+
+    if (page->layout()) {
+        clearLayout(page->layout());
+        delete page->layout();
+    }
+
+    page->setStyleSheet(
+        "QWidget#page_login {"
+        "  background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1,"
+        "    stop:0 #1a1210, stop:0.3 #2c1a16, stop:0.7 #3e2723, stop:1 #2c1a16);"
+        "}"
+    );
+
+    QVBoxLayout *mainL = new QVBoxLayout(page);
+    mainL->setSpacing(0);
+    mainL->setContentsMargins(0, 0, 0, 0);
+
+    mainL->addStretch(2);
+
+    QFrame *card = new QFrame();
+    card->setFixedWidth(480);
+    card->setStyleSheet(
+        "QFrame {"
+        "  background: rgba(0,0,0,0.35);"
+        "  border: 1px solid rgba(212,175,55,0.25);"
+        "  border-radius: 20px;"
+        "}"
+    );
+
+    QVBoxLayout *cardL = new QVBoxLayout(card);
+    cardL->setSpacing(16);
+    cardL->setContentsMargins(40, 35, 40, 35);
+
+    QLabel *icoLock = new QLabel("🔐");
+    icoLock->setStyleSheet("font-size: 40px; border: none;");
+    icoLock->setAlignment(Qt::AlignCenter);
+    cardL->addWidget(icoLock);
+
+    QLabel *lblTitre = new QLabel("Connexion Sécurisée");
+    lblTitre->setStyleSheet(
+        "font-size: 26px; font-weight: 800; color: #ffffff;"
+        "letter-spacing: 1px; border: none;"
+    );
+    lblTitre->setAlignment(Qt::AlignCenter);
+    cardL->addWidget(lblTitre);
+
+    QLabel *lblSub = new QLabel("Accédez à votre espace de gestion FIL D'OR");
+    lblSub->setStyleSheet(
+        "font-size: 12px; color: #d4af37; font-style: italic; border: none;"
+    );
+    lblSub->setAlignment(Qt::AlignCenter);
+    cardL->addWidget(lblSub);
+
+    QFrame *lineGold = new QFrame();
+    lineGold->setStyleSheet(
+        "background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 transparent,stop:0.2 #d4af37,stop:0.8 #d4af37,stop:1 transparent);"
+        "border:none; min-height:2px; max-height:2px;"
+    );
+    cardL->addWidget(lineGold);
+
+    cardL->addSpacing(8);
+
+    QString styleInput =
+        "QLineEdit {"
+        "  background: rgba(255,255,255,0.08);"
+        "  border: 1px solid rgba(212,175,55,0.3);"
+        "  border-radius: 12px;"
+        "  padding: 14px 18px;"
+        "  font-size: 14px;"
+        "  color: #ffffff;"
+        "  selection-background-color: rgba(212,175,55,0.3);"
+        "}"
+        "QLineEdit:focus {"
+        "  border: 2px solid #d4af37;"
+        "  background: rgba(255,255,255,0.12);"
+        "}"
+        "QLineEdit::placeholder {"
+        "  color: rgba(255,255,255,0.35);"
+        "}";
+
+    QLabel *lblNom = new QLabel("👤  Nom");
+    lblNom->setStyleSheet("font-size: 12px; font-weight: 700; color: #e0c097; border: none; margin-bottom: 2px;");
+    cardL->addWidget(lblNom);
+
+    QLineEdit *leNom = ui->le_login_nom;
+    leNom->setParent(card);
+    leNom->setPlaceholderText("Entrez votre nom...");
+    leNom->setStyleSheet(styleInput);
+    leNom->setMinimumHeight(48);
+    cardL->addWidget(leNom);
+
+    QLabel *lblPre = new QLabel("👤  Prénom");
+    lblPre->setStyleSheet("font-size: 12px; font-weight: 700; color: #e0c097; border: none; margin-bottom: 2px;");
+    cardL->addWidget(lblPre);
+
+    QLineEdit *lePre = ui->le_login_prenom;
+    lePre->setParent(card);
+    lePre->setPlaceholderText("Entrez votre prénom...");
+    lePre->setStyleSheet(styleInput);
+    lePre->setMinimumHeight(48);
+    cardL->addWidget(lePre);
+
+    QLabel *lblMdp = new QLabel("🔑  Mot de passe");
+    lblMdp->setStyleSheet("font-size: 12px; font-weight: 700; color: #e0c097; border: none; margin-bottom: 2px;");
+    cardL->addWidget(lblMdp);
+
+    QLineEdit *leMdp = ui->le_login_mdp;
+    leMdp->setParent(card);
+    leMdp->setPlaceholderText("Entrez votre mot de passe...");
+    leMdp->setEchoMode(QLineEdit::Password);
+    leMdp->setStyleSheet(styleInput);
+    leMdp->setMinimumHeight(48);
+    cardL->addWidget(leMdp);
+
+    cardL->addSpacing(12);
+
+    QHBoxLayout *hlBtns = new QHBoxLayout();
+    hlBtns->setSpacing(14);
+
+    QPushButton *btnRetour = ui->btn_login_back;
+    btnRetour->setParent(card);
+    btnRetour->setText("← Retour");
+    btnRetour->setCursor(Qt::PointingHandCursor);
+    btnRetour->setMinimumHeight(48);
+    btnRetour->setStyleSheet(
+        "QPushButton {"
+        "  background: transparent;"
+        "  color: #a1887f;"
+        "  font-size: 14px;"
+        "  font-weight: 700;"
+        "  padding: 12px 24px;"
+        "  border: 1px solid rgba(161,136,127,0.4);"
+        "  border-radius: 12px;"
+        "}"
+        "QPushButton:hover {"
+        "  background: rgba(161,136,127,0.15);"
+        "  color: #e0c097;"
+        "  border-color: #e0c097;"
+        "}"
+    );
+    hlBtns->addWidget(btnRetour);
+
+    hlBtns->addStretch();
+
+    QPushButton *btnLogin = ui->btn_login;
+    btnLogin->setParent(card);
+    btnLogin->setText("SE CONNECTER  ➔");
+    btnLogin->setCursor(Qt::PointingHandCursor);
+    btnLogin->setMinimumHeight(48);
+    btnLogin->setStyleSheet(
+        "QPushButton {"
+        "  background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #d4af37, stop:1 #8d5524);"
+        "  color: #1a1210;"
+        "  font-size: 14px;"
+        "  font-weight: 900;"
+        "  letter-spacing: 2px;"
+        "  text-transform: uppercase;"
+        "  padding: 12px 32px;"
+        "  border: none;"
+        "  border-radius: 12px;"
+        "}"
+        "QPushButton:hover {"
+        "  background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #e0c097, stop:1 #d4af37);"
+        "}"
+        "QPushButton:pressed {"
+        "  background: #8d5524;"
+        "}"
+    );
+    hlBtns->addWidget(btnLogin);
+
+    cardL->addLayout(hlBtns);
+
+    QLabel *lblInfo = new QLabel("🔒 Connexion chiffrée — Authentification RFID supportée");
+    lblInfo->setStyleSheet("font-size: 10px; color: rgba(161,136,127,0.5); border: none; margin-top: 8px;");
+    lblInfo->setAlignment(Qt::AlignCenter);
+    cardL->addWidget(lblInfo);
+
+    QHBoxLayout *hlCard = new QHBoxLayout();
+    hlCard->addStretch();
+    hlCard->addWidget(card);
+    hlCard->addStretch();
+
+    mainL->addLayout(hlCard);
+
+    mainL->addStretch(2);
+
+    QLabel *footer = new QLabel("© 2026 FIL D'OR — Atelier de Maroquinerie de Luxe");
+    footer->setStyleSheet("font-size: 10px; color: rgba(161,136,127,0.35); border: none; padding: 10px;");
+    footer->setAlignment(Qt::AlignCenter);
+    mainL->addWidget(footer);
 }

@@ -2,6 +2,7 @@
 #define MAINWINDOW_H
 #include "ordrefabrication.h"
 #include "matierepremiere.h"
+#include "depot.h"
 
 #include <QMainWindow>
 #include <QTableWidget>
@@ -64,6 +65,8 @@ private:
     Ui::MainWindow *ui;
     OrdreFabrication tmpOrdre;
     MatierePremiere tmpMatiere;
+    Depot tmpDepot;
+
 
     QVector<CommandeInfo> mesCommandes;
     QVector<ProduitInfo> mesProduits;
@@ -147,6 +150,9 @@ private:
     void ouvrirIAPrediction();
     // Dashboard global (Page d'Accueil)
     void construireDashboardAccueil();
+    // Pages dynamiques modernisées
+    void construirePageAccueil();
+    void construirePageLogin();
 
     // --- Alertes personnalisées FIL D'OR ---
     void alerteSucces(const QString &titre, const QString &message);
