@@ -8,17 +8,18 @@
 
 class OrdreFabrication
 {
-    QString id_produit;
+    QString id_produit; // Attention, maintenant c'est un ID numérique dans Oracle, on le garde en QString pour Qt
     int quantite;
     QString id_matiere;
     QDate date_lancement;
     QDate date_fin_prevue;
     QString statut;
+    QString id_employe; // NOUVEAU
 
 public:
-    // Constructeurs
     OrdreFabrication();
-    OrdreFabrication(QString id_produit, int quantite, QString id_matiere, QDate date_lancement, QDate date_fin_prevue, QString statut);
+    // Ajoutez id_employe à la fin du constructeur :
+    OrdreFabrication(QString id_produit, int quantite, QString id_matiere, QDate date_lancement, QDate date_fin_prevue, QString statut, QString id_employe);
 
     // CRUD
     bool ajouter();

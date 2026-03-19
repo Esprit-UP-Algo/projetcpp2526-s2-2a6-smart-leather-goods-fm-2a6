@@ -30,6 +30,10 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         logo.qrc
         connexion.h connexion.cpp
         ordrefabrication.h ordrefabrication.cpp
+        etape.h etape.cpp
+        matierepremiere.h matierepremiere.cpp
+        depot.h depot.cpp
+        employe.h employe.cpp
     )
     qt_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
 else()
