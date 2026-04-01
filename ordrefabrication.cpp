@@ -2,6 +2,37 @@
 #include <QDebug>
 #include <QSqlError>
 
+QString OrdreFabrication::messageSiSaisieInvalide(const QString &idProduit,
+                                                 const QString &idMatiere,
+                                                 const QString &idEmploye,
+                                                 int quantite,
+                                                 const QDate &dateLancement,
+                                                 const QDate &dateFinPrevue)
+{
+    bool okP = false, okM = false, okE = false;
+    const int p = idProduit.trimmed().toInt(&okP);
+    const int m = idMatiere.trimmed().toInt(&okM);
+    const int e = idEmploye.trimmed().toInt(&okE);
+
+    if (!okP || p <= 0)
+        return QStringLiteral("Sélectionnez un produit.");
+    if (!okM || m <= 0)
+        return QStringLiteral("Sélectionnez une matière première.");
+    if (!okE || e <= 0)
+        return QStringLiteral("Sélectionnez un employé responsable.");
+    if (quantite < 1)
+        return QStringLiteral("La quantité doit être au moins 1.");
+    if (quantite > 10000)
+        return QStringLiteral("La quantité dépasse la limite autorisée (10 000).");
+    if (!dateLancement.isValid())
+        return QStringLiteral("Date de lancement invalide.");
+    if (!dateFinPrevue.isValid())
+        return QStringLiteral("Date de fin prévue invalide.");
+    if (dateFinPrevue < dateLancement)
+        return QStringLiteral("La date de fin doit être le même jour ou après la date de lancement.");
+    return {};
+}
+
 OrdreFabrication::OrdreFabrication() {}
 
 OrdreFabrication::OrdreFabrication(QString id_produit, int quantite, QString id_matiere, QDate date_lancement, QDate date_fin_prevue, QString statut, QString id_employe)
@@ -15,6 +46,12 @@ OrdreFabrication::OrdreFabrication(QString id_produit, int quantite, QString id_
     this->id_employe = id_employe;
 }
 bool OrdreFabrication::ajouter() {
+    m_derniereErreurSaisie.clear();
+    m_derniereErreurSaisie = messageSiSaisieInvalide(id_produit, id_matiere, id_employe,
+                                                    quantite, date_lancement, date_fin_prevue);
+    if (!m_derniereErreurSaisie.isEmpty())
+        return false;
+
     QSqlQuery query;
     query.prepare("INSERT INTO PLANIFICATION (ID_COMMANDE, ID_PRODUIT, QUANTITE, ID_STOCK_MP, DATE_LANCEMENT, DATE_FIN_PREVUE, STATUT, ID_EMPLOYE) "
                   "VALUES (SEQ_PLAN.NEXTVAL, :prod, :qte, :mat, :deb, :fin, :stat, :emp)");
@@ -32,6 +69,12 @@ bool OrdreFabrication::ajouter() {
 }
 
 bool OrdreFabrication::modifier(int id) {
+    m_derniereErreurSaisie.clear();
+    m_derniereErreurSaisie = messageSiSaisieInvalide(id_produit, id_matiere, id_employe,
+                                                    quantite, date_lancement, date_fin_prevue);
+    if (!m_derniereErreurSaisie.isEmpty())
+        return false;
+
     QSqlQuery query;
     query.prepare("UPDATE PLANIFICATION SET ID_PRODUIT = :prod, QUANTITE = :qte, ID_STOCK_MP = :mat, DATE_LANCEMENT = :deb, DATE_FIN_PREVUE = :fin, STATUT = :stat, ID_EMPLOYE = :emp WHERE ID_COMMANDE = :id");
     query.bindValue(":prod", id_produit.toInt());
