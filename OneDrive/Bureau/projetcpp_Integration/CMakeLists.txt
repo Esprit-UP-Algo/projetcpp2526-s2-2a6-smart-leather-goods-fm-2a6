@@ -10,8 +10,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # --- MODIFICATION 1 : Ajout de PrintSupport et Charts ici ---
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets LinguistTools PrintSupport Charts Sql)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets LinguistTools PrintSupport Charts Sql)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Gui LinguistTools PrintSupport Charts Sql)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Gui LinguistTools PrintSupport Charts Sql)
 
 set(TS_FILES ProjetCpp_fr_FR.ts)
 
@@ -34,6 +34,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         etape.h etape.cpp
         matierepremiere.h matierepremiere.cpp
         depot.h depot.cpp
+        produit.h produit.cpp
     )
     qt_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
 else()
@@ -53,6 +54,7 @@ endif()
 # --- MODIFICATION 2 : Ajout de Qt::PrintSupport et Qt::Charts ici ---
 target_link_libraries(ProjetCpp PRIVATE
     Qt${QT_VERSION_MAJOR}::Widgets
+    Qt${QT_VERSION_MAJOR}::Gui
     Qt${QT_VERSION_MAJOR}::PrintSupport
     Qt${QT_VERSION_MAJOR}::Charts
     Qt${QT_VERSION_MAJOR}::Sql

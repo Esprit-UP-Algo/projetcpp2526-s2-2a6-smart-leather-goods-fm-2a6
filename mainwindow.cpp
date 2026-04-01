@@ -6,6 +6,7 @@
 #include "etape.h"
 #include "depot.h"
 #include "employe.h"
+#include "client.h"
 
 #include <QSqlRecord>
 #include <QSqlQuery>
@@ -40,6 +41,7 @@
 #include <QTimer>
 #include <QSignalBlocker>
 #include <QRegularExpression>
+#include <QRegularExpressionValidator>
 #include <QMargins>
 #include <QColor>
 #include <QFont>
@@ -146,6 +148,156 @@ static QString messageValidationSaisieProduit(const QString &designation,
         return QStringLiteral("Le temps de fabrication ne peut dépasser 8760 heures (1 an).");
 
     return {};
+}
+
+/// Validation saisie client (UI avant BDD). Retourne message d’erreur ou chaîne vide si OK.
+static QString messageValidationSaisieClient(const QString &nom,
+                                             const QString &tel,
+                                             const QString &adr,
+                                             const QString &email,
+                                             int pointsFidelite)
+{
+    const QString n = nom.trimmed();
+    if (n.length() < 2)
+        return QStringLiteral("Le nom doit contenir au moins 2 caractères.");
+    if (n.length() > 100)
+        return QStringLiteral("Le nom ne doit pas dépasser 100 caractères.");
+
+    const QString t = tel.trimmed();
+    if (!t.isEmpty()) {
+        static const QRegularExpression reTel(QStringLiteral(R"(^[-+().\s\d]{6,32}$)"));
+        if (!reTel.match(t).hasMatch())
+            return QStringLiteral("Téléphone invalide : utilisez chiffres, espaces, +, -, parenthèses ou points (6 à 32 caractères).");
+        int digits = 0;
+        for (QChar c : t) {
+            if (c.isDigit())
+                ++digits;
+        }
+        if (digits < 8 || digits > 15)
+            return QStringLiteral("Le numéro doit comporter entre 8 et 15 chiffres.");
+    }
+
+    const QString a = adr.trimmed();
+    if (a.length() > 200)
+        return QStringLiteral("L’adresse ne doit pas dépasser 200 caractères.");
+
+    const QString e = email.trimmed();
+    if (!e.isEmpty()) {
+        static const QRegularExpression reMail(QStringLiteral(
+            R"(^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$)"));
+        if (!reMail.match(e).hasMatch())
+            return QStringLiteral("Adresse e-mail invalide.");
+        if (e.length() > 120)
+            return QStringLiteral("L’e-mail ne doit pas dépasser 120 caractères.");
+    }
+
+    if (pointsFidelite < 0 || pointsFidelite > 100000)
+        return QStringLiteral("Les points fidélité doivent être entre 0 et 100 000.");
+
+    return {};
+}
+
+/// ID manuel à l’ajout : vide = séquence automatique ; sinon entier > 0.
+static QString messageValidationIdClientAjoutOptionnel(const QString &idText)
+{
+    const QString t = idText.trimmed();
+    if (t.isEmpty())
+        return {};
+    bool ok = false;
+    const int id = t.toInt(&ok);
+    if (!ok || id <= 0)
+        return QStringLiteral("L’identifiant doit être un entier strictement positif, ou laissé vide pour attribution automatique.");
+    return {};
+}
+
+/// Conformément au MCD : chaque produit est lié à exactement un client (« Acheter ») et un dépôt (« stocker »).
+static QString messageValidationFkProduitObligatoires(int idClient,
+                                                         int idEmpl,
+                                                         const QComboBox *cbClient,
+                                                         const QComboBox *cbDepot)
+{
+    const int nCli = (cbClient && cbClient->count() > 1) ? (cbClient->count() - 1) : 0;
+    const int nDep = (cbDepot && cbDepot->count() > 1) ? (cbDepot->count() - 1) : 0;
+
+    if (nCli <= 0)
+        return QStringLiteral("Aucun client en base : enregistrez des clients (table CLIENTS) avant de créer un produit.");
+    if (idClient <= 0)
+        return QStringLiteral("Sélectionnez un client — relation « Acheter » (1,1 côté produit).");
+
+    if (nDep <= 0)
+        return QStringLiteral("Aucun dépôt en base : créez au moins un emplacement (module Dépôt) avant de créer un produit.");
+    if (idEmpl <= 0)
+        return QStringLiteral("Sélectionnez un emplacement — relation « stocker » (1,1 côté produit).");
+
+    return {};
+}
+
+static int comboIdData(QComboBox *cb)
+{
+    if (!cb || cb->count() == 0)
+        return 0;
+    const int ix = cb->currentIndex();
+    if (ix < 0)
+        return 0;
+    const QVariant v = cb->itemData(ix, Qt::UserRole);
+    if (v.isValid() && v.canConvert<int>())
+        return v.toInt();
+    bool ok = false;
+    const int n = v.toString().toInt(&ok);
+    return ok ? n : 0;
+}
+
+static void reglerComboParIdDonnee(QComboBox *cb, int id)
+{
+    if (!cb)
+        return;
+    if (id <= 0) {
+        cb->setCurrentIndex(0);
+        return;
+    }
+    int ix = cb->findData(id);
+    if (ix < 0)
+        ix = cb->findData(QString::number(id));
+    if (ix >= 0)
+        cb->setCurrentIndex(ix);
+    else
+        cb->setCurrentIndex(0);
+}
+
+static int indexMesClientParIdDb(const QVector<ClientInfo> &mesClients, int idClient)
+{
+    if (idClient <= 0)
+        return -1;
+    const QString sid = QString::number(idClient);
+    for (int i = 0; i < mesClients.size(); ++i) {
+        if (mesClients[i].id == sid)
+            return i;
+    }
+    return -1;
+}
+
+/// Si la chaîne est vide, retourne \a siVide (alors considérée comme valide).
+/// Sinon parse jj/MM/aaaa, aaaa-MM-jj ou ISO ; en cas d'échec, \a errMsg et date invalide.
+static QDate parseDateFinPrevue(const QString &texteBrut, const QDate &siVide, QString *errMsg)
+{
+    const QString t = texteBrut.trimmed();
+    if (t.isEmpty())
+        return siVide;
+
+    QDate d = QDate::fromString(t, QStringLiteral("dd/MM/yyyy"));
+    if (!d.isValid())
+        d = QDate::fromString(t, QStringLiteral("yyyy-MM-dd"));
+    if (!d.isValid())
+        d = QDate::fromString(t, Qt::ISODate);
+
+    if (!d.isValid()) {
+        if (errMsg) {
+            *errMsg = QStringLiteral(
+                "Date de fin invalide. Formats acceptés : jj/mm/aaaa, aaaa-mm-jj ou date ISO.");
+        }
+        return {};
+    }
+    return d;
 }
 
 namespace {
@@ -300,6 +452,38 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
 
+    // Stock : impossible de valider 0,00 — minimum aligné sur les règles métier (≥ 0,01)
+    if (ui->sb_stock_qte) {
+        ui->sb_stock_qte->setMinimum(0.01);
+        ui->sb_stock_qte->setDecimals(2);
+    }
+    if (ui->sb_stock_qte_modif) {
+        ui->sb_stock_qte_modif->setMinimum(0.01);
+        ui->sb_stock_qte_modif->setDecimals(2);
+    }
+    // Validateurs ligne (saisie guidée — même motifs que validerMatiereAjout())
+    if (ui->le_stock_code) {
+        ui->le_stock_code->setValidator(new QRegularExpressionValidator(
+            QRegularExpression(QStringLiteral("^[A-Z]{2,4}-20\\d{2}-\\d{3}$")), this));
+    }
+    if (ui->le_stock_lot) {
+        ui->le_stock_lot->setValidator(new QRegularExpressionValidator(
+            QRegularExpression(QStringLiteral("^LOT-20\\d{2}-[A-Z]$")), this));
+    }
+    if (ui->le_stock_coul) {
+        ui->le_stock_coul->setValidator(new QRegularExpressionValidator(
+            QRegularExpression(QStringLiteral("^[A-Za-zÀ-ÿ ]{3,20}$")), this));
+    }
+
+    if (ui->le_depot_id) {
+        ui->le_depot_id->setReadOnly(true);
+        ui->le_depot_id->setPlaceholderText(QStringLiteral("Généré automatiquement (séquence)"));
+    }
+    if (ui->sb_depot_act)
+        ui->sb_depot_act->setMinimum(0.0);
+    if (ui->sb_depot_act_modif)
+        ui->sb_depot_act_modif->setMinimum(0.0);
+
     // Logo sidebar - taille agrandie
     ui->l_logo_img->setMinimumSize(55, 55);
     ui->l_logo_img->setMaximumSize(55, 55);
@@ -319,9 +503,15 @@ MainWindow::MainWindow(QWidget *parent)
     bool test = cnx->estConnecte();
     if (test) {
         qDebug() << "✅ Base Oracle connectée via Singleton";
+        QSqlQuery qUser(cnx->getDatabase());
+        QString schema = QStringLiteral("?");
+        if (qUser.exec(QStringLiteral("SELECT USER FROM DUAL")) && qUser.next())
+            schema = qUser.value(0).toString();
+        setWindowTitle(QStringLiteral("FIL D'OR — Oracle connecté (%1)").arg(schema));
     } else {
         qDebug() << "❌ Pas de connexion Oracle";
         alerteWarning("Erreur BDD", "Impossible de se connecter à la base Oracle.");
+        setWindowTitle(QStringLiteral("FIL D'OR — hors base (mode limité)"));
     }
 
     // Enable sorting
@@ -351,6 +541,7 @@ MainWindow::MainWindow(QWidget *parent)
         rafraichirListeClients();
         rafraichirListeDepots();
         rafraichirListeEtapes();
+        remplirCombosProduitClientEmplacement();
     } else {
         // BDD inaccessible : interface démarrera en mode restreint (données locales ou vides)
     }
@@ -450,7 +641,11 @@ MainWindow::MainWindow(QWidget *parent)
         }
         ui->stackedWidget->setCurrentWidget(ui->page_fab_list);
     });
-    connect(ui->btn_nav_produit, &QPushButton::clicked, [=](){ rafraichirListeProduits(); ui->stackedWidget->setCurrentWidget(ui->page_produit_list); });
+    connect(ui->btn_nav_produit, &QPushButton::clicked, [=](){
+        remplirCombosProduitClientEmplacement();
+        rafraichirListeProduits();
+        ui->stackedWidget->setCurrentWidget(ui->page_produit_list);
+    });
     connect(ui->btn_nav_rh, &QPushButton::clicked, [=](){ rafraichirListeEmployes(); ui->stackedWidget->setCurrentWidget(ui->page_employe_list); });
     connect(ui->btn_nav_stock, &QPushButton::clicked, [=](){ rafraichirListeMatieres(); ui->stackedWidget->setCurrentWidget(ui->page_stock_list); });
     connect(ui->btn_nav_clients, &QPushButton::clicked, [=](){ rafraichirListeClients(); ui->stackedWidget->setCurrentWidget(ui->page_client_list); });
@@ -460,6 +655,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Bouton + Ajouter (onglet ajout)
     connect(ui->btn_add_depot, &QPushButton::clicked, [=](){
+        ui->le_depot_id->clear();
         ui->le_depot_emp->clear();
         ui->le_depot_eta->clear();
         ui->sb_depot_cap->setValue(0);
@@ -475,19 +671,39 @@ MainWindow::MainWindow(QWidget *parent)
 
     // AJOUT
     connect(ui->btn_valider_depot, &QPushButton::clicked, [=](){
+        const QString errIdAj = Depot::messageIdAjoutNeDoitPasEtreSaisi(ui->le_depot_id->text());
+        if (!errIdAj.isEmpty()) {
+            alerteWarning(QStringLiteral("Identifiant"), errIdAj);
+            return;
+        }
+        const QString emp = ui->le_depot_emp->text();
+        const QString eta = ui->le_depot_eta->text();
+        if (emp.trimmed().isEmpty() || eta.trimmed().isEmpty()) {
+            alerteWarning(QStringLiteral("Saisie incomplète"),
+                          QStringLiteral("Renseignez l'emplacement et l'étagère pour valider l'ajout."));
+            return;
+        }
+        const double cap = ui->sb_depot_cap->value();
+        const double qte = ui->sb_depot_act->value();
+
         Depot d(
-            ui->le_depot_eta->text().trimmed(),
-            ui->sb_depot_cap->value(),
-            ui->sb_depot_act->value(),
+            emp,
+            eta,
+            cap,
+            qte,
             ui->cb_depot_type->currentText()
         );
 
         if (d.ajouter()) {
             alerteSucces("Ajout Dépôt", "Emplacement ajouté avec succès.");
             rafraichirListeDepots();
+            remplirCombosProduitClientEmplacement();
             ui->tabWidgetDepot->setCurrentIndex(0);
         } else {
-            alerteErreur("Erreur", "Impossible d'ajouter l'emplacement.");
+            if (!d.derniereErreurSaisie().isEmpty())
+                alerteWarning(QStringLiteral("Saisie invalide"), d.derniereErreurSaisie());
+            else
+                alerteErreur("Erreur", "Impossible d'ajouter l'emplacement.");
         }
     });
 
@@ -502,8 +718,18 @@ MainWindow::MainWindow(QWidget *parent)
         int idDb = ui->tableDepot->item(row, 2)->data(Qt::UserRole).toInt();
 
         ui->le_depot_id_modif->setText(QString::number(idDb));
-        ui->le_depot_emp_modif->setText(ui->tableDepot->item(row, 1)->text());
-        ui->le_depot_eta_modif->setText(ui->tableDepot->item(row, 2)->text());
+        {
+            const QString etCell = ui->tableDepot->item(row, 2)->text();
+            const QString sep = QStringLiteral(" — ");
+            const int ixSep = etCell.indexOf(sep);
+            if (ixSep >= 0) {
+                ui->le_depot_emp_modif->setText(etCell.left(ixSep));
+                ui->le_depot_eta_modif->setText(etCell.mid(ixSep + sep.size()));
+            } else {
+                ui->le_depot_emp_modif->clear();
+                ui->le_depot_eta_modif->setText(etCell);
+            }
+        }
         ui->sb_depot_cap_modif->setValue(ui->tableDepot->item(row, 3)->text().toDouble());
         ui->sb_depot_act_modif->setValue(ui->tableDepot->item(row, 4)->text().toDouble());
         ui->cb_depot_type_modif->setCurrentText(ui->tableDepot->item(row, 5)->text());
@@ -521,18 +747,21 @@ MainWindow::MainWindow(QWidget *parent)
             return;
         }
 
-        QString pId = ui->cb_produit_modif->currentData().toString();
-        int q = ui->sb_qte_modif->value();
-        QString mId = ui->cb_matiere_modif->currentData().toString();
-        QString eId = ui->cb_employe_modif->currentData().toString();
-        QDate d1 = ui->dt_lancement_modif->date();
-        QDate d2 = QDate::fromString(ui->le_fin_prevue_modif->text().trimmed(), "dd/MM/yyyy");
-        if (!d2.isValid()) {
-            d2 = QDate::fromString(ui->le_fin_prevue_modif->text().trimmed(), "yyyy-MM-dd");
+        const int idProdM = comboIdData(ui->cb_produit_modif);
+        const int idMatM = comboIdData(ui->cb_matiere_modif);
+        const int idEmpM = comboIdData(ui->cb_employe_modif);
+        const int q = ui->sb_qte_modif->value();
+        const QDate d1 = ui->dt_lancement_modif->date();
+        QString errDateM;
+        const QDate d2 = parseDateFinPrevue(ui->le_fin_prevue_modif->text(), d1.addDays(7), &errDateM);
+        if (!errDateM.isEmpty()) {
+            alerteWarning(QStringLiteral("Date invalide"), errDateM);
+            return;
         }
-        if (!d2.isValid()) {
-            d2 = d1.addDays(7);
-        }
+
+        const QString pId = QString::number(idProdM);
+        const QString mId = QString::number(idMatM);
+        const QString eId = QString::number(idEmpM);
 
         QString idStr = mesCommandes[indexModification].id;
         int idToEdit = idStr.mid(3).toInt();
@@ -559,7 +788,10 @@ MainWindow::MainWindow(QWidget *parent)
             rafraichirListeCommandes();
             ui->tabWidgetPlanif->setCurrentIndex(0);
         } else {
-            alerteErreur("Erreur", "Echec BDD.");
+            if (!o.derniereErreurSaisie().isEmpty())
+                alerteWarning(QStringLiteral("Saisie invalide"), o.derniereErreurSaisie());
+            else
+                alerteErreur("Erreur", "Echec BDD.");
         }
     });
 
@@ -577,6 +809,7 @@ MainWindow::MainWindow(QWidget *parent)
         if (d.supprimer(idDb)) {
             alerteSucces("Suppression", "Emplacement supprimé.");
             rafraichirListeDepots();
+            remplirCombosProduitClientEmplacement();
         } else {
             alerteErreur("Erreur", "Impossible de supprimer.");
         }
@@ -750,14 +983,21 @@ MainWindow::MainWindow(QWidget *parent)
     });
 
     connect(ui->btn_valider_planif, &QPushButton::clicked, [=](){
-        QString pId = ui->cb_produit->currentData().toString();
-        int q = ui->sb_qte->value();
-        QString mId = ui->cb_matiere->currentData().toString();
-        QString eId = ui->cb_employe->currentData().toString();
-        QDate d1 = ui->dt_lancement->date();
-        QDate d2 = QDate::fromString(ui->le_fin_prevue->text().trimmed(), "dd/MM/yyyy");
-        if(!d2.isValid()) d2 = d1.addDays(3);
+        const int idProd = comboIdData(ui->cb_produit);
+        const int idMat = comboIdData(ui->cb_matiere);
+        const int idEmp = comboIdData(ui->cb_employe);
+        const int q = ui->sb_qte->value();
+        const QDate d1 = ui->dt_lancement->date();
+        QString errDate;
+        const QDate d2 = parseDateFinPrevue(ui->le_fin_prevue->text(), d1.addDays(3), &errDate);
+        if (!errDate.isEmpty()) {
+            alerteWarning(QStringLiteral("Date invalide"), errDate);
+            return;
+        }
 
+        const QString pId = QString::number(idProd);
+        const QString mId = QString::number(idMat);
+        const QString eId = QString::number(idEmp);
         OrdreFabrication o(pId, q, mId, d1, d2, "Planifié", eId);
         int idToEdit = -1;
         if(modeModification && indexModification >= 0 && indexModification < mesCommandes.size())
@@ -774,21 +1014,17 @@ MainWindow::MainWindow(QWidget *parent)
                 if (qLastId.exec("SELECT MAX(ID_COMMANDE) FROM PLANIFICATION") && qLastId.next()) {
                     int idNouvelleCommande = qLastId.value(0).toInt();
 
-                    // Récupérer l'employé depuis le formulaire
-                    int idEmploye = 1;
-                    if (ui->cb_employe && !ui->cb_employe->currentData().toString().isEmpty()) {
-                        idEmploye = ui->cb_employe->currentData().toString().toInt();
-                        if (idEmploye == 0) {
-                            // Essayer par nom
+                    // Récupérer l'employé depuis le formulaire (déjà validé ; repli SQL si besoin)
+                    int idEmploye = idEmp;
+                    if (idEmploye <= 0 && ui->cb_employe) {
                             QSqlQuery qEmp;
                             qEmp.prepare("SELECT ID_EMPLOYE FROM EMPLOYES WHERE NOM || ' ' || PRENOM = :nom");
                             qEmp.bindValue(":nom", ui->cb_employe->currentText());
-                            if (qEmp.exec() && qEmp.next()) {
+                            if (qEmp.exec() && qEmp.next())
                                 idEmploye = qEmp.value(0).toInt();
-                            }
-                            if (idEmploye == 0) idEmploye = 1;
-                        }
                     }
+                    if (idEmploye <= 0)
+                        idEmploye = 1;
 
                     // Vérifier que les étapes n'existent pas déjà
                     QSqlQuery qCheck;
@@ -804,7 +1040,10 @@ MainWindow::MainWindow(QWidget *parent)
             modeModification = false;
             ui->tabWidgetPlanif->setCurrentIndex(0);
         } else {
-            alerteErreur("Erreur", "Échec BDD.");
+            if (!o.derniereErreurSaisie().isEmpty())
+                alerteWarning(QStringLiteral("Saisie invalide"), o.derniereErreurSaisie());
+            else
+                alerteErreur("Erreur", "Échec BDD.");
         }
     });
 
@@ -841,8 +1080,10 @@ MainWindow::MainWindow(QWidget *parent)
     ui->btn_valider_modif_produit->setStyleSheet(styleBtnSave());
     ui->btn_valider_modif_produit->setCursor(Qt::PointingHandCursor);
 
-    // Changement d'onglet manuel (Stats)
+    // Changement d'onglet manuel (Stats + rechargement client/dépôt pour les FK)
     connect(ui->tabWidgetProduits, &QTabWidget::currentChanged, [=](int index){
+        if (index == 1 || index == 2)
+            remplirCombosProduitClientEmplacement();
         if (index == 3) ouvrirStatsProduits(); // Calcule les stats si on va sur l'onglet 4
     });
 
@@ -1027,7 +1268,7 @@ MainWindow::MainWindow(QWidget *parent)
         ui->le_stock_code->clear();
         ui->le_stock_lot->clear();
         ui->le_stock_coul->clear();
-        ui->sb_stock_qte->setValue(0);
+        ui->sb_stock_qte->setValue(0.01);
         ui->cb_stock_cat->setCurrentIndex(0);
         ui->cb_stock_etat->setCurrentIndex(0);
         ui->cb_stock_type->setCurrentIndex(0);
@@ -1035,33 +1276,7 @@ MainWindow::MainWindow(QWidget *parent)
         ui->tabWidgetStock->setCurrentIndex(1); // Onglet Ajouter
     });
 
-    // --- BOUTON VALIDER AJOUT (Oracle) ---
-    connect(ui->btn_valider_stock, &QPushButton::clicked, [=](){
-        QString code = ui->le_stock_code->text().trimmed();
-        if (code.isEmpty()) {
-            alerteWarning("Champ requis", "Le code matière première est obligatoire.");
-            return;
-        }
-
-        MatierePremiere mp(
-            code,
-            ui->cb_stock_cat->currentText(),
-            ui->le_stock_lot->text().trimmed(),
-            ui->cb_stock_etat->currentText(),
-            ui->le_stock_coul->text().trimmed(),
-            ui->sb_stock_qte->value(),
-            ui->cb_stock_type->currentText(),
-            ui->cb_stock_qual->currentText()
-        );
-
-        if (mp.ajouter()) {
-            alerteSucces("Matière ajoutée", "La matière première " + code + " a été enregistrée avec succès !");
-            rafraichirListeMatieres();
-            ui->tabWidgetStock->setCurrentIndex(0);
-        } else {
-            alerteErreur("Erreur BDD", "Impossible d'ajouter la matière première dans Oracle.");
-        }
-    });
+    // --- BOUTON VALIDER AJOUT matière : on_btn_valider_stock_clicked() (auto-connect setupUi) ---
 
     // --- BOUTON MODIFIER (pré-remplir le formulaire) ---
     connect(ui->btn_edit_stock, &QPushButton::clicked, [=](){
@@ -1088,9 +1303,20 @@ MainWindow::MainWindow(QWidget *parent)
 
     // --- BOUTON VALIDER MODIFICATION (Oracle) ---
     connect(ui->btn_valider_modif_stock, &QPushButton::clicked, [=](){
-        QString code = ui->le_stock_code_modif->text().trimmed();
-        if (code.isEmpty()) {
-            alerteWarning("Champ requis", "Le code matière première est obligatoire.");
+        const QString code = ui->le_stock_code_modif->text().trimmed();
+        const QString codeNorm = code.toUpper();
+        const QString lot = ui->le_stock_lot_modif->text().trimmed();
+        const QString coul = ui->le_stock_coul_modif->text().trimmed();
+        const double qteMp = ui->sb_stock_qte_modif->value();
+        const QString cat = ui->cb_stock_cat_modif->currentText();
+        const QString etat = ui->cb_stock_etat_modif->currentText();
+        const QString typeSt = ui->cb_stock_type_modif->currentText();
+        const QString qual = ui->cb_stock_qual_modif->currentText();
+
+        const QString errAvant = MatierePremiere::messageSiSaisieInvalide(
+            codeNorm, cat, lot, etat, coul, qteMp, typeSt, qual);
+        if (!errAvant.isEmpty()) {
+            alerteWarning(QStringLiteral("Saisie invalide"), errAvant);
             return;
         }
 
@@ -1103,22 +1329,25 @@ MainWindow::MainWindow(QWidget *parent)
         int idOracle = mesMatieres[indexModifStock].id.toInt();
 
         MatierePremiere mp(
-            code,
-            ui->cb_stock_cat_modif->currentText(),
-            ui->le_stock_lot_modif->text().trimmed(),
-            ui->cb_stock_etat_modif->currentText(),
-            ui->le_stock_coul_modif->text().trimmed(),
-            ui->sb_stock_qte_modif->value(),
-            ui->cb_stock_type_modif->currentText(),
-            ui->cb_stock_qual_modif->currentText()
+            codeNorm,
+            cat,
+            lot,
+            etat,
+            coul,
+            qteMp,
+            typeSt,
+            qual
         );
 
         if (mp.modifier(idOracle)) {
-            alerteSucces("Matière modifiée", "La matière " + code + " a été mise à jour !");
+            alerteSucces("Matière modifiée", "La matière " + codeNorm + " a été mise à jour !");
             rafraichirListeMatieres();
             ui->tabWidgetStock->setCurrentIndex(0);
         } else {
-            alerteErreur("Erreur BDD", "Impossible de modifier la matière dans Oracle.");
+            if (!mp.derniereErreurSaisie().isEmpty())
+                alerteWarning(QStringLiteral("Saisie invalide"), mp.derniereErreurSaisie());
+            else
+                alerteErreur("Erreur BDD", "Impossible de modifier la matière dans Oracle.");
         }
     });
 
@@ -1242,19 +1471,73 @@ MainWindow::MainWindow(QWidget *parent)
         else if (index == 5) showClientIaTab();
     });
 
-    connect(ui->btn_add_client, &QPushButton::clicked, [=](){ ouvrirDialogueClient(false); });
-    connect(ui->btn_edit_client, &QPushButton::clicked, [=](){
-        int idx = ui->tableClients->currentRow();
-        if(idx < 0) { alerteWarning("Sélection", "Sélectionnez un client."); return; }
-        indexModifClient = ui->tableClients->item(idx, 0)->data(Qt::UserRole).toInt();
-        ouvrirDialogueClient(true);
-    });
-    connect(ui->btn_delete_client, &QPushButton::clicked, [=](){
-        int r = ui->tableClients->currentRow();
-        if(r >= 0 && r < mesClients.size()) { mesClients.removeAt(r); rafraichirListeClients(); }
+    connect(ui->btn_search_client, &QPushButton::clicked, this, [=](){
+        Client c;
+        QSqlQueryModel *model = c.rechercher(ui->le_search_client->text().trimmed());
+        remplirTableClients(model);
     });
 
+    connect(ui->btn_sort_alpha_client, &QPushButton::clicked, this, [=](){
+        Client c;
+        QSqlQueryModel *model = c.trierParNom();
+        remplirTableClients(model);
+    });
 
+    connect(ui->btn_add_client, &QPushButton::clicked, this, [=](){
+        ui->le_client_id->clear();
+        ui->le_client_nom->clear();
+        ui->le_client_tel->clear();
+        ui->le_client_adr->clear();
+        ui->le_client_email->clear();
+        ui->sb_client_pts->setValue(0);
+        ui->tabWidgetClients->setCurrentIndex(1);
+    });
+
+    connect(ui->btn_edit_client, &QPushButton::clicked, this, [=](){
+        int row = ui->tableClients->currentRow();
+        if (row < 0) {
+            alerteWarning(QStringLiteral("Sélection"), QStringLiteral("Sélectionnez un client."));
+            return;
+        }
+        QTableWidgetItem *itId = ui->tableClients->item(row, 0);
+        if (!itId)
+            return;
+        ui->le_client_id_modif->setText(itId->text());
+        ui->le_client_nom_modif->setText(ui->tableClients->item(row, 1) ? ui->tableClients->item(row, 1)->text() : QString());
+        ui->le_client_tel_modif->setText(ui->tableClients->item(row, 2) ? ui->tableClients->item(row, 2)->text() : QString());
+        ui->le_client_adr_modif->setText(ui->tableClients->item(row, 3) ? ui->tableClients->item(row, 3)->text() : QString());
+        ui->le_client_email_modif->setText(ui->tableClients->item(row, 4) ? ui->tableClients->item(row, 4)->text() : QString());
+        QString ptsTxt = ui->tableClients->item(row, 5) ? ui->tableClients->item(row, 5)->text() : QString();
+        ptsTxt.remove(QStringLiteral(" pts"));
+        ui->sb_client_pts_modif->setValue(ptsTxt.toInt());
+        ui->tabWidgetClients->setCurrentIndex(2);
+    });
+
+    connect(ui->btn_delete_client, &QPushButton::clicked, this, [=](){
+        int row = ui->tableClients->currentRow();
+        if (row < 0) {
+            alerteWarning(QStringLiteral("Sélection"), QStringLiteral("Sélectionnez un client."));
+            return;
+        }
+        QTableWidgetItem *itId = ui->tableClients->item(row, 0);
+        if (!itId)
+            return;
+        bool ok = false;
+        const int id = itId->text().toInt(&ok);
+        if (!ok || id <= 0) {
+            alerteWarning(QStringLiteral("Suppression"), QStringLiteral("Identifiant client invalide."));
+            return;
+        }
+        Client c;
+        if (c.supprimer(id)) {
+            alerteSucces(QStringLiteral("Client supprimé"), QStringLiteral("OK."));
+            rafraichirListeClients();
+            remplirCombosProduitClientEmplacement();
+        } else {
+            const QString err = c.derniereErreurSaisie();
+            alerteErreur(QStringLiteral("Suppression"), err.isEmpty() ? QStringLiteral("Impossible de supprimer.") : err);
+        }
+    });
     // =========================================================
     // --- 6. DÉPÔT & LOGISTIQUE (Navigation SPA)
     // =========================================================
@@ -1276,26 +1559,32 @@ MainWindow::MainWindow(QWidget *parent)
     // On évite ici les doubles connexions qui provoquent des actions en double.
 
     connect(ui->btn_valider_modif_depot, &QPushButton::clicked, [=](){
-        const int idDepot = ui->le_depot_id_modif->text().toInt();
-        if (idDepot <= 0) {
-            alerteWarning("Erreur", "ID dépôt invalide.");
+        const QString errId = Depot::messageIdModificationTexteInvalide(ui->le_depot_id_modif->text());
+        if (!errId.isEmpty()) {
+            alerteWarning(QStringLiteral("Identifiant"), errId);
             return;
         }
-        if (ui->le_depot_eta_modif->text().trimmed().isEmpty()) {
-            alerteWarning("Erreur", "L'étagère est obligatoire.");
-            return;
-        }
+        const int idDepot = ui->le_depot_id_modif->text().trimmed().toInt();
+        const QString empM = ui->le_depot_emp_modif->text();
+        const QString etaM = ui->le_depot_eta_modif->text();
+        const double capM = ui->sb_depot_cap_modif->value();
+        const double qteM = ui->sb_depot_act_modif->value();
         Depot d(
-            ui->le_depot_eta_modif->text().trimmed(),
-            ui->sb_depot_cap_modif->value(),
-            ui->sb_depot_act_modif->value(),
+            empM,
+            etaM,
+            capM,
+            qteM,
             ui->cb_depot_type_modif->currentText()
         );
         if (!d.modifier(idDepot)) {
-            alerteErreur("Erreur BDD", "Impossible de mettre à jour l'emplacement.");
+            if (!d.derniereErreurSaisie().isEmpty())
+                alerteWarning(QStringLiteral("Saisie invalide"), d.derniereErreurSaisie());
+            else
+                alerteErreur("Erreur BDD", "Impossible de mettre à jour l'emplacement.");
             return;
         }
         rafraichirListeDepots();
+        remplirCombosProduitClientEmplacement();
         ui->tabWidgetDepot->setCurrentIndex(0); // Retour liste
         alerteSucces("Mise à jour", "Emplacement modifié avec succès.");
     });
@@ -3251,49 +3540,88 @@ void MainWindow::calculerEtAfficherStats() {
     }
 }
 
-// Rafraichissement listes locales
+void MainWindow::remplirCombosProduitClientEmplacement()
+{
+    if (!ui->cb_prod_client || !ui->cb_prod_client_modif || !ui->cb_prod_empl || !ui->cb_prod_empl_modif)
+        return;
+
+    QSqlDatabase dbClients = Connexion::getInstance()->getDatabase();
+    auto remplirClients = [dbClients](QComboBox *cb) {
+        cb->clear();
+        cb->addItem(QStringLiteral("— Sélectionnez un client —"), QVariant());
+        if (!dbClients.isOpen())
+            return;
+        QSqlQuery q(dbClients);
+        if (!q.exec(QStringLiteral("SELECT ID_CLIENT, NOM FROM CLIENTS ORDER BY ID_CLIENT"))) {
+            qDebug() << "remplirCombosProduit (CLIENTS):" << q.lastError().text();
+            return;
+        }
+        while (q.next()) {
+            const int id = q.value(0).toInt();
+            const QString nom = q.value(1).toString();
+            cb->addItem(QStringLiteral("%1 — %2").arg(id).arg(nom), id);
+        }
+    };
+    QSqlDatabase dbDepots = Connexion::getInstance()->getDatabase();
+    auto remplirDepots = [dbDepots](QComboBox *cb) {
+        cb->clear();
+        cb->addItem(QStringLiteral("— Sélectionnez un dépôt —"), QVariant());
+        if (!dbDepots.isOpen())
+            return;
+        QSqlQuery q(dbDepots);
+        if (!q.exec(QStringLiteral("SELECT ID_EMPLACEMENT, ETAGERE, TYPE_STOCKAGE FROM DEPOTS ORDER BY ID_EMPLACEMENT"))) {
+            qDebug() << "remplirCombosProduit (DEPOTS):" << q.lastError().text();
+            return;
+        }
+        while (q.next()) {
+            const int id = q.value(0).toInt();
+            const QString et = q.value(1).toString();
+            const QString ty = q.value(2).toString();
+            cb->addItem(QStringLiteral("Empl. %1 — %2 (%3)").arg(id).arg(et, ty), id);
+        }
+    };
+
+    for (QComboBox *cb : {ui->cb_prod_client, ui->cb_prod_client_modif})
+        remplirClients(cb);
+    for (QComboBox *cb : {ui->cb_prod_empl, ui->cb_prod_empl_modif})
+        remplirDepots(cb);
+}
+
+// Rafraichissement listes locales (lecture via CRUD Produit::afficher — même requête que create/update)
 void MainWindow::rafraichirListeProduits(const QString &filtreCollection) {
     const bool triActif = ui->tableProduits->isSortingEnabled();
     ui->tableProduits->setSortingEnabled(false);
 
     ui->tableProduits->clearContents();
     ui->tableProduits->setRowCount(0);
-    ui->tableProduits->setColumnCount(6);
-    ui->tableProduits->setHorizontalHeaderLabels({"RÉF", "DÉSIGNATION", "COÛT", "COLLECTION", "CUIR", "TEMPS"});
+    ui->tableProduits->setColumnCount(8);
+    ui->tableProduits->setHorizontalHeaderLabels({"RÉF", "DÉSIGNATION", "COÛT", "COLLECTION", "CUIR", "TEMPS", "CLIENT", "DÉPÔT"});
 
     mesProduits.clear();
 
-    const QString needle = filtreCollection.trimmed();
-
-    QString sql =
-        "SELECT ID_PRODUIT, DESIGNATION, COUT, COLLECTION, TYPE_CUIR_REQUIS, TEMPS_FABRICATION "
-        "FROM PRODUITS";
-    if(!needle.isEmpty()) {
-        sql += " WHERE UPPER(COLLECTION) LIKE :needle";
-    }
-    sql += " ORDER BY ID_PRODUIT DESC";
-
-    QSqlQuery query;
-    if(!needle.isEmpty()) {
-        query.prepare(sql);
-        query.bindValue(":needle", "%" + needle.toUpper() + "%");
-    }
-
-    const bool ok = needle.isEmpty() ? query.exec(sql) : query.exec();
-    if(!ok) {
+    QSqlQueryModel *model = tmpProduit.afficher(filtreCollection);
+    if (!model || model->lastError().isValid()) {
         alerteErreur("Erreur BDD", "Impossible de charger la liste des produits.");
+        delete model;
         ui->tableProduits->setSortingEnabled(triActif);
         return;
     }
 
-    int row = 0;
-    while(query.next()) {
-        const int idProd = query.value(0).toInt();
-        const QString designation = query.value(1).toString();
-        const double cout = query.value(2).toDouble();
-        const QString coll = query.value(3).toString();
-        const QString cuir = query.value(4).toString();
-        const int temps = query.value(5).toInt();
+    const int rows = model->rowCount();
+    for (int row = 0; row < rows; ++row) {
+        const QSqlRecord rec = model->record(row);
+        const int idProd = rec.value(QStringLiteral("ID_PRODUIT")).toInt();
+        const QString designation = rec.value(QStringLiteral("DESIGNATION")).toString();
+        const double cout = rec.value(QStringLiteral("COUT")).toDouble();
+        const QString coll = rec.value(QStringLiteral("COLLECTION")).toString();
+        const QString cuir = rec.value(QStringLiteral("TYPE_CUIR_REQUIS")).toString();
+        const int temps = rec.value(QStringLiteral("TEMPS_FABRICATION")).toInt();
+        const QVariant vCli = rec.value(QStringLiteral("ID_CLIENT"));
+        const QVariant vEmp = rec.value(QStringLiteral("ID_EMPLACEMENT"));
+        const int idCli = vCli.isNull() ? 0 : vCli.toInt();
+        const int idEmp = vEmp.isNull() ? 0 : vEmp.toInt();
+        const QString nomCliDb = rec.value(QStringLiteral("NOM_CLIENT")).toString().trimmed();
+        const QString etagereDep = rec.value(QStringLiteral("ETA_DEPOT")).toString().trimmed();
 
         ProduitInfo p;
         p.id_produit = QString::number(idProd);
@@ -3302,8 +3630,8 @@ void MainWindow::rafraichirListeProduits(const QString &filtreCollection) {
         p.collection = coll;
         p.typeCuir = cuir;
         p.tempsFab = temps;
-        p.idClient = QString();
-        p.idEmplacement = QString();
+        p.idClient = idCli > 0 ? QString::number(idCli) : QString();
+        p.idEmplacement = idEmp > 0 ? QString::number(idEmp) : QString();
         mesProduits.append(p);
 
         ui->tableProduits->insertRow(row);
@@ -3313,10 +3641,19 @@ void MainWindow::rafraichirListeProduits(const QString &filtreCollection) {
         ui->tableProduits->setItem(row, 3, new QTableWidgetItem(coll));
         ui->tableProduits->setItem(row, 4, new QTableWidgetItem(cuir));
         ui->tableProduits->setItem(row, 5, new SortableNumericTableWidgetItem(QString::number(temps), temps));
-
-        row++;
+        const QString colClient = idCli > 0
+            ? (nomCliDb.isEmpty() ? QString::number(idCli)
+                                 : QStringLiteral("%1 — %2").arg(idCli).arg(nomCliDb))
+            : QStringLiteral("—");
+        const QString colDepot = idEmp > 0
+            ? (etagereDep.isEmpty() ? QString::number(idEmp)
+                                    : QStringLiteral("%1 (%2)").arg(idEmp).arg(etagereDep))
+            : QStringLiteral("—");
+        ui->tableProduits->setItem(row, 6, new QTableWidgetItem(colClient));
+        ui->tableProduits->setItem(row, 7, new QTableWidgetItem(colDepot));
     }
 
+    delete model;
     ui->tableProduits->setSortingEnabled(triActif);
 }
 
@@ -3369,6 +3706,171 @@ void MainWindow::on_btn_delete_produit_clicked() {
     }
 }
 
+bool MainWindow::validerMatiereAjout()
+{
+    const QString code = ui->le_stock_code->text().trimmed();
+    const QString lot = ui->le_stock_lot->text().trimmed();
+    const QString coul = ui->le_stock_coul->text().trimmed();
+
+    static const QRegularExpression rxCode(QStringLiteral("^[A-Z]{2,4}-20\\d{2}-\\d{3}$"));
+    static const QRegularExpression rxLot(QStringLiteral("^LOT-20\\d{2}-[A-Z]$"));
+    static const QRegularExpression rxCouleur(QStringLiteral("^[A-Za-zÀ-ÿ ]{3,20}$"));
+
+    if (!rxCode.match(code).hasMatch()) {
+        alerteErreur(QStringLiteral("Validation"),
+                       QStringLiteral("Code MP invalide (ex: CUI-2024-001)."));
+        return false;
+    }
+    if (!rxLot.match(lot).hasMatch()) {
+        alerteErreur(QStringLiteral("Validation"),
+                       QStringLiteral("Numéro de lot invalide (ex: LOT-2024-A)."));
+        return false;
+    }
+    if (!rxCouleur.match(coul).hasMatch()) {
+        alerteErreur(QStringLiteral("Validation"),
+                       QStringLiteral("Couleur invalide (lettres et espaces, 3 à 20 caractères)."));
+        return false;
+    }
+    if (ui->sb_stock_qte->value() <= 0.0) {
+        alerteErreur(QStringLiteral("Validation"), QStringLiteral("La quantité doit être > 0."));
+        return false;
+    }
+
+    return true;
+}
+
+void MainWindow::on_btn_valider_stock_clicked()
+{
+    if (!validerMatiereAjout())
+        return;
+
+    const QString code = ui->le_stock_code->text().trimmed();
+    MatierePremiere mp(
+        code,
+        ui->cb_stock_cat->currentText(),
+        ui->le_stock_lot->text().trimmed(),
+        ui->cb_stock_etat->currentText(),
+        ui->le_stock_coul->text().trimmed(),
+        ui->sb_stock_qte->value(),
+        ui->cb_stock_type->currentText(),
+        ui->cb_stock_qual->currentText());
+
+    if (mp.ajouter()) {
+        alerteSucces(QStringLiteral("Matière ajoutée"),
+                     QStringLiteral("La matière première %1 a été enregistrée avec succès !").arg(code));
+        rafraichirListeMatieres();
+        ui->tabWidgetStock->setCurrentIndex(0);
+    } else {
+        if (!mp.derniereErreurSaisie().isEmpty())
+            alerteErreur(QStringLiteral("Validation/BDD"), mp.derniereErreurSaisie());
+        else
+            alerteErreur(QStringLiteral("Validation/BDD"),
+                          QStringLiteral("Données invalides ou insertion impossible."));
+    }
+}
+
+void MainWindow::on_btn_valider_client_clicked()
+{
+    Connexion *cnx = Connexion::getInstance();
+    if (!cnx || !cnx->estConnecte()) {
+        alerteErreur(QStringLiteral("Base de données"), QStringLiteral("Connexion Oracle requise."));
+        return;
+    }
+
+    const QString nom = ui->le_client_nom->text();
+    const QString tel = ui->le_client_tel->text().trimmed();
+    const QString adr = ui->le_client_adr->text().trimmed();
+    const QString mail = ui->le_client_email->text().trimmed();
+    const int pts = ui->sb_client_pts->value();
+
+    const QString errId = messageValidationIdClientAjoutOptionnel(ui->le_client_id->text());
+    if (!errId.isEmpty()) {
+        alerteWarning(QStringLiteral("Validation"), errId);
+        return;
+    }
+    const QString errSaisie = messageValidationSaisieClient(nom, tel, adr, mail, pts);
+    if (!errSaisie.isEmpty()) {
+        alerteWarning(QStringLiteral("Validation"), errSaisie);
+        return;
+    }
+
+    bool okId = false;
+    const int idSaisi = ui->le_client_id->text().trimmed().toInt(&okId);
+    const int id = okId ? idSaisi : 0;
+
+    Client c(
+        id,
+        nom.trimmed(),
+        tel,
+        adr,
+        mail,
+        pts);
+
+    if (c.ajouter()) {
+        alerteSucces(QStringLiteral("Client ajouté"), QStringLiteral("OK."));
+        rafraichirListeClients();
+        remplirCombosProduitClientEmplacement();
+        ui->tabWidgetClients->setCurrentIndex(0);
+        ui->le_client_id->clear();
+        ui->le_client_nom->clear();
+        ui->le_client_tel->clear();
+        ui->le_client_adr->clear();
+        ui->le_client_email->clear();
+        ui->sb_client_pts->setValue(0);
+    } else {
+        const QString err = c.derniereErreurSaisie();
+        alerteErreur(QStringLiteral("Validation/BDD"),
+                     err.isEmpty() ? QStringLiteral("Données invalides ou insertion impossible.") : err);
+    }
+}
+
+void MainWindow::on_btn_valider_modif_client_clicked()
+{
+    Connexion *cnx = Connexion::getInstance();
+    if (!cnx || !cnx->estConnecte()) {
+        alerteErreur(QStringLiteral("Base de données"), QStringLiteral("Connexion Oracle requise."));
+        return;
+    }
+
+    bool ok = false;
+    const int id = ui->le_client_id_modif->text().trimmed().toInt(&ok);
+    if (!ok || id <= 0) {
+        alerteWarning(QStringLiteral("Identifiant"), QStringLiteral("Identifiant client invalide."));
+        return;
+    }
+
+    const QString nom = ui->le_client_nom_modif->text();
+    const QString tel = ui->le_client_tel_modif->text().trimmed();
+    const QString adr = ui->le_client_adr_modif->text().trimmed();
+    const QString mail = ui->le_client_email_modif->text().trimmed();
+    const int pts = ui->sb_client_pts_modif->value();
+
+    const QString errSaisie = messageValidationSaisieClient(nom, tel, adr, mail, pts);
+    if (!errSaisie.isEmpty()) {
+        alerteWarning(QStringLiteral("Validation"), errSaisie);
+        return;
+    }
+
+    Client c(
+        id,
+        nom.trimmed(),
+        tel,
+        adr,
+        mail,
+        pts);
+
+    if (c.modifier(id)) {
+        alerteSucces(QStringLiteral("Client modifié"), QStringLiteral("OK."));
+        rafraichirListeClients();
+        remplirCombosProduitClientEmplacement();
+        ui->tabWidgetClients->setCurrentIndex(0);
+    } else {
+        const QString err = c.derniereErreurSaisie();
+        alerteErreur(QStringLiteral("Modification"),
+                     err.isEmpty() ? QStringLiteral("Échec de modification.") : err);
+    }
+}
+
 void MainWindow::on_btn_valider_produit_clicked() {
     const QString nom = ui->le_prod_nom->text();
     const double cout = ui->sb_prod_cout->value();
@@ -3384,8 +3886,15 @@ void MainWindow::on_btn_valider_produit_clicked() {
 
     const QString nomTrim = nom.trimmed();
 
-    // On ne dispose pas des ids (client / emplacement) dans l'UI : on passe NULL.
-    Produit p(0, nomTrim, cout, coll.trimmed(), cuir.trimmed(), temps, 0, 0);
+    const int idClient = comboIdData(ui->cb_prod_client);
+    const int idEmpl = comboIdData(ui->cb_prod_empl);
+    const QString errFk = messageValidationFkProduitObligatoires(idClient, idEmpl, ui->cb_prod_client, ui->cb_prod_empl);
+    if (!errFk.isEmpty()) {
+        alerteWarning(QStringLiteral("Client / Dépôt"), errFk);
+        return;
+    }
+
+    Produit p(0, nomTrim, cout, coll.trimmed(), cuir.trimmed(), temps, idClient, idEmpl);
     if(p.ajouter()) {
         alerteSucces("Succès", "Produit ajouté !");
         rafraichirListeProduits(ui->le_search_coll->text());
@@ -3395,7 +3904,11 @@ void MainWindow::on_btn_valider_produit_clicked() {
         ui->sb_prod_cout->setValue(0);
         ui->sb_prod_temps->setValue(1);
     } else {
-        alerteErreur("Erreur", "Ajout échoué !");
+        const QString err = p.derniereErreurSaisie();
+        alerteErreur(QStringLiteral("Produit / Oracle"),
+                     err.isEmpty()
+                         ? QStringLiteral("Ajout échoué (vérifiez la clé étrangère ID_CLIENT et que le client existe en base).")
+                         : err);
     }
 }
 
@@ -3419,7 +3932,15 @@ void MainWindow::on_btn_valider_modif_produit_clicked() {
 
     const QString nomTrim = nom.trimmed();
 
-    Produit p(selectedProdId, nomTrim, cout, coll.trimmed(), cuir.trimmed(), temps, 0, 0);
+    const int idClient = comboIdData(ui->cb_prod_client_modif);
+    const int idEmpl = comboIdData(ui->cb_prod_empl_modif);
+    const QString errFk = messageValidationFkProduitObligatoires(idClient, idEmpl, ui->cb_prod_client_modif, ui->cb_prod_empl_modif);
+    if (!errFk.isEmpty()) {
+        alerteWarning(QStringLiteral("Client / Dépôt"), errFk);
+        return;
+    }
+
+    Produit p(selectedProdId, nomTrim, cout, coll.trimmed(), cuir.trimmed(), temps, idClient, idEmpl);
     if(p.modifier(selectedProdId)) {
         alerteSucces("Succès", "Produit modifié avec succès !");
         rafraichirListeProduits(ui->le_search_coll->text());
@@ -3427,7 +3948,11 @@ void MainWindow::on_btn_valider_modif_produit_clicked() {
         selectedProdId = -1;
         rowToEdit = -1;
     } else {
-        alerteErreur("Erreur", "Mise à jour en base de données échouée !");
+        const QString err = p.derniereErreurSaisie();
+        alerteErreur(QStringLiteral("Produit / Oracle"),
+                     err.isEmpty()
+                         ? QStringLiteral("Mise à jour échouée (contraintes Oracle ou session).")
+                         : err);
     }
 }
 
@@ -3524,19 +4049,78 @@ void MainWindow::rafraichirListeMatieres() {
 
     delete model;
 }
-void MainWindow::rafraichirListeClients() {
+
+void MainWindow::remplirTableClients(QSqlQueryModel *model)
+{
+    if (!model)
+        return;
+
+    ui->tableClients->clearContents();
     ui->tableClients->setRowCount(0);
     ui->tableClients->setColumnCount(6);
-    ui->tableClients->setHorizontalHeaderLabels({"ID CLIENT", "NOM", "TÉLÉPHONE", "ADRESSE", "EMAIL", "FIDÉLITÉ"});
-    for(int i=0; i<mesClients.size(); i++) {
+    ui->tableClients->setHorizontalHeaderLabels({
+        QStringLiteral("ID CLIENT"),
+        QStringLiteral("NOM"),
+        QStringLiteral("TÉLÉPHONE"),
+        QStringLiteral("ADRESSE"),
+        QStringLiteral("EMAIL"),
+        QStringLiteral("FIDÉLITÉ")
+    });
+
+    const int rows = model->rowCount();
+    ui->tableClients->setRowCount(rows);
+    mesClients.clear();
+
+    for (int i = 0; i < rows; ++i) {
+        const QSqlRecord rec = model->record(i);
+        const int idDb = rec.value(QStringLiteral("ID_CLIENT")).toInt();
+        const QString nom = rec.value(QStringLiteral("NOM")).toString();
+        const QString tel = rec.value(QStringLiteral("TELEPHONE")).toString();
+        const QString adr = rec.value(QStringLiteral("ADRESSE")).toString();
+        const QString mail = rec.value(QStringLiteral("EMAIL")).toString();
+        const int pts = rec.value(QStringLiteral("POINTS_FIDELITE")).toInt();
+
+        ui->tableClients->setItem(i, 0, new QTableWidgetItem(QString::number(idDb)));
+        ui->tableClients->setItem(i, 1, new QTableWidgetItem(nom));
+        ui->tableClients->setItem(i, 2, new QTableWidgetItem(tel));
+        ui->tableClients->setItem(i, 3, new QTableWidgetItem(adr));
+        ui->tableClients->setItem(i, 4, new QTableWidgetItem(mail));
+        ui->tableClients->setItem(i, 5, new QTableWidgetItem(QString::number(pts) + QStringLiteral(" pts")));
+
+        mesClients.append({QString::number(idDb), nom, tel, adr, mail, pts});
+    }
+
+    delete model;
+}
+
+void MainWindow::rafraichirListeClients()
+{
+    Connexion *cnx = Connexion::getInstance();
+    if (cnx && cnx->estConnecte()) {
+        Client c;
+        remplirTableClients(c.afficher());
+        return;
+    }
+
+    ui->tableClients->clearContents();
+    ui->tableClients->setRowCount(0);
+    ui->tableClients->setColumnCount(6);
+    ui->tableClients->setHorizontalHeaderLabels({
+        QStringLiteral("ID CLIENT"),
+        QStringLiteral("NOM"),
+        QStringLiteral("TÉLÉPHONE"),
+        QStringLiteral("ADRESSE"),
+        QStringLiteral("EMAIL"),
+        QStringLiteral("FIDÉLITÉ")
+    });
+    for (int i = 0; i < mesClients.size(); ++i) {
         ui->tableClients->insertRow(i);
-        ui->tableClients->setItem(i,0,new QTableWidgetItem(mesClients[i].id));
-        ui->tableClients->item(i,0)->setData(Qt::UserRole, i);
-        ui->tableClients->setItem(i,1,new QTableWidgetItem(mesClients[i].nom));
-        ui->tableClients->setItem(i,2,new QTableWidgetItem(mesClients[i].telephone));
-        ui->tableClients->setItem(i,3,new QTableWidgetItem(mesClients[i].adresse));
-        ui->tableClients->setItem(i,4,new QTableWidgetItem(mesClients[i].email));
-        ui->tableClients->setItem(i,5,new QTableWidgetItem(QString::number(mesClients[i].pointsFidelite) + " pts"));
+        ui->tableClients->setItem(i, 0, new QTableWidgetItem(mesClients[i].id));
+        ui->tableClients->setItem(i, 1, new QTableWidgetItem(mesClients[i].nom));
+        ui->tableClients->setItem(i, 2, new QTableWidgetItem(mesClients[i].telephone));
+        ui->tableClients->setItem(i, 3, new QTableWidgetItem(mesClients[i].adresse));
+        ui->tableClients->setItem(i, 4, new QTableWidgetItem(mesClients[i].email));
+        ui->tableClients->setItem(i, 5, new QTableWidgetItem(QString::number(mesClients[i].pointsFidelite) + QStringLiteral(" pts")));
     }
 }
 void MainWindow::rafraichirListeDepots() {
@@ -3750,6 +4334,8 @@ void MainWindow::preparerFormulairePlanif(bool estModif) {
 }
 
 void MainWindow::preparerFormulaireProduit(bool estModif, int idx) {
+    remplirCombosProduitClientEmplacement();
+
     if(estModif && idx >= 0 && idx < ui->tableProduits->rowCount()) {
         indexModifProd = idx;
         rowToEdit = idx;
@@ -3771,6 +4357,19 @@ void MainWindow::preparerFormulaireProduit(bool estModif, int idx) {
         ui->cb_prod_cuir_modif->setCurrentText(itCu ? itCu->text() : QString());
         ui->sb_prod_temps_modif->setValue(itTemp ? itTemp->text().toInt() : 1);
 
+        int idCli = 0;
+        int idEmp = 0;
+        const QString sid = itId ? itId->text() : QString();
+        for (const ProduitInfo &p : mesProduits) {
+            if (p.id_produit == sid) {
+                idCli = p.idClient.toInt();
+                idEmp = p.idEmplacement.toInt();
+                break;
+            }
+        }
+        reglerComboParIdDonnee(ui->cb_prod_client_modif, idCli);
+        reglerComboParIdDonnee(ui->cb_prod_empl_modif, idEmp);
+
         ui->tabWidgetProduits->setCurrentIndex(2); // Modifier
     } else {
         // On vide l'onglet Ajout
@@ -3780,6 +4379,8 @@ void MainWindow::preparerFormulaireProduit(bool estModif, int idx) {
         ui->le_prod_nom->clear();
         ui->sb_prod_cout->setValue(0);
         ui->sb_prod_temps->setValue(1);
+        reglerComboParIdDonnee(ui->cb_prod_client, 0);
+        reglerComboParIdDonnee(ui->cb_prod_empl, 0);
 
         ui->tabWidgetProduits->setCurrentIndex(1); // Ajouter
     }
@@ -3841,11 +4442,74 @@ void MainWindow::ouvrirDialogueClient(bool estModif) {
     hl->addStretch(); hl->addWidget(btnCancel); hl->addWidget(btnSave); l->addSpacing(10); l->addLayout(hl);
 
     connect(btnCancel, &QPushButton::clicked, &d, &QDialog::reject);
-    connect(btnSave, &QPushButton::clicked, [&](){
-        if(leId->text().isEmpty() || leNom->text().isEmpty()) return;
-        ClientInfo c = {leId->text(), leNom->text(), leTel->text(), leAdr->text(), leMail->text(), sbPts->value()};
-        if(estModif) mesClients[indexModifClient] = c; else mesClients.append(c);
-        rafraichirListeClients(); d.accept();
+    connect(btnSave, &QPushButton::clicked, this, [this, estModif, &d, leId, leNom, leTel, leAdr, leMail, sbPts]() {
+        Connexion *cnx = Connexion::getInstance();
+        if (!cnx || !cnx->estConnecte()) {
+            alerteErreur(QStringLiteral("Base de données"), QStringLiteral("Connexion Oracle requise."));
+            return;
+        }
+        const QString nom = leNom->text();
+        const QString tel = leTel->text().trimmed();
+        const QString adr = leAdr->text().trimmed();
+        const QString mail = leMail->text().trimmed();
+        const int pts = sbPts->value();
+
+        const QString errSaisie = messageValidationSaisieClient(nom, tel, adr, mail, pts);
+        if (!errSaisie.isEmpty()) {
+            alerteWarning(QStringLiteral("Validation"), errSaisie);
+            return;
+        }
+        if (estModif) {
+            if (indexModifClient < 0 || indexModifClient >= mesClients.size()) {
+                alerteWarning(QStringLiteral("Sélection"), QStringLiteral("Aucun client valide à modifier."));
+                return;
+            }
+            bool ok = false;
+            const int idMod = mesClients[indexModifClient].id.toInt(&ok);
+            if (!ok || idMod <= 0) {
+                alerteWarning(QStringLiteral("Identifiant"), QStringLiteral("Identifiant client invalide."));
+                return;
+            }
+            Client cl(
+                idMod,
+                nom.trimmed(),
+                tel,
+                adr,
+                mail,
+                pts);
+            if (!cl.modifier(idMod)) {
+                const QString err = cl.derniereErreurSaisie();
+                alerteErreur(QStringLiteral("Modification"),
+                             err.isEmpty() ? QStringLiteral("Échec de modification.") : err);
+                return;
+            }
+        } else {
+            const QString errId = messageValidationIdClientAjoutOptionnel(leId->text());
+            if (!errId.isEmpty()) {
+                alerteWarning(QStringLiteral("Validation"), errId);
+                return;
+            }
+            bool okId = false;
+            const int idSaisi = leId->text().trimmed().toInt(&okId);
+            const int id = okId ? idSaisi : 0;
+            Client cl(
+                id,
+                nom.trimmed(),
+                tel,
+                adr,
+                mail,
+                pts);
+            if (!cl.ajouter()) {
+                const QString err = cl.derniereErreurSaisie();
+                alerteErreur(QStringLiteral("Validation/BDD"),
+                             err.isEmpty() ? QStringLiteral("Insertion impossible.") : err);
+                return;
+            }
+        }
+        alerteSucces(QStringLiteral("Client"), QStringLiteral("Client enregistré en base de données."));
+        rafraichirListeClients();
+        remplirCombosProduitClientEmplacement();
+        d.accept();
     });
     d.exec();
 }
@@ -4093,9 +4757,18 @@ void MainWindow::showClientFideliteTab() {
     titre->setAlignment(Qt::AlignCenter);
     l->addWidget(titre);
 
-    int idx = ui->tableClients->currentRow();
+    int idx = -1;
+    const int row = ui->tableClients->currentRow();
+    if (row >= 0) {
+        if (QTableWidgetItem *itId = ui->tableClients->item(row, 0)) {
+            bool ok = false;
+            const int idDb = itId->text().toInt(&ok);
+            if (ok)
+                idx = indexMesClientParIdDb(mesClients, idDb);
+        }
+    }
     QLabel *desc = new QLabel();
-    if(idx >= 0 && idx < mesClients.size()) {
+    if (idx >= 0 && idx < mesClients.size()) {
         ClientInfo c = mesClients[idx];
         QString niveau = (c.pointsFidelite >= 200) ? "💎 PLATINE" : (c.pointsFidelite >= 100) ? "🥇 GOLD" : "🥈 SILVER";
         QString color = (c.pointsFidelite >= 200) ? "#9b59b6" : (c.pointsFidelite >= 100) ? "#d4af37" : "#7f8c8d";
@@ -4142,9 +4815,18 @@ void MainWindow::showClientIaTab() {
     titre->setAlignment(Qt::AlignCenter);
     l->addWidget(titre);
 
-    int idx = ui->tableClients->currentRow();
+    int idx = -1;
+    const int rowIa = ui->tableClients->currentRow();
+    if (rowIa >= 0) {
+        if (QTableWidgetItem *itId = ui->tableClients->item(rowIa, 0)) {
+            bool ok = false;
+            const int idDb = itId->text().toInt(&ok);
+            if (ok)
+                idx = indexMesClientParIdDb(mesClients, idDb);
+        }
+    }
     QLabel *desc = new QLabel();
-    if(idx >= 0 && idx < mesClients.size()) {
+    if (idx >= 0 && idx < mesClients.size()) {
         ClientInfo c = mesClients[idx];
         desc->setText(QString(
             "<div style='background:white; border-radius:12px; padding:30px; border:3px dashed #e74c3c; color:#3e2723; font-size:15px;'>"
@@ -4252,9 +4934,15 @@ void MainWindow::exporterFactureClient()
     }
 
     QTableWidgetItem *it = ui->tableClients->item(r, 0);
-    if(!it) return;
-    const int idx = it->data(Qt::UserRole).toInt();
-    if(idx < 0 || idx >= mesClients.size()) return;
+    if (!it)
+        return;
+    bool ok = false;
+    const int idDb = it->text().toInt(&ok);
+    if (!ok || idDb <= 0)
+        return;
+    const int idx = indexMesClientParIdDb(mesClients, idDb);
+    if (idx < 0 || idx >= mesClients.size())
+        return;
     const ClientInfo &c = mesClients[idx];
 
     QString f = QFileDialog::getSaveFileName(this, "Exporter Facture", "Facture_" + c.id + ".pdf", "PDF (*.pdf)");
@@ -5398,8 +6086,17 @@ void MainWindow::preparerFormulaireDepot(bool estModif, int idx) {
         const auto &dp = mesDepots[idx];
 
         ui->le_depot_id_modif->setText(dp.id);
-        ui->le_depot_emp_modif->setText(dp.emplacement);
-        ui->le_depot_eta_modif->setText(dp.etagere);
+        {
+            const QString sep = QStringLiteral(" — ");
+            const int ixSep = dp.etagere.indexOf(sep);
+            if (ixSep >= 0) {
+                ui->le_depot_emp_modif->setText(dp.etagere.left(ixSep));
+                ui->le_depot_eta_modif->setText(dp.etagere.mid(ixSep + sep.size()));
+            } else {
+                ui->le_depot_emp_modif->clear();
+                ui->le_depot_eta_modif->setText(dp.etagere);
+            }
+        }
         ui->sb_depot_cap_modif->setValue(dp.capaciteMax);
         ui->sb_depot_act_modif->setValue(dp.quantiteActuelle);
         ui->cb_depot_type_modif->setCurrentText(dp.typeStockage);

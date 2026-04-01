@@ -12,11 +12,37 @@ Depot::Depot(QString et, double capMax, double qteActuelle, QString typeStock)
     type_stockage = typeStock;
 }
 
+QString Depot::messageSiSaisieInvalide(const QString &etagere, double capaciteMax, double quantiteActuelle)
+{
+    const QString et = etagere.trimmed();
+    if (et.isEmpty())
+        return QStringLiteral("L'étagère / l'emplacement est obligatoire.");
+    if (et.length() > 100)
+        return QStringLiteral("La description d'étagère ne doit pas dépasser 100 caractères.");
+
+    if (capaciteMax <= 0.0)
+        return QStringLiteral("La capacité maximale doit être strictement positive.");
+
+    if (quantiteActuelle < 0.0)
+        return QStringLiteral("La quantité actuelle ne peut pas être négative.");
+
+    if (quantiteActuelle > capaciteMax + 1e-6)
+        return QStringLiteral("La quantité actuelle ne peut pas dépasser la capacité maximale.");
+
+    return {};
+}
+
 // =============================================
 // AJOUTER
 // =============================================
 bool Depot::ajouter()
 {
+    m_derniereErreurSaisie.clear();
+    etagere = etagere.trimmed();
+    m_derniereErreurSaisie = messageSiSaisieInvalide(etagere, capacite_max, quantite_actuelle);
+    if (!m_derniereErreurSaisie.isEmpty())
+        return false;
+
     QSqlQuery query;
     query.prepare("INSERT INTO DEPOTS "
                   "(ID_EMPLACEMENT, ETAGERE, CAPACITE_MAX, QUANTITE_ACTUELLE, TYPE_STOCKAGE) "
@@ -42,6 +68,12 @@ bool Depot::ajouter()
 // =============================================
 bool Depot::modifier(int id)
 {
+    m_derniereErreurSaisie.clear();
+    etagere = etagere.trimmed();
+    m_derniereErreurSaisie = messageSiSaisieInvalide(etagere, capacite_max, quantite_actuelle);
+    if (!m_derniereErreurSaisie.isEmpty())
+        return false;
+
     QSqlQuery query;
     query.prepare("UPDATE DEPOTS SET "
                   "ETAGERE = :et, "

@@ -5,6 +5,8 @@
 #include "etape.h"
 #include "depot.h"
 #include "produit.h"
+#include "client.h"
+#include <QSqlQueryModel>
 #include <QMainWindow>
 #include <QTableWidget>
 #include <QVector>
@@ -77,6 +79,13 @@ private slots:
     void on_btn_edit_produit_clicked();
     void on_tableProduits_cellClicked(int row, int column);
 
+    // === Stock — matières premières (auto-connexion setupUi) ===
+    void on_btn_valider_stock_clicked();
+
+    // === Clients (auto-connexion setupUi) ===
+    void on_btn_valider_client_clicked();
+    void on_btn_valider_modif_client_clicked();
+
 private:
     Ui::MainWindow *ui;
     OrdreFabrication tmpOrdre;
@@ -146,6 +155,7 @@ private:
     void verifierFinFabrication(int idPlanification);
     // Module Produits
     void rafraichirListeProduits(const QString &filtreCollection = QString());
+    void remplirCombosProduitClientEmplacement();
     void calculerStatsProduits();
     void showProdSimDialog(); // (déjà existant)
     void showProduitCoutDialog();
@@ -169,6 +179,7 @@ private:
 
     // Module Clients
     void rafraichirListeClients();
+    void remplirTableClients(QSqlQueryModel *model);
     void calculerStatsClients();
     void exporterFactureClient();
     void showClientFideliteTab();
@@ -183,6 +194,7 @@ private:
     void showDepotRavitaillementTab();
 
     // Module Stock (NOUVEAU - SPA avec onglets)
+    bool validerMatiereAjout();
     void rafraichirListeMatieres();
     void calculerStatsStock();
     void preparerFormulaireStock(bool estModif, int idx = -1);

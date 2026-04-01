@@ -1758,7 +1758,11 @@ QTabBar::tab:hover:!selected { background: #e0c097; }</string>
                <item row="3" column="1"><widget class="QComboBox" name="cb_prod_cuir"><item><property name="text"><string>Vachette</string></property></item><item><property name="text"><string>Agneau</string></property></item><item><property name="text"><string>Croco</string></property></item></widget></item>
                <item row="4" column="0"><widget class="QLabel"><property name="text"><string>Temps Fab. (h) :</string></property></widget></item>
                <item row="4" column="1"><widget class="QSpinBox" name="sb_prod_temps"/></item>
-               <item row="5" column="1"><widget class="QPushButton" name="btn_valider_produit"><property name="text"><string>Ajouter</string></property></widget></item>
+               <item row="5" column="0"><widget class="QLabel"><property name="text"><string>Client (achat) :</string></property></widget></item>
+               <item row="5" column="1"><widget class="QComboBox" name="cb_prod_client"/></item>
+               <item row="6" column="0"><widget class="QLabel"><property name="text"><string>Dépôt (stock) :</string></property></widget></item>
+               <item row="6" column="1"><widget class="QComboBox" name="cb_prod_empl"/></item>
+               <item row="7" column="1"><widget class="QPushButton" name="btn_valider_produit"><property name="text"><string>Ajouter</string></property></widget></item>
               </layout>
              </widget>
             </item>
@@ -1798,7 +1802,11 @@ QTabBar::tab:hover:!selected { background: #e0c097; }</string>
                <item row="3" column="1"><widget class="QComboBox" name="cb_prod_cuir_modif"><item><property name="text"><string>Vachette</string></property></item><item><property name="text"><string>Agneau</string></property></item><item><property name="text"><string>Croco</string></property></item></widget></item>
                <item row="4" column="0"><widget class="QLabel"><property name="text"><string>Temps Fab. (h) :</string></property></widget></item>
                <item row="4" column="1"><widget class="QSpinBox" name="sb_prod_temps_modif"/></item>
-               <item row="5" column="1"><widget class="QPushButton" name="btn_valider_modif_produit"><property name="text"><string>Mettre à jour</string></property></widget></item>
+               <item row="5" column="0"><widget class="QLabel"><property name="text"><string>Client (achat) :</string></property></widget></item>
+               <item row="5" column="1"><widget class="QComboBox" name="cb_prod_client_modif"/></item>
+               <item row="6" column="0"><widget class="QLabel"><property name="text"><string>Dépôt (stock) :</string></property></widget></item>
+               <item row="6" column="1"><widget class="QComboBox" name="cb_prod_empl_modif"/></item>
+               <item row="7" column="1"><widget class="QPushButton" name="btn_valider_modif_produit"><property name="text"><string>Mettre à jour</string></property></widget></item>
               </layout>
              </widget>
             </item>
