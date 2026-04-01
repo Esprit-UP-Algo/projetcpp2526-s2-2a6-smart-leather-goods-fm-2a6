@@ -82,7 +82,7 @@ private slots:
     // === Stock — matières premières (auto-connexion setupUi) ===
     void on_btn_valider_stock_clicked();
 
-    // === Clients (auto-connexion setupUi) ===
+    // === Slots CRUD Clients ===
     void on_btn_valider_client_clicked();
     void on_btn_valider_modif_client_clicked();
 
@@ -177,7 +177,7 @@ private:
     void forceTabEmployes(int index);
     bool chargerEmployePourModification(int id);
 
-    // Module Clients
+    // CRUD Clients
     void rafraichirListeClients();
     void remplirTableClients(QSqlQueryModel *model);
     void calculerStatsClients();

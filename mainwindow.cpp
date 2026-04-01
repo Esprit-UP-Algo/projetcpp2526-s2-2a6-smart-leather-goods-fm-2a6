@@ -3769,6 +3769,10 @@ void MainWindow::on_btn_valider_stock_clicked()
     }
 }
 
+// =========================================================
+// ===                   CRUD CLIENTS                  ===
+// =========================================================
+
 void MainWindow::on_btn_valider_client_clicked()
 {
     Connexion *cnx = Connexion::getInstance();
