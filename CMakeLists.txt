@@ -25,7 +25,8 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         MANUAL_FINALIZATION
         ${PROJECT_SOURCES}
         connexion.h      # ← MODIFIÉ (plus de chemin)
-        connexion.cpp    # ← MODIFIÉ (plus de chemin)
+        connexion.cpp
+        client.h client.cpp    # ← MODIFIÉ (plus de chemin)
     )
 else()
     if(ANDROID)

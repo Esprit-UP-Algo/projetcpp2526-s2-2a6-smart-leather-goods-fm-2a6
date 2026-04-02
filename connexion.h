@@ -20,8 +20,9 @@ public:
     bool etablirConnexion();
     void fermerConnexion();
     bool estConnecte();
+    bool createClientTable();  // ← CORRECTION : enlever "Connexion::"
     QSqlDatabase getDatabase() { return db; }
     ~Connexion();
 };
 
-#endif // cCONNEXION_H
+#endif // CONNEXION_H
