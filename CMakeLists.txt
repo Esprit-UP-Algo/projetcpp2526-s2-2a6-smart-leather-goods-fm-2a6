@@ -9,24 +9,24 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# MODIFIÉ : Ajout de Sql
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Sql)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Sql)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Sql Charts)
 
 set(PROJECT_SOURCES
-        main.cpp
-        mainwindow.cpp
-        mainwindow.h
-        mainwindow.ui
+    main.cpp
+    mainwindow.cpp
+    mainwindow.h
+    mainwindow.ui
+    connexion.h
+    connexion.cpp
+    client.h
+    client.cpp
 )
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
     qt_add_executable(projetCsmart-leather
         MANUAL_FINALIZATION
         ${PROJECT_SOURCES}
-        connexion.h      # ← MODIFIÉ (plus de chemin)
-        connexion.cpp
-        client.h client.cpp    # ← MODIFIÉ (plus de chemin)
     )
 else()
     if(ANDROID)
@@ -40,12 +40,17 @@ else()
     endif()
 endif()
 
-# MODIFIÉ : Ajout de Sql dans les liens
-target_link_libraries(projetCsmart-leather PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Sql)
+# ✅ ICI seulement (après création)
+target_link_libraries(projetCsmart-leather PRIVATE
+    Qt${QT_VERSION_MAJOR}::Widgets
+    Qt${QT_VERSION_MAJOR}::Sql
+    Qt${QT_VERSION_MAJOR}::Charts
+)
 
 if(${QT_VERSION} VERSION_LESS 6.1.0)
   set(BUNDLE_ID_OPTION MACOSX_BUNDLE_GUI_IDENTIFIER com.example.projetCsmart-leather)
 endif()
+
 set_target_properties(projetCsmart-leather PROPERTIES
     ${BUNDLE_ID_OPTION}
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}

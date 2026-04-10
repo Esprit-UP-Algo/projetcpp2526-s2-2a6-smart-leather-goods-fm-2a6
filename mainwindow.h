@@ -27,7 +27,7 @@ private slots:
     void on_btn_pdf_clicked();          // PDF / Factures
     void on_btn_stat_clicked();         // Statistiques
     void on_btn_facture_clicked();      // Générer Facture PDF
-    void on_btn_tri_points_clicked();   // Trier par Points Fidélité
+    void on_btn_tri_points_clicked();   // Trier par Points Fidélité  ← GARDE ICI
     void on_btn_mailing_clicked();      // Mailing Ciblé
 
     // Sélection dans la table
@@ -35,17 +35,18 @@ private slots:
 
 private:
     Ui::MainWindow *ui;
-    Client clientTmp;  // ← Maintenant Client est connu grâce à l'include
+    Client clientTmp;
 
     // Méthodes utilitaires
-    void refreshTableView();           // Rafraîchir l'affichage
-    void clearInputFields();           // Effacer les champs
-    void loadClientToForm(int row);    // Charger un client dans le formulaire
-    bool validateInputs();             // Valider les champs
-    void enableInputFields(bool enable);   // Activer/désactiver les champs
-    void setFormMode(bool isNewMode);      // Mode ajout ou modification
-    void updateClientStatus();         // Mettre à jour le statut de fidélité
-    void updateIAPrediction();         // Mettre à jour la prévision IA
+    void refreshTableView();
+    void clearInputFields();
+    void loadClientToForm(int row);
+    bool validateInputs();
+    void enableInputFields(bool enable);
+    void setFormMode(bool isNewMode);
+    void updateClientStatus();
+    void updateIAPrediction();
+    // ← SUPPRIME on_btn_tri_points_clicked() D'ICI
 };
 
 #endif // MAINWINDOW_H

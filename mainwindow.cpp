@@ -1,12 +1,21 @@
 #include "mainwindow.h"
 #include "./ui_mainwindow.h"
-#include "client.h"  // ← AJOUTER CETTE LIGNE (important)
+#include "client.h"
 #include <QMessageBox>
 #include <QSqlQueryModel>
 #include <QDebug>
-#include <QInputDialog>  // ← AJOUTER CETTE LIGNE pour QInputDialog
-#include <QTableWidgetItem>  // ← AJOUTER CETTE LIGNE pour QTableWidgetItem
-
+#include <QInputDialog>
+#include <QTableWidgetItem>
+#include <QtPrintSupport/QPrinter>
+#include <QtPrintSupport/QPrintDialog>
+#include <QPainter>
+#include <QFileDialog>
+#include <QtCharts>
+#include <QChartView>
+#include <QPieSeries>
+#include <QChart>
+#include <QPdfWriter>
+#include <QPainter>
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
@@ -63,21 +72,21 @@ void MainWindow::refreshTableView()
 {
     QSqlQueryModel* model = clientTmp.afficher();
 
-    if (!model) return;  // ← AJOUTER cette vérification
+    if (!model) return;
 
     // Vider la table actuelle
     ui->tableClients->setRowCount(0);
 
     // Remplir la table avec les données
     int rows = model->rowCount();
-    int cols = model->columnCount();
+    int cols = model->columnCount();  // Maintenant cols = 7
 
     ui->tableClients->setRowCount(rows);
     ui->tableClients->setColumnCount(cols);
 
-    // Définir les en-têtes (utiliser setHorizontalHeaderLabels est plus simple)
+    // Définir les en-têtes (7 colonnes maintenant)
     QStringList headers;
-    headers << "ID" << "CIN / MF" << "Nom Client" << "Téléphone" << "Email" << "Adresse";
+    headers << "ID" << "CIN / MF" << "Nom Client" << "Téléphone" << "Email" << "Adresse" << "Points";
     ui->tableClients->setHorizontalHeaderLabels(headers);
 
     // Remplir les données
@@ -96,6 +105,7 @@ void MainWindow::refreshTableView()
     ui->tableClients->setColumnWidth(3, 100);
     ui->tableClients->setColumnWidth(4, 180);
     ui->tableClients->setColumnWidth(5, 200);
+    ui->tableClients->setColumnWidth(6, 80);  // Largeur pour la colonne Points
 }
 
 // ============= EFFACER LES CHAMPS DE SAISIE =============
@@ -204,41 +214,7 @@ void MainWindow::updateIAPrediction()
 }
 
 // ============= AJOUTER UN CLIENT =============
-void MainWindow::on_btn_ajouter_clicked()
-{
-    // Si les champs sont désactivés, c'est un nouveau client
-    if (!ui->le_cin_client->isEnabled()) {
-        setFormMode(true);
-        return;
-    }
 
-    if (!validateInputs()) return;
-
-    // Ne PAS inclure l'ID (auto-généré par Oracle)
-    QString cin = ui->le_cin_client->text().trimmed();
-    QString nom = ui->le_nom_client->text().trimmed();
-    QString tel = ui->le_tel_client->text().trimmed();
-    QString email = ui->le_email_client->text().trimmed();
-    QString adresse = ui->le_adresse_client->text().trimmed();
-
-    // Constructeur sans ID
-    Client client(cin, nom, tel, email, adresse);
-
-    if (client.ajouter()) {
-        QMessageBox::information(this, "Succès", "Client ajouté avec succès !");
-        refreshTableView();
-        clearInputFields();
-        enableInputFields(false);
-        ui->le_id_client->clear();
-        ui->le_id_client->setText("(Nouveau - Auto)");
-
-        updateClientStatus();
-        updateIAPrediction();
-    } else {
-        QMessageBox::critical(this, "Erreur",
-                              "Échec de l'ajout.\nLe CIN ou l'email existe peut-être déjà.");
-    }
-}
 // ============= MODIFIER UN CLIENT =============
 void MainWindow::on_btn_modifier_clicked()
 {
@@ -256,7 +232,7 @@ void MainWindow::on_btn_modifier_clicked()
     QString email = ui->le_email_client->text().trimmed();
     QString adresse = ui->le_adresse_client->text().trimmed();
 
-    Client client(id, cin, nom, tel, email, adresse);
+  Client client(id, cin, nom, tel, email, adresse, 0);
 
     if (client.modifier(id)) {
         QMessageBox::information(this, "Succès", "Client modifié avec succès !");
@@ -359,21 +335,139 @@ void MainWindow::on_btn_facture_clicked()
 {
     int currentRow = ui->tableClients->currentRow();
     if (currentRow < 0) {
-        QMessageBox::warning(this, "Erreur", "Veuillez sélectionner un client pour générer une facture !");
+        QMessageBox::warning(this, "Erreur", "Veuillez sélectionner un client !");
         return;
     }
 
-    QTableWidgetItem* itemNom = ui->tableClients->item(currentRow, 2);
-    QString nom = itemNom ? itemNom->text() : "Client inconnu";
-    QMessageBox::information(this, "Facture PDF",
-                             "Génération de la facture pour : " + nom + "\n(Fonctionnalité à implémenter)");
-}
+    // ================= Récupération des données =================
+    QString id = ui->tableClients->item(currentRow, 0)->text();
+    QString cin = ui->tableClients->item(currentRow, 1)->text();
+    QString nom = ui->tableClients->item(currentRow, 2)->text();
+    QString tel = ui->tableClients->item(currentRow, 3)->text();
+    QString email = ui->tableClients->item(currentRow, 4)->text();
+    QString adresse = ui->tableClients->item(currentRow, 5)->text();
 
+    QString fileName = QFileDialog::getSaveFileName(this,
+                                                    "Enregistrer Facture",
+                                                    "Facture_" + nom + ".pdf",
+                                                    "*.pdf");
+
+    if (fileName.isEmpty()) return;
+
+    // ================= PDF =================
+    QPdfWriter pdf(fileName);
+    QPainter painter(&pdf);
+
+    int y = 200;
+    int line = 250;
+
+    // ================= HEADER =================
+    painter.setFont(QFont("Arial", 18, QFont::Bold));
+    painter.drawText(200, y, "SMART LEATHER");
+    y += line;
+
+    painter.setFont(QFont("Arial", 12));
+    painter.drawText(200, y, "FACTURE CLIENT");
+    y += line;
+
+    painter.drawLine(100, y, 800, y);
+    y += line;
+
+    // ================= INFOS CLIENT =================
+    painter.setFont(QFont("Arial", 11));
+
+    painter.drawText(100, y, "ID Client : " + id);
+    y += line;
+
+    painter.drawText(100, y, "CIN / MF : " + cin);
+    y += line;
+
+    painter.drawText(100, y, "Nom : " + nom);
+    y += line;
+
+    painter.drawText(100, y, "Téléphone : " + tel);
+    y += line;
+
+    painter.drawText(100, y, "Email : " + email);
+    y += line;
+
+    painter.drawText(100, y, "Adresse : " + adresse);
+    y += line;
+
+    painter.drawLine(100, y, 800, y);
+    y += line;
+
+    // ================= DATE =================
+    painter.drawText(100, y, "Date : " + QDate::currentDate().toString("dd/MM/yyyy"));
+    y += line;
+
+    painter.drawLine(100, y, 800, y);
+    y += line;
+
+    // ================= FOOTER =================
+    painter.setFont(QFont("Arial", 10));
+    y += 50;
+    painter.drawText(100, y, "Merci pour votre confiance !");
+
+    painter.end();
+
+    QMessageBox::information(this, "Succès", "Facture PDF générée !");
+}
+// ============= TRIER PAR POINTS FIDÉLITÉ =============
+void MainWindow::on_btn_ajouter_clicked()
+{
+    if (!ui->le_cin_client->isEnabled()) {
+        setFormMode(true);
+        return;
+    }
+
+    if (!validateInputs()) return;
+
+    // Au lieu de 5 paramètres, mets 6 paramètres (avec points = 0 par défaut)
+    Client client(
+        ui->le_cin_client->text().trimmed(),
+        ui->le_nom_client->text().trimmed(),
+        ui->le_tel_client->text().trimmed(),
+        ui->le_email_client->text().trimmed(),
+        ui->le_adresse_client->text().trimmed(),
+        0  // ← points (0 par défaut)
+        );
+
+    if (client.ajouter()) {
+        QMessageBox::information(this, "Succès", "Client ajouté !");
+        refreshTableView();
+        clearInputFields();
+        enableInputFields(false);
+        ui->le_id_client->setText("(Nouveau - Auto)");
+        updateClientStatus();
+        updateIAPrediction();
+    } else {
+        QMessageBox::critical(this, "Erreur", "Échec de l'ajout !");
+    }
+}
 // ============= TRIER PAR POINTS FIDÉLITÉ =============
 void MainWindow::on_btn_tri_points_clicked()
 {
-    QMessageBox::information(this, "Tri par points",
-                             "Tri par points de fidélité\n(Fonctionnalité à implémenter)");
+    QSqlQueryModel* model = clientTmp.trierParPoints();
+
+    if (!model) return;
+
+    int rows = model->rowCount();
+    ui->tableClients->setRowCount(rows);
+    ui->tableClients->setColumnCount(7);
+
+    QStringList headers;
+    headers << "ID" << "CIN / MF" << "Nom Client" << "Téléphone" << "Email" << "Adresse" << "Points";
+    ui->tableClients->setHorizontalHeaderLabels(headers);
+
+    for (int i = 0; i < rows; i++) {
+        for (int j = 0; j < 7; j++) {
+            QModelIndex index = model->index(i, j);
+            ui->tableClients->setItem(i, j, new QTableWidgetItem(model->data(index).toString()));
+        }
+    }
+
+    QMessageBox::information(this, "Tri", "Clients triés par points de fidélité !");
 }
 
 // ============= MAILING CIBLÉ =============
@@ -391,12 +485,58 @@ void MainWindow::on_btn_pdf_clicked()
 }
 
 // ============= STATISTIQUES =============
+// ============= STATISTIQUES =============
 void MainWindow::on_btn_stat_clicked()
 {
-    QMessageBox::information(this, "Statistiques",
-                             "Affichage des statistiques\n(Fonctionnalité à implémenter)");
-}
+    QSqlQuery query;
 
+    // Total clients
+    query.exec("SELECT COUNT(*) FROM client");
+    int total = 0;
+    if (query.next()) total = query.value(0).toInt();
+
+    // VIP
+    query.exec("SELECT COUNT(*) FROM client WHERE points > 500");
+    int vip = 0;
+    if (query.next()) vip = query.value(0).toInt();
+
+    int normal = total - vip;
+
+    // =========================
+    QPieSeries *series = new QPieSeries();
+
+    QPieSlice *sliceVIP = series->append("VIP ⭐", vip);
+    QPieSlice *sliceNormal = series->append("Normaux 👤", normal);
+
+    // Labels dynamiques avec %
+    sliceVIP->setLabel(QString("VIP (%1)").arg(vip));
+    sliceNormal->setLabel(QString("Normaux (%1)").arg(normal));
+
+    sliceVIP->setLabelVisible(true);
+    sliceNormal->setLabelVisible(true);
+
+    sliceVIP->setExploded(true);
+
+    // =========================
+    QChart *chart = new QChart();
+    chart->addSeries(series);
+    chart->setTitle("Statistiques des Clients (Temps réel)");
+    chart->setAnimationOptions(QChart::AllAnimations);
+
+    // =========================
+    QChartView *chartView = new QChartView(chart);
+    chartView->setRenderHint(QPainter::Antialiasing);
+
+    // =========================
+    QWidget *window = new QWidget();
+    QVBoxLayout *layout = new QVBoxLayout(window);
+
+    layout->addWidget(chartView);
+
+    window->resize(650, 450);
+    window->setWindowTitle("Dashboard 📊");
+    window->show();
+}
 // ============= SÉLECTION DANS LA TABLE =============
 void MainWindow::on_tableClients_clicked(const QModelIndex &index)
 {
