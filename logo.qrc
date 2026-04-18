@@ -1,5 +1,12 @@
 <RCC>
 	<qresource prefix="/">
 		<file>logo.png</file>
+		<file>pic vachette.jpg</file>
+		<file>pic agneau.jpg</file>
+		<file alias="pi veau.jpg">cuir veau.jpg</file>
+		<file>sac voyage.jpg</file>
+		<file>sac main.webp</file>
+		<file>portfeuille.webp</file>
+		<file>ceinture.webp</file>
 	</qresource>
 </RCC>

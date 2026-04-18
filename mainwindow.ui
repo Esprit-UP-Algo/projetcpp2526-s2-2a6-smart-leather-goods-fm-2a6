@@ -2923,9 +2923,9 @@ QTabBar::tab:hover:!selected { background: #d7ccc8; }</string>
            </attribute>
           </widget>
 
-          <widget class="QWidget" name="tab_stock_comparateur">
+                    <widget class="QWidget" name="tab_stock_ravitaillement">
            <attribute name="title">
-            <string>⚖️ Comparateur</string>
+                        <string>🚚 Ravitaillement</string>
            </attribute>
           </widget>
 

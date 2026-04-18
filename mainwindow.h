@@ -198,7 +198,7 @@ private:
     void rafraichirListeMatieres();
     void calculerStatsStock();
     void preparerFormulaireStock(bool estModif, int idx = -1);
-    void showStockCompareTab();
+    void showStockRavitaillementTab();
     void showStockCalculTab();
     void preparerFormulairePlanif(bool estModification);
     void preparerFormulaireProduit(bool estModif, int idx = -1);
