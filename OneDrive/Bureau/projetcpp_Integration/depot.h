@@ -11,10 +11,16 @@ class Depot
     double capacite_max;
     double quantite_actuelle;
     QString type_stockage;
+    QString m_derniereErreurSaisie;
 
 public:
     Depot();
     Depot(QString etagere, double capMax, double qteActuelle, QString typeStock);
+
+    static QString messageSiSaisieInvalide(const QString &etagere,
+                                          double capaciteMax,
+                                          double quantiteActuelle);
+    QString derniereErreurSaisie() const { return m_derniereErreurSaisie; }
 
     // CRUD
     bool ajouter();

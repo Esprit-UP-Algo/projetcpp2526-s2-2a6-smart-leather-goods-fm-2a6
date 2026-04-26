@@ -1,0 +1,19 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "default",https://github.com/Esprit-UP-Algo/projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6/commit/6b79094d84910d089899b36138a8624ecaefe744
+      "displayName": "Debug",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "default",
+      "configurePreset": "default"
+    }
+  ]
+}

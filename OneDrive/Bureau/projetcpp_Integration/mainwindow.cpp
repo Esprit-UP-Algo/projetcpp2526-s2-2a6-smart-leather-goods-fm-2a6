@@ -40,6 +40,7 @@
 #include <QTimer>
 #include <QSignalBlocker>
 #include <QRegularExpression>
+#include <QRegularExpressionValidator>
 #include <QMargins>
 #include <QColor>
 #include <QFont>
@@ -108,6 +109,106 @@ static void applyDialogBase(QDialog &dialog, int w, int h) {
     dialog.setMinimumSize(w, h);
     dialog.setStyleSheet("QDialog { background-color: #f4f1ea; }");
 }
+
+/// Retourne un message d'erreur non vide si la saisie est invalide
+/// (ajout / modification produit).
+static QString messageValidationSaisieProduit(const QString &designation,
+                                              double cout,
+                                              const QString &collection,
+                                              const QString &typeCuir,
+                                              int tempsFabricationHeures)
+{
+    const QString des = designation.trimmed();
+    if (des.length() < 5)
+        return QStringLiteral("La désignation doit contenir au moins 5 caractères.");
+    if (des.length() > 100)
+        return QStringLiteral("La désignation ne doit pas dépasser 100 caractères (limite base de données).");
+
+    if (cout < 0.01)
+        return QStringLiteral("Le coût doit être au moins 0,01 (valeur strictement positive).");
+    if (cout > 999999.99)
+        return QStringLiteral("Le coût est trop élevé (maximum autorisé : 999 999,99).");
+
+    const QString coll = collection.trimmed();
+    if (coll.isEmpty())
+        return QStringLiteral("Indiquez une collection (liste ou saisie libre).");
+    if (coll.length() < 2)
+        return QStringLiteral("La collection doit contenir au moins 2 caractères.");
+
+    const QString cuir = typeCuir.trimmed();
+    if (cuir.isEmpty())
+        return QStringLiteral("Indiquez un type de cuir requis.");
+    if (cuir.length() < 3)
+        return QStringLiteral("Le type de cuir doit contenir au moins 3 caractères.");
+
+    if (tempsFabricationHeures < 1)
+        return QStringLiteral("Le temps de fabrication doit être d'au moins 1 heure.");
+    if (tempsFabricationHeures > 8760)
+        return QStringLiteral("Le temps de fabrication ne peut dépasser 8760 heures (1 an).");
+
+    return {};
+}
+
+static int comboIdData(QComboBox *cb)
+{
+    if (!cb || cb->count() == 0)
+        return 0;
+    const QVariant v = cb->currentData();
+    if (v.isValid() && v.canConvert<int>())
+        return v.toInt();
+    bool ok = false;
+    const int n = v.toString().toInt(&ok);
+    return ok ? n : 0;
+}
+
+/// Si la chaîne est vide, retourne \a siVide (alors considérée comme valide).
+/// Sinon parse jj/MM/aaaa, aaaa-MM-jj ou ISO ; en cas d'échec, \a errMsg et date invalide.
+static QDate parseDateFinPrevue(const QString &texteBrut, const QDate &siVide, QString *errMsg)
+{
+    const QString t = texteBrut.trimmed();
+    if (t.isEmpty())
+        return siVide;
+
+    QDate d = QDate::fromString(t, QStringLiteral("dd/MM/yyyy"));
+    if (!d.isValid())
+        d = QDate::fromString(t, QStringLiteral("yyyy-MM-dd"));
+    if (!d.isValid())
+        d = QDate::fromString(t, Qt::ISODate);
+
+    if (!d.isValid()) {
+        if (errMsg) {
+            *errMsg = QStringLiteral(
+                "Date de fin invalide. Formats acceptés : jj/mm/aaaa, aaaa-mm-jj ou date ISO.");
+        }
+        return {};
+    }
+    return d;
+}
+
+namespace {
+/// Cellule dont le tri utilise une clé numérique (évite le tri « texte »).
+class SortableNumericTableWidgetItem : public QTableWidgetItem {
+public:
+    static constexpr int NumericSortType = QTableWidgetItem::UserType + 77;
+
+    explicit SortableNumericTableWidgetItem(const QString &text, double sortKey)
+        : QTableWidgetItem(text, NumericSortType)
+        , m_sortKey(sortKey)
+    {}
+
+    bool operator<(const QTableWidgetItem &other) const override
+    {
+        if (other.type() == NumericSortType) {
+            const auto &no = *static_cast<const SortableNumericTableWidgetItem *>(&other);
+            return m_sortKey < no.m_sortKey;
+        }
+        return QTableWidgetItem::operator<(other);
+    }
+
+private:
+    double m_sortKey;
+};
+} // namespace
 
 // =========================================================
 // ===             FONCTIONS CHART HELPER                ===
@@ -235,6 +336,29 @@ MainWindow::MainWindow(QWidget *parent)
     , ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
+
+    // Stock : impossible de valider 0,00 — minimum aligné sur les règles métier (≥ 0,01)
+    if (ui->sb_stock_qte) {
+        ui->sb_stock_qte->setMinimum(0.01);
+        ui->sb_stock_qte->setDecimals(2);
+    }
+    if (ui->sb_stock_qte_modif) {
+        ui->sb_stock_qte_modif->setMinimum(0.01);
+        ui->sb_stock_qte_modif->setDecimals(2);
+    }
+    // Validateurs ligne (saisie guidée — même motifs que validerMatiereAjout())
+    if (ui->le_stock_code) {
+        ui->le_stock_code->setValidator(new QRegularExpressionValidator(
+            QRegularExpression(QStringLiteral("^[A-Z]{2,4}-20\\d{2}-\\d{3}$")), this));
+    }
+    if (ui->le_stock_lot) {
+        ui->le_stock_lot->setValidator(new QRegularExpressionValidator(
+            QRegularExpression(QStringLiteral("^LOT-20\\d{2}-[A-Z]$")), this));
+    }
+    if (ui->le_stock_coul) {
+        ui->le_stock_coul->setValidator(new QRegularExpressionValidator(
+            QRegularExpression(QStringLiteral("^[A-Za-zÀ-ÿ ]{3,20}$")), this));
+    }
 
     // Logo sidebar - taille agrandie
     ui->l_logo_img->setMinimumSize(55, 55);
@@ -411,10 +535,14 @@ MainWindow::MainWindow(QWidget *parent)
 
     // AJOUT
     connect(ui->btn_valider_depot, &QPushButton::clicked, [=](){
+        const QString eta = ui->le_depot_eta->text().trimmed();
+        const double cap = ui->sb_depot_cap->value();
+        const double qte = ui->sb_depot_act->value();
+
         Depot d(
-            ui->le_depot_eta->text().trimmed(),
-            ui->sb_depot_cap->value(),
-            ui->sb_depot_act->value(),
+            eta,
+            cap,
+            qte,
             ui->cb_depot_type->currentText()
         );
 
@@ -423,7 +551,10 @@ MainWindow::MainWindow(QWidget *parent)
             rafraichirListeDepots();
             ui->tabWidgetDepot->setCurrentIndex(0);
         } else {
-            alerteErreur("Erreur", "Impossible d'ajouter l'emplacement.");
+            if (!d.derniereErreurSaisie().isEmpty())
+                alerteWarning(QStringLiteral("Saisie invalide"), d.derniereErreurSaisie());
+            else
+                alerteErreur("Erreur", "Impossible d'ajouter l'emplacement.");
         }
     });
 
@@ -457,18 +588,21 @@ MainWindow::MainWindow(QWidget *parent)
             return;
         }
 
-        QString pId = ui->cb_produit_modif->currentData().toString();
-        int q = ui->sb_qte_modif->value();
-        QString mId = ui->cb_matiere_modif->currentData().toString();
-        QString eId = ui->cb_employe_modif->currentData().toString();
-        QDate d1 = ui->dt_lancement_modif->date();
-        QDate d2 = QDate::fromString(ui->le_fin_prevue_modif->text().trimmed(), "dd/MM/yyyy");
-        if (!d2.isValid()) {
-            d2 = QDate::fromString(ui->le_fin_prevue_modif->text().trimmed(), "yyyy-MM-dd");
+        const int idProdM = comboIdData(ui->cb_produit_modif);
+        const int idMatM = comboIdData(ui->cb_matiere_modif);
+        const int idEmpM = comboIdData(ui->cb_employe_modif);
+        const int q = ui->sb_qte_modif->value();
+        const QDate d1 = ui->dt_lancement_modif->date();
+        QString errDateM;
+        const QDate d2 = parseDateFinPrevue(ui->le_fin_prevue_modif->text(), d1.addDays(7), &errDateM);
+        if (!errDateM.isEmpty()) {
+            alerteWarning(QStringLiteral("Date invalide"), errDateM);
+            return;
         }
-        if (!d2.isValid()) {
-            d2 = d1.addDays(7);
-        }
+
+        const QString pId = QString::number(idProdM);
+        const QString mId = QString::number(idMatM);
+        const QString eId = QString::number(idEmpM);
 
         QString idStr = mesCommandes[indexModification].id;
         int idToEdit = idStr.mid(3).toInt();
@@ -495,7 +629,10 @@ MainWindow::MainWindow(QWidget *parent)
             rafraichirListeCommandes();
             ui->tabWidgetPlanif->setCurrentIndex(0);
         } else {
-            alerteErreur("Erreur", "Echec BDD.");
+            if (!o.derniereErreurSaisie().isEmpty())
+                alerteWarning(QStringLiteral("Saisie invalide"), o.derniereErreurSaisie());
+            else
+                alerteErreur("Erreur", "Echec BDD.");
         }
     });
 
@@ -665,26 +802,7 @@ MainWindow::MainWindow(QWidget *parent)
         preparerFormulaireModif(idx); // Va remplir les champs et basculer sur l'onglet 3
     });
 
-    // --- BOUTON VALIDER LA MODIFICATION (Onglet 3) ---
-    connect(ui->btn_valider_modif, &QPushButton::clicked, [=](){
-        QString pId = ui->cb_produit_modif->currentData().toString();
-        int q = ui->sb_qte_modif->value();
-        QString mId = ui->cb_matiere_modif->currentData().toString();
-        QString eId = ui->cb_employe_modif->currentData().toString();
-        QDate d1 = ui->dt_lancement_modif->date();
-        QDate d2 = QDate::fromString(ui->le_fin_prevue_modif->text().trimmed(), "dd/MM/yyyy");
-
-        OrdreFabrication o(pId, q, mId, d1, d2, "Planifié", eId);
-        int idToEdit = mesCommandes[indexModification].id.mid(3).toInt();
-
-        if(o.modifier(idToEdit)) {
-            alerteSucces("Succès", "Commande mise à jour !");
-            rafraichirListeCommandes(); configurerTimelineGantt(); calculerEtAfficherStats();
-            ui->tabWidgetPlanif->setCurrentIndex(0); // Retour à la liste
-        } else {
-            alerteErreur("Erreur", "Échec BDD.");
-        }
-    });
+    // Le bouton btn_valider_modif est connecté plus haut avec validations renforcées.
 
     // --- BOUTON APPLIQUER IA (Onglet 4) ---
     connect(ui->btn_ia_appliquer, &QPushButton::clicked, [=](){
@@ -705,14 +823,21 @@ MainWindow::MainWindow(QWidget *parent)
     });
 
     connect(ui->btn_valider_planif, &QPushButton::clicked, [=](){
-        QString pId = ui->cb_produit->currentData().toString();
-        int q = ui->sb_qte->value();
-        QString mId = ui->cb_matiere->currentData().toString();
-        QString eId = ui->cb_employe->currentData().toString();
-        QDate d1 = ui->dt_lancement->date();
-        QDate d2 = QDate::fromString(ui->le_fin_prevue->text().trimmed(), "dd/MM/yyyy");
-        if(!d2.isValid()) d2 = d1.addDays(3);
+        const int idProd = comboIdData(ui->cb_produit);
+        const int idMat = comboIdData(ui->cb_matiere);
+        const int idEmp = comboIdData(ui->cb_employe);
+        const int q = ui->sb_qte->value();
+        const QDate d1 = ui->dt_lancement->date();
+        QString errDate;
+        const QDate d2 = parseDateFinPrevue(ui->le_fin_prevue->text(), d1.addDays(3), &errDate);
+        if (!errDate.isEmpty()) {
+            alerteWarning(QStringLiteral("Date invalide"), errDate);
+            return;
+        }
 
+        const QString pId = QString::number(idProd);
+        const QString mId = QString::number(idMat);
+        const QString eId = QString::number(idEmp);
         OrdreFabrication o(pId, q, mId, d1, d2, "Planifié", eId);
         int idToEdit = -1;
         if(modeModification && indexModification >= 0 && indexModification < mesCommandes.size())
@@ -729,21 +854,17 @@ MainWindow::MainWindow(QWidget *parent)
                 if (qLastId.exec("SELECT MAX(ID_COMMANDE) FROM PLANIFICATION") && qLastId.next()) {
                     int idNouvelleCommande = qLastId.value(0).toInt();
 
-                    // Récupérer l'employé depuis le formulaire
-                    int idEmploye = 1;
-                    if (ui->cb_employe && !ui->cb_employe->currentData().toString().isEmpty()) {
-                        idEmploye = ui->cb_employe->currentData().toString().toInt();
-                        if (idEmploye == 0) {
-                            // Essayer par nom
+                    // Récupérer l'employé depuis le formulaire (déjà validé ; repli SQL si besoin)
+                    int idEmploye = idEmp;
+                    if (idEmploye <= 0 && ui->cb_employe) {
                             QSqlQuery qEmp;
                             qEmp.prepare("SELECT ID_EMPLOYE FROM EMPLOYES WHERE NOM || ' ' || PRENOM = :nom");
                             qEmp.bindValue(":nom", ui->cb_employe->currentText());
-                            if (qEmp.exec() && qEmp.next()) {
+                            if (qEmp.exec() && qEmp.next())
                                 idEmploye = qEmp.value(0).toInt();
-                            }
-                            if (idEmploye == 0) idEmploye = 1;
-                        }
                     }
+                    if (idEmploye <= 0)
+                        idEmploye = 1;
 
                     // Vérifier que les étapes n'existent pas déjà
                     QSqlQuery qCheck;
@@ -759,7 +880,10 @@ MainWindow::MainWindow(QWidget *parent)
             modeModification = false;
             ui->tabWidgetPlanif->setCurrentIndex(0);
         } else {
-            alerteErreur("Erreur", "Échec BDD.");
+            if (!o.derniereErreurSaisie().isEmpty())
+                alerteWarning(QStringLiteral("Saisie invalide"), o.derniereErreurSaisie());
+            else
+                alerteErreur("Erreur", "Échec BDD.");
         }
     });
 
@@ -806,38 +930,31 @@ MainWindow::MainWindow(QWidget *parent)
         preparerFormulaireProduit(false);
     });
 
-    // Bouton "Modifier" (Depuis la liste)
-    connect(ui->btn_edit_produit, &QPushButton::clicked, [=](){
-        int idx = ui->tableProduits->currentRow();
-        if(idx < 0) { alerteWarning("Sélection", "Sélectionnez un produit."); return; }
-        preparerFormulaireProduit(true, idx);
+    // --- FILTRAGE PRODUITS ---
+    connect(ui->btn_search_col, &QPushButton::clicked, [=](){
+        rafraichirListeProduits(ui->le_search_coll->text());
+    });
+    connect(ui->le_search_coll, &QLineEdit::returnPressed, [=](){
+        rafraichirListeProduits(ui->le_search_coll->text());
     });
 
-    // Bouton Supprimer
-    connect(ui->btn_delete_produit, &QPushButton::clicked, [=](){
-        int idx = ui->tableProduits->currentRow();
-        if(idx >= 0 && idx < mesProduits.size()) {
-            mesProduits.removeAt(idx);
-            rafraichirListeProduits();
+    // --- TRI A→Z (Désignation) ---
+    connect(ui->btn_sort_alpha_prod, &QPushButton::clicked, [=](){
+        if(ui->tableProduits->rowCount() <= 0) {
+            alerteInfo(QStringLiteral("Tri"), QStringLiteral("Aucune ligne à trier."));
+            return;
         }
+        ui->tableProduits->setSortingEnabled(true);
+        const Qt::SortOrder ordre = m_triProduitDesignationDescendant
+            ? Qt::DescendingOrder : Qt::AscendingOrder;
+        ui->tableProduits->sortItems(1, ordre); // colonne 1 = Désignation
+        m_triProduitDesignationDescendant = !m_triProduitDesignationDescendant;
     });
 
-    // Bouton VALIDER AJOUT (Dans l'onglet 2)
-    connect(ui->btn_valider_produit, &QPushButton::clicked, [=](){
-        if(ui->le_prod_nom->text().isEmpty()) { alerteWarning("Erreur", "Désignation obligatoire."); return; }
-        ProduitInfo p = {"TMP-ID", ui->le_prod_nom->text(), ui->sb_prod_cout->value(), ui->cb_prod_coll->currentText(), ui->cb_prod_cuir->currentText(), ui->sb_prod_temps->value(), "Client", "Depot"};
-        mesProduits.append(p);
-        rafraichirListeProduits();
-        ui->tabWidgetProduits->setCurrentIndex(0); // Retour à la liste
-    });
-
-    // Bouton VALIDER MODIFICATION (Dans l'onglet 3)
-    connect(ui->btn_valider_modif_produit, &QPushButton::clicked, [=](){
-        if(ui->le_prod_nom_modif->text().isEmpty()) { alerteWarning("Erreur", "Désignation obligatoire."); return; }
-        ProduitInfo p = {"TMP-ID", ui->le_prod_nom_modif->text(), ui->sb_prod_cout_modif->value(), ui->cb_prod_coll_modif->currentText(), ui->cb_prod_cuir_modif->currentText(), ui->sb_prod_temps_modif->value(), "Client", "Depot"};
-        mesProduits[indexModifProd] = p;
-        rafraichirListeProduits();
-        ui->tabWidgetProduits->setCurrentIndex(0); // Retour à la liste
+    // --- OUVRIR / ACTUALISER LES STATS PRODUITS ---
+    connect(ui->btn_stats_prod, &QPushButton::clicked, [=](){
+        rafraichirListeProduits(ui->le_search_coll->text());
+        ouvrirStatsProduits();
     });
 
 
@@ -907,7 +1024,7 @@ MainWindow::MainWindow(QWidget *parent)
         }
 
         QSqlQueryModel *model = new QSqlQueryModel();
-        model->setQuery(q);
+        model->setQuery(std::move(q));
 
         ui->tableEmployes->setRowCount(0);
         ui->tableEmployes->setColumnCount(7);
@@ -989,7 +1106,7 @@ MainWindow::MainWindow(QWidget *parent)
         ui->le_stock_code->clear();
         ui->le_stock_lot->clear();
         ui->le_stock_coul->clear();
-        ui->sb_stock_qte->setValue(0);
+        ui->sb_stock_qte->setValue(0.01);
         ui->cb_stock_cat->setCurrentIndex(0);
         ui->cb_stock_etat->setCurrentIndex(0);
         ui->cb_stock_type->setCurrentIndex(0);
@@ -997,33 +1114,7 @@ MainWindow::MainWindow(QWidget *parent)
         ui->tabWidgetStock->setCurrentIndex(1); // Onglet Ajouter
     });
 
-    // --- BOUTON VALIDER AJOUT (Oracle) ---
-    connect(ui->btn_valider_stock, &QPushButton::clicked, [=](){
-        QString code = ui->le_stock_code->text().trimmed();
-        if (code.isEmpty()) {
-            alerteWarning("Champ requis", "Le code matière première est obligatoire.");
-            return;
-        }
-
-        MatierePremiere mp(
-            code,
-            ui->cb_stock_cat->currentText(),
-            ui->le_stock_lot->text().trimmed(),
-            ui->cb_stock_etat->currentText(),
-            ui->le_stock_coul->text().trimmed(),
-            ui->sb_stock_qte->value(),
-            ui->cb_stock_type->currentText(),
-            ui->cb_stock_qual->currentText()
-        );
-
-        if (mp.ajouter()) {
-            alerteSucces("Matière ajoutée", "La matière première " + code + " a été enregistrée avec succès !");
-            rafraichirListeMatieres();
-            ui->tabWidgetStock->setCurrentIndex(0);
-        } else {
-            alerteErreur("Erreur BDD", "Impossible d'ajouter la matière première dans Oracle.");
-        }
-    });
+    // --- BOUTON VALIDER AJOUT matière : on_btn_valider_stock_clicked() (auto-connect setupUi) ---
 
     // --- BOUTON MODIFIER (pré-remplir le formulaire) ---
     connect(ui->btn_edit_stock, &QPushButton::clicked, [=](){
@@ -1050,9 +1141,20 @@ MainWindow::MainWindow(QWidget *parent)
 
     // --- BOUTON VALIDER MODIFICATION (Oracle) ---
     connect(ui->btn_valider_modif_stock, &QPushButton::clicked, [=](){
-        QString code = ui->le_stock_code_modif->text().trimmed();
-        if (code.isEmpty()) {
-            alerteWarning("Champ requis", "Le code matière première est obligatoire.");
+        const QString code = ui->le_stock_code_modif->text().trimmed();
+        const QString codeNorm = code.toUpper();
+        const QString lot = ui->le_stock_lot_modif->text().trimmed();
+        const QString coul = ui->le_stock_coul_modif->text().trimmed();
+        const double qteMp = ui->sb_stock_qte_modif->value();
+        const QString cat = ui->cb_stock_cat_modif->currentText();
+        const QString etat = ui->cb_stock_etat_modif->currentText();
+        const QString typeSt = ui->cb_stock_type_modif->currentText();
+        const QString qual = ui->cb_stock_qual_modif->currentText();
+
+        const QString errAvant = MatierePremiere::messageSiSaisieInvalide(
+            codeNorm, cat, lot, etat, coul, qteMp, typeSt, qual);
+        if (!errAvant.isEmpty()) {
+            alerteWarning(QStringLiteral("Saisie invalide"), errAvant);
             return;
         }
 
@@ -1065,22 +1167,25 @@ MainWindow::MainWindow(QWidget *parent)
         int idOracle = mesMatieres[indexModifStock].id.toInt();
 
         MatierePremiere mp(
-            code,
-            ui->cb_stock_cat_modif->currentText(),
-            ui->le_stock_lot_modif->text().trimmed(),
-            ui->cb_stock_etat_modif->currentText(),
-            ui->le_stock_coul_modif->text().trimmed(),
-            ui->sb_stock_qte_modif->value(),
-            ui->cb_stock_type_modif->currentText(),
-            ui->cb_stock_qual_modif->currentText()
+            codeNorm,
+            cat,
+            lot,
+            etat,
+            coul,
+            qteMp,
+            typeSt,
+            qual
         );
 
         if (mp.modifier(idOracle)) {
-            alerteSucces("Matière modifiée", "La matière " + code + " a été mise à jour !");
+            alerteSucces("Matière modifiée", "La matière " + codeNorm + " a été mise à jour !");
             rafraichirListeMatieres();
             ui->tabWidgetStock->setCurrentIndex(0);
         } else {
-            alerteErreur("Erreur BDD", "Impossible de modifier la matière dans Oracle.");
+            if (!mp.derniereErreurSaisie().isEmpty())
+                alerteWarning(QStringLiteral("Saisie invalide"), mp.derniereErreurSaisie());
+            else
+                alerteErreur("Erreur BDD", "Impossible de modifier la matière dans Oracle.");
         }
     });
 
@@ -1234,34 +1339,34 @@ MainWindow::MainWindow(QWidget *parent)
     });
 
     // Boutons de la Liste
-    connect(ui->btn_add_depot, &QPushButton::clicked, [=](){ preparerFormulaireDepot(false); });
-
-    connect(ui->btn_edit_depot, &QPushButton::clicked, [=](){
-        int idx = ui->tableDepot->currentRow();
-        if(idx < 0) { alerteWarning("Sélection", "Sélectionnez un emplacement."); return; }
-        preparerFormulaireDepot(true, idx);
-    });
-
-    connect(ui->btn_delete_depot, &QPushButton::clicked, [=](){
-        int r = ui->tableDepot->currentRow();
-        if(r >= 0 && r < mesDepots.size()) { mesDepots.removeAt(r); rafraichirListeDepots(); }
-    });
-
-    // Validations formulaires
-    connect(ui->btn_valider_depot, &QPushButton::clicked, [=](){
-        if(ui->le_depot_id->text().isEmpty()) { alerteWarning("Erreur", "L'ID est obligatoire."); return; }
-        DepotInfo dp = {ui->le_depot_id->text(), ui->le_depot_emp->text(), ui->le_depot_eta->text(), ui->sb_depot_cap->value(), ui->sb_depot_act->value(), ui->cb_depot_type->currentText()};
-        mesDepots.append(dp);
-        rafraichirListeDepots();
-        ui->tabWidgetDepot->setCurrentIndex(0); // Retour liste
-    });
+    // Les handlers CRUD dépôt sont déjà connectés plus haut (version Oracle).
+    // On évite ici les doubles connexions qui provoquent des actions en double.
 
     connect(ui->btn_valider_modif_depot, &QPushButton::clicked, [=](){
-        if(ui->le_depot_id_modif->text().isEmpty()) { alerteWarning("Erreur", "L'ID est obligatoire."); return; }
-        DepotInfo dp = {ui->le_depot_id_modif->text(), ui->le_depot_emp_modif->text(), ui->le_depot_eta_modif->text(), ui->sb_depot_cap_modif->value(), ui->sb_depot_act_modif->value(), ui->cb_depot_type_modif->currentText()};
-        mesDepots[indexModifDepot] = dp;
+        const int idDepot = ui->le_depot_id_modif->text().toInt();
+        if (idDepot <= 0) {
+            alerteWarning("Erreur", "ID dépôt invalide.");
+            return;
+        }
+        const QString etaM = ui->le_depot_eta_modif->text().trimmed();
+        const double capM = ui->sb_depot_cap_modif->value();
+        const double qteM = ui->sb_depot_act_modif->value();
+        Depot d(
+            etaM,
+            capM,
+            qteM,
+            ui->cb_depot_type_modif->currentText()
+        );
+        if (!d.modifier(idDepot)) {
+            if (!d.derniereErreurSaisie().isEmpty())
+                alerteWarning(QStringLiteral("Saisie invalide"), d.derniereErreurSaisie());
+            else
+                alerteErreur("Erreur BDD", "Impossible de mettre à jour l'emplacement.");
+            return;
+        }
         rafraichirListeDepots();
         ui->tabWidgetDepot->setCurrentIndex(0); // Retour liste
+        alerteSucces("Mise à jour", "Emplacement modifié avec succès.");
     });
 
 
@@ -1279,7 +1384,6 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(ui->btn_pdf_catalogue, &QPushButton::clicked, [=](){ exporterPDF(ui->tableProduits, "Catalogue 2026"); });
     // ... la suite reste pareille
-    connect(ui->btn_pdf_catalogue, &QPushButton::clicked, [=](){ exporterPDF(ui->tableProduits, "Catalogue 2026"); });
     connect(ui->btn_pdf_emp, &QPushButton::clicked, [=](){ exporterPDF(ui->tableEmployes, "Registre Personnel"); });
     connect(ui->btn_pdf_stock, &QPushButton::clicked, [=](){ exporterPDF(ui->tableStock, "Inventaire Stock"); });
     connect(ui->btn_export_excel_stock, &QPushButton::clicked, [=](){ exporterCSV(ui->tableStock, "Inventaire Stock"); });
@@ -3217,21 +3321,248 @@ void MainWindow::calculerEtAfficherStats() {
 }
 
 // Rafraichissement listes locales
-void MainWindow::rafraichirListeProduits() {
+void MainWindow::rafraichirListeProduits(const QString &filtreCollection) {
+    const bool triActif = ui->tableProduits->isSortingEnabled();
+    ui->tableProduits->setSortingEnabled(false);
+
+    ui->tableProduits->clearContents();
     ui->tableProduits->setRowCount(0);
     ui->tableProduits->setColumnCount(6);
     ui->tableProduits->setHorizontalHeaderLabels({"RÉF", "DÉSIGNATION", "COÛT", "COLLECTION", "CUIR", "TEMPS"});
-    for(int i=0; i<mesProduits.size(); i++) {
-        ui->tableProduits->insertRow(i);
-        ui->tableProduits->setItem(i,0,new QTableWidgetItem(mesProduits[i].id_produit));
-        ui->tableProduits->item(i,0)->setData(Qt::UserRole, i);
-        ui->tableProduits->setItem(i,1,new QTableWidgetItem(mesProduits[i].designation));
-        ui->tableProduits->setItem(i,2,new QTableWidgetItem(QString::number(mesProduits[i].cout, 'f', 2) + " DT"));
-        ui->tableProduits->setItem(i,3,new QTableWidgetItem(mesProduits[i].collection));
-        ui->tableProduits->setItem(i,4,new QTableWidgetItem(mesProduits[i].typeCuir));
-        ui->tableProduits->setItem(i,5,new QTableWidgetItem(QString::number(mesProduits[i].tempsFab) + " h"));
+
+    mesProduits.clear();
+
+    const QString needle = filtreCollection.trimmed();
+
+    QString sql =
+        "SELECT ID_PRODUIT, DESIGNATION, COUT, COLLECTION, TYPE_CUIR_REQUIS, TEMPS_FABRICATION "
+        "FROM PRODUITS";
+    if(!needle.isEmpty()) {
+        sql += " WHERE UPPER(COLLECTION) LIKE :needle";
+    }
+    sql += " ORDER BY ID_PRODUIT DESC";
+
+    QSqlQuery query;
+    if(!needle.isEmpty()) {
+        query.prepare(sql);
+        query.bindValue(":needle", "%" + needle.toUpper() + "%");
+    }
+
+    const bool ok = needle.isEmpty() ? query.exec(sql) : query.exec();
+    if(!ok) {
+        alerteErreur("Erreur BDD", "Impossible de charger la liste des produits.");
+        ui->tableProduits->setSortingEnabled(triActif);
+        return;
+    }
+
+    int row = 0;
+    while(query.next()) {
+        const int idProd = query.value(0).toInt();
+        const QString designation = query.value(1).toString();
+        const double cout = query.value(2).toDouble();
+        const QString coll = query.value(3).toString();
+        const QString cuir = query.value(4).toString();
+        const int temps = query.value(5).toInt();
+
+        ProduitInfo p;
+        p.id_produit = QString::number(idProd);
+        p.designation = designation;
+        p.cout = cout;
+        p.collection = coll;
+        p.typeCuir = cuir;
+        p.tempsFab = temps;
+        p.idClient = QString();
+        p.idEmplacement = QString();
+        mesProduits.append(p);
+
+        ui->tableProduits->insertRow(row);
+        ui->tableProduits->setItem(row, 0, new SortableNumericTableWidgetItem(QString::number(idProd), idProd));
+        ui->tableProduits->setItem(row, 1, new QTableWidgetItem(designation));
+        ui->tableProduits->setItem(row, 2, new SortableNumericTableWidgetItem(QString::number(cout, 'f', 2), cout));
+        ui->tableProduits->setItem(row, 3, new QTableWidgetItem(coll));
+        ui->tableProduits->setItem(row, 4, new QTableWidgetItem(cuir));
+        ui->tableProduits->setItem(row, 5, new SortableNumericTableWidgetItem(QString::number(temps), temps));
+
+        row++;
+    }
+
+    ui->tableProduits->setSortingEnabled(triActif);
+}
+
+// =========================================================
+// ===                   CRUD PRODUITS                 ===
+// =========================================================
+
+void MainWindow::on_btn_edit_produit_clicked() {
+    const int idx = ui->tableProduits->currentRow();
+    if(idx < 0) {
+        alerteWarning("Sélection", "Sélectionnez un produit.");
+        return;
+    }
+    preparerFormulaireProduit(true, idx);
+}
+
+void MainWindow::on_tableProduits_cellClicked(int row, int column) {
+    Q_UNUSED(column);
+    if(row < 0) return;
+    QTableWidgetItem *itId = ui->tableProduits->item(row, 0);
+    if(!itId) return;
+    selectedProdId = itId->text().toInt();
+}
+
+void MainWindow::on_btn_delete_produit_clicked() {
+    const int idx = ui->tableProduits->currentRow();
+    if(idx < 0) {
+        alerteWarning("Sélection", "Sélectionnez un produit à supprimer.");
+        return;
+    }
+
+    QTableWidgetItem *itId = ui->tableProduits->item(idx, 0);
+    bool okId = false;
+    const int id = itId ? itId->text().toInt(&okId) : 0;
+    if(!okId || id <= 0) {
+        alerteErreur("Erreur", "Identifiant produit invalide.");
+        return;
+    }
+
+    QString errSql;
+    if(tmpProduit.supprimer(id, &errSql)) {
+        alerteSucces("Succès", "Produit supprimé !");
+        rafraichirListeProduits(ui->le_search_coll->text());
+        ui->tabWidgetProduits->setCurrentIndex(0);
+        selectedProdId = -1;
+        rowToEdit = -1;
+    } else {
+        const QString detail = errSql.isEmpty() ? QStringLiteral("Raison inconnue.") : errSql;
+        alerteErreur("Erreur", "Suppression impossible.\n\n" + detail);
     }
 }
+
+bool MainWindow::validerMatiereAjout()
+{
+    const QString code = ui->le_stock_code->text().trimmed();
+    const QString lot = ui->le_stock_lot->text().trimmed();
+    const QString coul = ui->le_stock_coul->text().trimmed();
+
+    static const QRegularExpression rxCode(QStringLiteral("^[A-Z]{2,4}-20\\d{2}-\\d{3}$"));
+    static const QRegularExpression rxLot(QStringLiteral("^LOT-20\\d{2}-[A-Z]$"));
+    static const QRegularExpression rxCouleur(QStringLiteral("^[A-Za-zÀ-ÿ ]{3,20}$"));
+
+    if (!rxCode.match(code).hasMatch()) {
+        alerteErreur(QStringLiteral("Validation"),
+                       QStringLiteral("Code MP invalide (ex: CUI-2024-001)."));
+        return false;
+    }
+    if (!rxLot.match(lot).hasMatch()) {
+        alerteErreur(QStringLiteral("Validation"),
+                       QStringLiteral("Numéro de lot invalide (ex: LOT-2024-A)."));
+        return false;
+    }
+    if (!rxCouleur.match(coul).hasMatch()) {
+        alerteErreur(QStringLiteral("Validation"),
+                       QStringLiteral("Couleur invalide (lettres et espaces, 3 à 20 caractères)."));
+        return false;
+    }
+    if (ui->sb_stock_qte->value() <= 0.0) {
+        alerteErreur(QStringLiteral("Validation"), QStringLiteral("La quantité doit être > 0."));
+        return false;
+    }
+
+    return true;
+}
+
+void MainWindow::on_btn_valider_stock_clicked()
+{
+    if (!validerMatiereAjout())
+        return;
+
+    const QString code = ui->le_stock_code->text().trimmed();
+    MatierePremiere mp(
+        code,
+        ui->cb_stock_cat->currentText(),
+        ui->le_stock_lot->text().trimmed(),
+        ui->cb_stock_etat->currentText(),
+        ui->le_stock_coul->text().trimmed(),
+        ui->sb_stock_qte->value(),
+        ui->cb_stock_type->currentText(),
+        ui->cb_stock_qual->currentText());
+
+    if (mp.ajouter()) {
+        alerteSucces(QStringLiteral("Matière ajoutée"),
+                     QStringLiteral("La matière première %1 a été enregistrée avec succès !").arg(code));
+        rafraichirListeMatieres();
+        ui->tabWidgetStock->setCurrentIndex(0);
+    } else {
+        if (!mp.derniereErreurSaisie().isEmpty())
+            alerteErreur(QStringLiteral("Validation/BDD"), mp.derniereErreurSaisie());
+        else
+            alerteErreur(QStringLiteral("Validation/BDD"),
+                          QStringLiteral("Données invalides ou insertion impossible."));
+    }
+}
+
+void MainWindow::on_btn_valider_produit_clicked() {
+    const QString nom = ui->le_prod_nom->text();
+    const double cout = ui->sb_prod_cout->value();
+    const QString coll = ui->cb_prod_coll->currentText();
+    const QString cuir = ui->cb_prod_cuir->currentText();
+    const int temps = ui->sb_prod_temps->value();
+
+    const QString errSaisie = messageValidationSaisieProduit(nom, cout, coll, cuir, temps);
+    if(!errSaisie.isEmpty()) {
+        alerteWarning("Erreur", errSaisie);
+        return;
+    }
+
+    const QString nomTrim = nom.trimmed();
+
+    // On ne dispose pas des ids (client / emplacement) dans l'UI : on passe NULL.
+    Produit p(0, nomTrim, cout, coll.trimmed(), cuir.trimmed(), temps, 0, 0);
+    if(p.ajouter()) {
+        alerteSucces("Succès", "Produit ajouté !");
+        rafraichirListeProduits(ui->le_search_coll->text());
+        ui->tabWidgetProduits->setCurrentIndex(0);
+        // Recharger la page liste (pas l'onglet "Ajouter" pour garder le workflow).
+        ui->le_prod_nom->clear();
+        ui->sb_prod_cout->setValue(0);
+        ui->sb_prod_temps->setValue(1);
+    } else {
+        alerteErreur("Erreur", "Ajout échoué !");
+    }
+}
+
+void MainWindow::on_btn_valider_modif_produit_clicked() {
+    if(selectedProdId <= 0) {
+        alerteWarning("Sélection", "Sélectionnez d'abord un produit à modifier.");
+        return;
+    }
+
+    const QString nom = ui->le_prod_nom_modif->text();
+    const double cout = ui->sb_prod_cout_modif->value();
+    const QString coll = ui->cb_prod_coll_modif->currentText();
+    const QString cuir = ui->cb_prod_cuir_modif->currentText();
+    const int temps = ui->sb_prod_temps_modif->value();
+
+    const QString errSaisie = messageValidationSaisieProduit(nom, cout, coll, cuir, temps);
+    if(!errSaisie.isEmpty()) {
+        alerteWarning("Erreur", errSaisie);
+        return;
+    }
+
+    const QString nomTrim = nom.trimmed();
+
+    Produit p(selectedProdId, nomTrim, cout, coll.trimmed(), cuir.trimmed(), temps, 0, 0);
+    if(p.modifier(selectedProdId)) {
+        alerteSucces("Succès", "Produit modifié avec succès !");
+        rafraichirListeProduits(ui->le_search_coll->text());
+        ui->tabWidgetProduits->setCurrentIndex(0);
+        selectedProdId = -1;
+        rowToEdit = -1;
+    } else {
+        alerteErreur("Erreur", "Mise à jour en base de données échouée !");
+    }
+}
+
 void MainWindow::rafraichirListeEmployes() {
     ui->tableEmployes->setRowCount(0);
     ui->tableEmployes->setColumnCount(7);
@@ -3351,6 +3682,7 @@ void MainWindow::rafraichirListeDepots() {
 
     int rows = model->rowCount();
     ui->tableDepot->setRowCount(rows);
+    mesDepots.clear();
 
     for (int i = 0; i < rows; i++) {
         int idDb = model->record(i).value("ID_EMPLACEMENT").toInt();
@@ -3373,6 +3705,16 @@ void MainWindow::rafraichirListeDepots() {
 
         // Stocker l'ID dans UserRole (sur la colonne Étagère)
         ui->tableDepot->item(i, 2)->setData(Qt::UserRole, idDb);
+
+        DepotInfo dp = {
+            QString::number(idDb),
+            QString("Empl. %1").arg(idDb),
+            et,
+            cap,
+            qte,
+            type
+        };
+        mesDepots.append(dp);
     }
 
     delete model;
@@ -3540,27 +3882,38 @@ void MainWindow::preparerFormulairePlanif(bool estModif) {
 }
 
 void MainWindow::preparerFormulaireProduit(bool estModif, int idx) {
-    if(estModif && idx >= 0 && idx < mesProduits.size()) {
+    if(estModif && idx >= 0 && idx < ui->tableProduits->rowCount()) {
         indexModifProd = idx;
-        const auto &p = mesProduits[idx];
+        rowToEdit = idx;
 
-        // On pré-remplit l'onglet Modifier
-        ui->le_prod_nom_modif->setText(p.designation);
-        ui->sb_prod_cout_modif->setValue(p.cout);
-        ui->cb_prod_coll_modif->setCurrentText(p.collection);
-        ui->cb_prod_cuir_modif->setCurrentText(p.typeCuir);
-        ui->sb_prod_temps_modif->setValue(p.tempsFab);
+        bool okId = false;
+        QTableWidgetItem *itId = ui->tableProduits->item(idx, 0);
+        selectedProdId = itId ? itId->text().toInt(&okId) : 0;
+        if(!okId) selectedProdId = -1;
 
-        // On bascule sur l'onglet "Modifier" (Index 2)
-        ui->tabWidgetProduits->setCurrentIndex(2);
+        auto itDes  = ui->tableProduits->item(idx, 1);
+        auto itCout = ui->tableProduits->item(idx, 2);
+        auto itColl = ui->tableProduits->item(idx, 3);
+        auto itCu  = ui->tableProduits->item(idx, 4);
+        auto itTemp = ui->tableProduits->item(idx, 5);
+
+        ui->le_prod_nom_modif->setText(itDes ? itDes->text() : QString());
+        ui->sb_prod_cout_modif->setValue(itCout ? itCout->text().toDouble() : 0.0);
+        ui->cb_prod_coll_modif->setCurrentText(itColl ? itColl->text() : QString());
+        ui->cb_prod_cuir_modif->setCurrentText(itCu ? itCu->text() : QString());
+        ui->sb_prod_temps_modif->setValue(itTemp ? itTemp->text().toInt() : 1);
+
+        ui->tabWidgetProduits->setCurrentIndex(2); // Modifier
     } else {
         // On vide l'onglet Ajout
+        selectedProdId = -1;
+        rowToEdit = -1;
+
         ui->le_prod_nom->clear();
         ui->sb_prod_cout->setValue(0);
         ui->sb_prod_temps->setValue(1);
 
-        // On bascule sur l'onglet "Ajouter" (Index 1)
-        ui->tabWidgetProduits->setCurrentIndex(1);
+        ui->tabWidgetProduits->setCurrentIndex(1); // Ajouter
     }
 }
 
@@ -4120,15 +4473,21 @@ void MainWindow::showProduitCoutDialog() {
     titre->setAlignment(Qt::AlignCenter); l->addWidget(titre);
 
     QLabel *desc = new QLabel();
-    int idx = ui->tableProduits->currentRow();
+    const int idx = ui->tableProduits->currentRow();
 
-    if(idx >= 0 && idx < mesProduits.size()) {
-        // SI UN PRODUIT EST SÉLECTIONNÉ : ON CALCULE SA MARGE !
-        ProduitInfo p = mesProduits[idx];
-        double coutMP = p.cout;
-        double coutMainOeuvre = p.tempsFab * 15.5; // Base: 15.5 DT/h par artisan
-        double coutTotal = coutMP + coutMainOeuvre;
-        double prixVente = coutTotal * 2.5; // La marge Fil d'Or
+    if(idx >= 0 && idx < ui->tableProduits->rowCount()) {
+        // Calcul basé sur la ligne de la table (fiable après tri/filtre).
+        auto *itDes = ui->tableProduits->item(idx, 1);
+        auto *itCout = ui->tableProduits->item(idx, 2);
+        auto *itTemp = ui->tableProduits->item(idx, 5);
+
+        const QString designation = itDes ? itDes->text() : QString();
+        const double coutMP = itCout ? itCout->text().toDouble() : 0.0;
+        const int tempsFab = itTemp ? itTemp->text().toInt() : 0;
+
+        const double coutMainOeuvre = tempsFab * 15.5; // Base: 15.5 DT/h par artisan
+        const double coutTotal = coutMP + coutMainOeuvre;
+        const double prixVente = coutTotal * 2.5; // La marge Fil d'Or
 
         QString html = QString(
                            "<div style='background: white; border: 1px solid #d7ccc8; border-radius: 10px; padding: 20px; font-size: 15px; color: #3e2723;'>"
@@ -4140,7 +4499,7 @@ void MainWindow::showProduitCoutDialog() {
                            "</ul><hr>"
                            "Prix de vente conseillé au public (Marge x2.5) : <b><span style='color:#27ae60; font-size:22px;'>%6 DT</span></b>"
                            "</div>"
-                           ).arg(p.designation).arg(coutMP).arg(coutMainOeuvre).arg(p.tempsFab).arg(coutTotal).arg(prixVente);
+                           ).arg(designation).arg(coutMP).arg(coutMainOeuvre).arg(tempsFab).arg(coutTotal).arg(prixVente);
         desc->setText(html);
     } else {
         // AUCUN PRODUIT SÉLECTIONNÉ
@@ -4773,7 +5132,7 @@ void MainWindow::on_btn_valider_emp_clicked()
         alerteSucces("RH", "Employé ajouté avec succès");
         forceTabEmployes(0);
     } else {
-        alerteErreur("RH", "Erreur lors de l'ajout");
+        alerteErreur("RH", "Erreur lors de l'ajout.\nVérifiez l'unicité de l'email/RFID et la configuration de la séquence Oracle.");
     }
 }
 

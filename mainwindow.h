@@ -5,6 +5,8 @@
 #include "etape.h"
 #include "depot.h"
 #include "produit.h"
+#include "client.h"
+#include <QSqlQueryModel>
 #include <QMainWindow>
 #include <QTableWidget>
 #include <QVector>
@@ -13,8 +15,12 @@
 #include <QPainter>
 #include <QPrinter>
 #include <QFileDialog>
+#include <QProcess>
+#include <QByteArray>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QJsonObject>
 
-// --- INCLUDES ---
 #include <QDialog>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -28,6 +34,7 @@
 #include <QGroupBox>
 #include <QTextEdit>
 #include <QHeaderView>
+#include <QPointer>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -62,20 +69,51 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+    struct FashionOracleConcept {
+        int conceptIndex = 1;
+        QString productTypeEn;
+        QString categoryLabel;
+        QString style;
+        QString palette;
+        QString material;
+        int targetYear = 2026;
+    };
+    using FashionConcept = FashionOracleConcept;
+
+    static QJsonObject buildGenerateVisualsPostJson(const FashionOracleConcept &concept);
+    static QByteArray jsonPayloadForFashionOracleGenerateVisuals(const FashionOracleConcept &concept);
+    /**
+     * Requete asynchrone vers /generate-visuals (GET query).
+     * Beaucoup d instances locales n enregistrent que GET sur cette route : un POST provoque HTTP 405.
+     * Le corps logique (type, style, …) est encode en query string ; le backend POST reste disponible pour d autres clients.
+     */
+    static QNetworkReply *sendFashionOracleGenerateVisualRequest(
+        QNetworkAccessManager *nam,
+        const FashionOracleConcept &concept,
+        int transferTimeoutMs,
+        QByteArray *outSentJson = nullptr);
+
+    static QString buildPromptForConcept(const FashionOracleConcept &concept);
+
+    QFrame *creerCarteStat(QString icone, QString val, QString titre, QString couleurFond);
+
 private slots:
-    // === Slots CRUD Employés ===
     void on_btn_valider_emp_clicked();
     void on_btn_valider_modif_emp_clicked();
     void on_btn_delete_emp_clicked();
     void on_btn_edit_emp_clicked();
     void on_btn_sort_alpha_emp_clicked();
 
-    // === Slots CRUD Produits ===
     void on_btn_valider_produit_clicked();
     void on_btn_valider_modif_produit_clicked();
     void on_btn_delete_produit_clicked();
     void on_btn_edit_produit_clicked();
     void on_tableProduits_cellClicked(int row, int column);
+
+    void on_btn_valider_stock_clicked();
+
+    void on_btn_valider_client_clicked();
+    void on_btn_valider_modif_client_clicked();
 
 private:
     Ui::MainWindow *ui;
@@ -95,7 +133,6 @@ private:
 
     ColorDelegate *myColorDelegate;
 
-    // Sélection produit (utile même après tri de la table)
     int selectedProdId = -1;
     int rowToEdit = -1;
     bool m_triProduitDesignationDescendant = false;
@@ -108,23 +145,19 @@ private:
     bool modeModifClient = false; int indexModifClient = -1;
     bool modeModifDepot = false; int indexModifDepot = -1;
 
-    // Fonctions Communes
     void exporterPDF(QTableWidget *table, QString titreDocument);
     void exporterCSV(QTableWidget *table, const QString &titreDocument);
 
-    // Module Planif
     void rafraichirListeCommandes();
     void configurerTimelineGantt();
     void dessinerBarre(int ligne, int colDebut, int duree, QString texte, QColor bgCol, QColor textCol);
     void calculerEtAfficherStats();
 
-    int selectedEtapeId;       // ID_SUIVI sélectionné
-    int selectedEtapePlanifId; // ID_PLANIFICATION sélectionné
+    int selectedEtapeId;
+    int selectedEtapePlanifId;
 
-    // Utilisé pour la modification d'un employé (lecture depuis Oracle).
     int idEmployeAModifier = -1;
 
-    // Snapshot des valeurs initiales (pour détecter "aucune modification").
     QString initialNomEmploye;
     QString initialPrenomEmploye;
     QString initialPosteEmploye;
@@ -135,7 +168,6 @@ private:
     double initialSalaireEmploye = 0.0;
     QString initialRfidEmploye;
 
-    // Tri (Employes - colonne Nom)
     Qt::SortOrder employeTriAlphaOrdre = Qt::AscendingOrder;
     bool employeTriAlphaActif = false;
 
@@ -144,15 +176,14 @@ private:
     void remplirTableEtapes(QSqlQueryModel *model);
     void construirePageEtapes();
     void verifierFinFabrication(int idPlanification);
-    // Module Produits
     void rafraichirListeProduits(const QString &filtreCollection = QString());
+    void remplirCombosProduitClientEmplacement();
     void calculerStatsProduits();
-    void showProdSimDialog(); // (déjà existant)
+    void showProdSimDialog();
     void showProduitCoutDialog();
     void showHistoriqueModeDialog();
-    void showPlanifIaDialog(); // [NOUVEAU] Pop-up IA Planification
+    void showPlanifIaDialog();
 
-    // Module RH
     void rafraichirListeEmployes();
     void calculerStatsRH();
     void reponseChatbot();
@@ -161,28 +192,26 @@ private:
     void showEmpAncienneteTab();
     void showEmpAssistantTab();
 
-    // Helpers navigation / chargement fiche employé
     void goToTabEmployes(int index);
     void goToTabEmployesByText(const QString& title);
     void forceTabEmployes(int index);
     bool chargerEmployePourModification(int id);
 
-    // Module Clients
     void rafraichirListeClients();
+    void remplirTableClients(QSqlQueryModel *model);
     void calculerStatsClients();
     void exporterFactureClient();
     void showClientFideliteTab();
     void showClientIaTab();
 
 
-    // Module Dépôt
     void rafraichirListeDepots();
     void calculerStatsDepots();
     void preparerFormulaireDepot(bool estModif, int idx = -1);
     void showDepotOptimizeTab();
     void showDepotRavitaillementTab();
 
-    // Module Stock (NOUVEAU - SPA avec onglets)
+    bool validerMatiereAjout();
     void rafraichirListeMatieres();
     void calculerStatsStock();
     void preparerFormulaireStock(bool estModif, int idx = -1);
@@ -192,9 +221,7 @@ private:
     void preparerFormulaireProduit(bool estModif, int idx = -1);
     void ouvrirDialogueClient(bool estModif);
 
-    // ... (vos variables existantes) ...
 
-    // AJOUTER CES LIGNES POUR LES STATS POP-UP :
     void ouvrirStatsProduits();
     void ouvrirStatsRH();
     void ouvrirStatsStock();
@@ -203,20 +230,28 @@ private:
     void ouvrirStatsPlanification();
     void preparerFormulaireModif(int idx);
     void ouvrirIAPrediction();
-    // Dashboard global (Page d'Accueil)
     void construireDashboardAccueil();
-    // Pages dynamiques modernisées
     void construirePageAccueil();
     void construirePageLogin();
 
-    // --- Alertes personnalisées FIL D'OR ---
     void alerteSucces(const QString &titre, const QString &message);
     void alerteErreur(const QString &titre, const QString &message);
     void alerteWarning(const QString &titre, const QString &message);
     void alerteInfo(const QString &titre, const QString &message);
 
-    // Une petite fonction utilitaire pour le design des cartes KPI
-    QFrame* creerCarteStat(QString icone, QString val, QString titre, QString couleurFond);
+    bool isFashionOracleHealthy(int timeoutMs = 1200) const;
+    bool startFashionOracleBackendProcess(QString *errorOut = nullptr);
+    bool ensureFashionOracleBackendReady(QString *errorOut = nullptr, int startupTimeoutMs = 30000);
+    QString resolveFashionOracleDir() const;
+    QString resolveFashionOraclePython() const;
+
+    QProcess *m_fashionOracleBackendProcess = nullptr;
+    bool m_fashionOracleBackendOwned = false;
+
+    QNetworkAccessManager m_namCostSim;
+    QPointer<QNetworkReply> m_costSimReply;
+    QPointer<QTextEdit> m_costSimHtmlOut;
+    QPointer<QNetworkReply> m_histCapsuleReply;
 };
 
-#endif // MAINWINDOW_H
+#endif

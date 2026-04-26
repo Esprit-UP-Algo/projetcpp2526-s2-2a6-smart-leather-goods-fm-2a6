@@ -4,7 +4,7 @@
 #include "matierepremiere.h"
 #include "etape.h"
 #include "depot.h"
-
+#include "produit.h"
 #include <QMainWindow>
 #include <QTableWidget>
 #include <QVector>
@@ -70,10 +70,21 @@ private slots:
     void on_btn_edit_emp_clicked();
     void on_btn_sort_alpha_emp_clicked();
 
+    // === Slots CRUD Produits ===
+    void on_btn_valider_produit_clicked();
+    void on_btn_valider_modif_produit_clicked();
+    void on_btn_delete_produit_clicked();
+    void on_btn_edit_produit_clicked();
+    void on_tableProduits_cellClicked(int row, int column);
+
+    // === Stock — matières premières (auto-connexion setupUi) ===
+    void on_btn_valider_stock_clicked();
+
 private:
     Ui::MainWindow *ui;
     OrdreFabrication tmpOrdre;
     MatierePremiere tmpMatiere;
+    Produit tmpProduit;
     Depot tmpDepot;
     Etape tmpEtape;
 
@@ -86,6 +97,11 @@ private:
     QVector<DepotInfo> mesDepots;
 
     ColorDelegate *myColorDelegate;
+
+    // Sélection produit (utile même après tri de la table)
+    int selectedProdId = -1;
+    int rowToEdit = -1;
+    bool m_triProduitDesignationDescendant = false;
 
     int indexCommandeSelectionnee = -1;
     bool modeModification = false; int indexModification = -1;
@@ -132,7 +148,7 @@ private:
     void construirePageEtapes();
     void verifierFinFabrication(int idPlanification);
     // Module Produits
-    void rafraichirListeProduits();
+    void rafraichirListeProduits(const QString &filtreCollection = QString());
     void calculerStatsProduits();
     void showProdSimDialog(); // (déjà existant)
     void showProduitCoutDialog();
@@ -170,6 +186,7 @@ private:
     void showDepotRavitaillementTab();
 
     // Module Stock (NOUVEAU - SPA avec onglets)
+    bool validerMatiereAjout();
     void rafraichirListeMatieres();
     void calculerStatsStock();
     void preparerFormulaireStock(bool estModif, int idx = -1);

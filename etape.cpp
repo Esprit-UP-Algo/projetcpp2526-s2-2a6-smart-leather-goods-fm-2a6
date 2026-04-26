@@ -15,9 +15,6 @@ Etape::Etape(int idPlanif, int idEmp, QString etape, double tempsReel, double d,
     alerte_active = alerte;
 }
 
-// =============================================
-// AJOUTER UNE ÉTAPE
-// =============================================
 bool Etape::ajouter()
 {
     QSqlQuery query;
@@ -41,9 +38,6 @@ bool Etape::ajouter()
     return true;
 }
 
-// =============================================
-// MODIFIER UNE ÉTAPE
-// =============================================
 bool Etape::modifier(int idSuivi)
 {
     QSqlQuery query;
@@ -73,9 +67,6 @@ bool Etape::modifier(int idSuivi)
     return true;
 }
 
-// =============================================
-// SUPPRIMER UNE ÉTAPE
-// =============================================
 bool Etape::supprimer(int idSuivi)
 {
     QSqlQuery query;
@@ -91,9 +82,6 @@ bool Etape::supprimer(int idSuivi)
     return true;
 }
 
-// =============================================
-// AFFICHER TOUTES LES ÉTAPES (avec jointures)
-// =============================================
 QSqlQueryModel* Etape::afficher()
 {
     QSqlQueryModel *model = new QSqlQueryModel();
@@ -124,22 +112,17 @@ QSqlQueryModel* Etape::afficher()
     return model;
 }
 
-// =============================================
-// GÉNÉRER AUTOMATIQUEMENT LES 4 ÉTAPES
-// pour une commande planifiée
-// =============================================
 bool Etape::genererEtapesCommande(int idPlanification, int idEmploye)
 {
     QStringList etapes = {"Coupe", "Assemblage", "Couture", "Finition"};
 
-    // Vérifier si les étapes existent déjà pour cette commande
     QSqlQuery qCheck;
     qCheck.prepare("SELECT COUNT(*) FROM ETAPES WHERE ID_PLANIFICATION = :id");
     qCheck.bindValue(":id", idPlanification);
     if (qCheck.exec() && qCheck.next()) {
         if (qCheck.value(0).toInt() > 0) {
             qDebug() << "⚠️ Étapes déjà générées pour la commande" << idPlanification;
-            return false; // Déjà générées
+            return false;
         }
     }
 
@@ -165,13 +148,10 @@ bool Etape::genererEtapesCommande(int idPlanification, int idEmploye)
     return true;
 }
 
-// =============================================
-// SAISIR TEMPS RÉEL + CALCUL DELTA + ALERTE
-// =============================================
 bool Etape::saisirTempsReel(int idSuivi, double tempsReel, double tempsPrevue)
 {
     double delta = tempsReel - tempsPrevue;
-    int alerte = (delta > 0) ? 1 : 0; // Alerte si temps réel > prévu
+    int alerte = (delta > 0) ? 1 : 0;
 
     QSqlQuery query;
     query.prepare("UPDATE ETAPES SET "
@@ -195,9 +175,6 @@ bool Etape::saisirTempsReel(int idSuivi, double tempsReel, double tempsPrevue)
     return true;
 }
 
-// =============================================
-// RECHERCHER PAR COMMANDE
-// =============================================
 QSqlQueryModel* Etape::rechercherParCommande(int idPlanification)
 {
     QSqlQueryModel *model = new QSqlQueryModel();
@@ -222,9 +199,6 @@ QSqlQueryModel* Etape::rechercherParCommande(int idPlanification)
     return model;
 }
 
-// =============================================
-// RECHERCHER PAR ÉTAPE
-// =============================================
 QSqlQueryModel* Etape::rechercherParEtape(const QString &etape)
 {
     QSqlQueryModel *model = new QSqlQueryModel();
@@ -247,9 +221,6 @@ QSqlQueryModel* Etape::rechercherParEtape(const QString &etape)
     return model;
 }
 
-// =============================================
-// TRIER PAR COMMANDE
-// =============================================
 QSqlQueryModel* Etape::trierParCommande()
 {
     QSqlQueryModel *model = new QSqlQueryModel();
@@ -270,9 +241,6 @@ QSqlQueryModel* Etape::trierParCommande()
     return model;
 }
 
-// =============================================
-// AFFICHER ALERTES SEULEMENT
-// =============================================
 QSqlQueryModel* Etape::afficherAlertes()
 {
     QSqlQueryModel *model = new QSqlQueryModel();

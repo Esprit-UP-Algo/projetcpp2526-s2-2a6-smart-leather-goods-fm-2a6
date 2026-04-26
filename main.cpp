@@ -3,7 +3,7 @@
 #include <QLocale>
 #include <QTranslator>
 #include <QMessageBox>
-#include "connexion.h" // <--- Ajout
+#include "connexion.h"
 
 int main(int argc, char *argv[])
 {
@@ -19,7 +19,6 @@ int main(int argc, char *argv[])
         }
     }
 
-    // --- Connexion Singleton ---
     Connexion *cnx = Connexion::getInstance();
 
     if (!cnx->ouvrir()) {
@@ -38,7 +37,6 @@ int main(int argc, char *argv[])
 
     int result = a.exec();
 
-    // Fermer la connexion à la fin
     cnx->fermer();
 
     return result;

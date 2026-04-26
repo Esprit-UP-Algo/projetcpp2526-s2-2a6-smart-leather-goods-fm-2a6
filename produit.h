@@ -7,14 +7,15 @@
 
 class Produit
 {
-    int id_produit;              // NUMBER (Not Null)
-    QString designation;         // VARCHAR2(100)
-    double cout;                 // NUMBER(10,2)
-    QString collection;          // VARCHAR2(50)
-    QString type_cuir_requis;    // VARCHAR2(50)
-    int temps_fabrication;       // NUMBER
-    int id_client;               // NUMBER
-    int id_emplacement;          // NUMBER
+    int id_produit;
+    QString designation;
+    double cout;
+    QString collection;
+    QString type_cuir_requis;
+    int temps_fabrication;
+    int id_client;
+    int id_emplacement;
+    QString m_derniereErreurSaisie;
 
 public:
     Produit();
@@ -28,12 +29,12 @@ public:
             int id_client,
             int id_emplacement);
 
-    // CRUD
+    QString derniereErreurSaisie() const { return m_derniereErreurSaisie; }
+
     bool ajouter();
-    QSqlQueryModel * afficher();
-    /// Supprime d'abord les lignes PLANIFICATION liées, puis le produit. \a messageErreur reçoit le texte SQL si échec.
+    QSqlQueryModel *afficher(const QString &filtreCollection = QString());
     bool supprimer(int id, QString *messageErreur = nullptr);
     bool modifier(int id);
 };
 
-#endif // PRODUIT_H
+#endif

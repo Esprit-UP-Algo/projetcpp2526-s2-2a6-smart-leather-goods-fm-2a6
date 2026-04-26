@@ -20,7 +20,6 @@ employe::employe(int id_employe, QString nom, QString prenom, QString poste,
     this->rfid_tag = rfid_tag;
 }
 
-// ✅ AJOUTER
 bool employe::ajouter()
 {
     QSqlDatabase db = QSqlDatabase::database();
@@ -45,7 +44,6 @@ bool employe::ajouter()
         "(ID_EMPLOYE, NOM, PRENOM, POSTE, EMAIL, TELEPHONE, DEPARTEMENT, DATE_EMBAUCHE, SALAIRE, RFID_TAG) "
         "VALUES (SEQ_EMP.NEXTVAL, :nom, :prenom, :poste, :email, :tel, :dep, :dateEmb, :sal, :rfid)",
 
-        // Fallback utile si ID est généré par trigger.
         "INSERT INTO EMPLOYES "
         "(NOM, PRENOM, POSTE, EMAIL, TELEPHONE, DEPARTEMENT, DATE_EMBAUCHE, SALAIRE, RFID_TAG) "
         "VALUES (:nom, :prenom, :poste, :email, :tel, :dep, :dateEmb, :sal, :rfid)"
@@ -76,11 +74,9 @@ bool employe::ajouter()
 }
 
 
-// ✅ AFFICHER
 QSqlQueryModel * employe::afficher()
 {
     QSqlQueryModel *model = new QSqlQueryModel();
-    // Inclure tous les champs nécessaires à l'édition dans l'UI (email/tel/RFID).
     model->setQuery(
         "SELECT ID_EMPLOYE, NOM, PRENOM, POSTE, EMAIL, TELEPHONE, DEPARTEMENT, DATE_EMBAUCHE, SALAIRE, RFID_TAG "
         "FROM EMPLOYES "
@@ -92,7 +88,6 @@ QSqlQueryModel * employe::afficher()
     return model;
 }
 
-// ✅ SUPPRIMER
 bool employe::supprimer(int id)
 {
     QSqlQuery query;
@@ -106,7 +101,6 @@ bool employe::supprimer(int id)
     return true;
 }
 
-// ✅ MODIFIER  (هذا هو اللي ناقص عندك وسبب undefined reference)
 bool employe::modifier(int id)
 {
     QSqlQuery query;
