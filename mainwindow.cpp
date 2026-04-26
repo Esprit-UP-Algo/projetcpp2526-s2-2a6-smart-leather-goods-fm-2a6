@@ -19,6 +19,9 @@
 #include "sensitivityengine.h"
 #include "breakpointengine.h"
 #include "uianimator.h"
+#include "smartmotorcontroller.h"
+
+#include <QtGlobal>
 
 #include <QSqlRecord>
 #include <QSqlQuery>
@@ -589,6 +592,120 @@ static void setVerticalBarChart(QWidget *container, const QString &title, const 
     vl->addStretch(1); vl->addWidget(view, 0, Qt::AlignCenter); vl->addStretch(1);
 }
 
+static QString filDorEnv(const char *name, const QString &defaultValue = QString())
+{
+    const QString v = QString::fromLocal8Bit(qgetenv(name)).trimmed();
+    return v.isEmpty() ? defaultValue : v;
+}
+
+void MainWindow::installerChoixMoteurProduitUi()
+{
+    auto makeGroup = [this](bool isModif) -> QGroupBox* {
+        QGroupBox *grp = new QGroupBox(QStringLiteral("Ordre Moteur Smart"), this);
+        QVBoxLayout *lay = new QVBoxLayout(grp);
+        lay->setContentsMargins(8, 6, 8, 6);
+        lay->setSpacing(4);
+
+        QRadioButton *rb0 = new QRadioButton(QStringLiteral("3ème choix — Aucun mouvement moteur"), grp);
+        QRadioButton *rb1 = new QRadioButton(QStringLiteral("1er choix  — 1/2 cercle (180°)"), grp);
+        QRadioButton *rb2 = new QRadioButton(QStringLiteral("2ème choix — 1/4 cercle (90°)"), grp);
+        rb1->setStyleSheet("QRadioButton{color:#27ae60;font-weight:bold;}");
+        rb2->setStyleSheet("QRadioButton{color:#e67e22;font-weight:bold;}");
+        rb0->setStyleSheet("QRadioButton{color:#7f8c8d;}");
+        rb0->setChecked(true);
+
+        lay->addWidget(rb0);
+        lay->addWidget(rb1);
+        lay->addWidget(rb2);
+
+        if (isModif) {
+            m_rbChoixMod0 = rb0;
+            m_rbChoixMod1 = rb1;
+            m_rbChoixMod2 = rb2;
+        } else {
+            m_rbChoixNew0 = rb0;
+            m_rbChoixNew1 = rb1;
+            m_rbChoixNew2 = rb2;
+        }
+        return grp;
+    };
+
+    if (QFormLayout *flNew = ui->gb_prod_new ? ui->gb_prod_new->findChild<QFormLayout*>("fl_prod_new") : nullptr)
+        flNew->addRow(QStringLiteral("Choix Moteur :"), makeGroup(false));
+    if (QFormLayout *flMod = ui->gb_prod_edit ? ui->gb_prod_edit->findChild<QFormLayout*>("fl_prod_edit") : nullptr)
+        flMod->addRow(QStringLiteral("Choix Moteur :"), makeGroup(true));
+}
+
+int MainWindow::choixMoteurDepuisFormulaireNouveau() const
+{
+    if (m_rbChoixNew1 && m_rbChoixNew1->isChecked()) return 1;
+    if (m_rbChoixNew2 && m_rbChoixNew2->isChecked()) return 2;
+    return 0;
+}
+
+int MainWindow::choixMoteurDepuisFormulaireModif() const
+{
+    if (m_rbChoixMod1 && m_rbChoixMod1->isChecked()) return 1;
+    if (m_rbChoixMod2 && m_rbChoixMod2->isChecked()) return 2;
+    return 0;
+}
+
+void MainWindow::journaliserMoteurSmart(int idProduit, int idCommande, const QString &actionCode, const QString &detail) const
+{
+    Connexion *cnx = Connexion::getInstance();
+    if (!cnx || !cnx->estConnecte())
+        return;
+    if (filDorEnv("FIL_DOR_LOG_MOTEUR", QStringLiteral("1")) != QStringLiteral("1"))
+        return;
+
+    QSqlQuery ins(cnx->getDatabase());
+    ins.setForwardOnly(true);
+    const QString table = filDorEnv("FIL_DOR_MOTEUR_TABLE", QStringLiteral("SMART_MOTEUR_LOG"));
+
+    ins.prepare(QStringLiteral("INSERT INTO %1 (ID_PRODUIT, ID_COMMANDE, ACTION_CODE, DETAIL) VALUES (:p, :c, :a, :d)").arg(table));
+    ins.bindValue(QStringLiteral(":p"), idProduit);
+    ins.bindValue(QStringLiteral(":c"), idCommande > 0 ? idCommande : QVariant());
+    ins.bindValue(QStringLiteral(":a"), actionCode);
+    ins.bindValue(QStringLiteral(":d"), detail);
+
+    if (!ins.exec()) {
+        qDebug() << "[SmartMoteur] log ignore:" << ins.lastError().text();
+    }
+}
+
+int MainWindow::declencherMoteurProduit(int idProduit, int idCommande)
+{
+    const int choix = Produit::getProductChoix(idProduit);
+    if (choix != 1 && choix != 2)
+        return 0;
+
+    m_smartMotor.setPortName(filDorEnv("FIL_DOR_ARDUINO_PORT", QString()));
+    if (m_smartMotor.portName().isEmpty()) {
+        qDebug() << "[SmartMoteur] FIL_DOR_ARDUINO_PORT non defini, aucun envoi UART.";
+        journaliserMoteurSmart(idProduit, idCommande, QStringLiteral("SKIP"), QStringLiteral("Port serie non configure"));
+        return -1;
+    }
+
+    const QString cmd = (choix == 1) ? QStringLiteral("MOTOR:1") : QStringLiteral("MOTOR:2");
+    QString err;
+    const bool ok = m_smartMotor.sendCommand(cmd, &err);
+    if (!ok) {
+        qDebug() << "[SmartMoteur] echec UART:" << err;
+        journaliserMoteurSmart(idProduit, idCommande, cmd, err);
+        return -1;
+    }
+
+    const QString origine = (idCommande > 0)
+        ? QStringLiteral("commande %1").arg(idCommande)
+        : QStringLiteral("module produit (choix en base)");
+    const QString d = (choix == 1)
+        ? QStringLiteral("Choix=1 (base) -> %1, MOTOR:1").arg(origine)
+        : QStringLiteral("Choix=2 (base) -> %1, MOTOR:2").arg(origine);
+    journaliserMoteurSmart(idProduit, idCommande, cmd, d);
+    Produit::logMoteurAction(idProduit, choix);
+    qDebug() << "[SmartMoteur] UART OK, cmd=" << cmd << "idProduit=" << idProduit << "idCommande=" << idCommande;
+    return choix;
+}
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -596,6 +713,7 @@ MainWindow::MainWindow(QWidget *parent)
     , m_namCostSim(this)
 {
     ui->setupUi(this);
+    installerChoixMoteurProduitUi();
 
     if (ui->sb_stock_qte) {
         ui->sb_stock_qte->setMinimum(0.01);
@@ -651,6 +769,9 @@ MainWindow::MainWindow(QWidget *parent)
         alerteWarning("Erreur BDD", "Impossible de se connecter à la base Oracle.");
         setWindowTitle(QStringLiteral("FIL D'OR — hors base (mode limité)"));
     }
+
+    if (cnx && cnx->estConnecte())
+        Produit::ensureChoixColumn();
 
     ui->tablePlanif->setSortingEnabled(true);
     ui->tableProduits->setSortingEnabled(true);
@@ -1139,6 +1260,7 @@ MainWindow::MainWindow(QWidget *parent)
                         Etape::genererEtapesCommande(idNouvelleCommande, idEmploye);
                         qDebug() << "4 etapes generees pour commande" << idNouvelleCommande;
                     }
+
                 }
             }
 
@@ -1214,6 +1336,46 @@ MainWindow::MainWindow(QWidget *parent)
         ui->tableProduits->sortItems(1, ordre);
         m_triProduitDesignationDescendant = !m_triProduitDesignationDescendant;
     });
+
+    if (ui->btn_moteur_prod) {
+        ui->btn_moteur_prod->setStyleSheet(styleBtnSave());
+        ui->btn_moteur_prod->setCursor(Qt::PointingHandCursor);
+        connect(ui->btn_moteur_prod, &QPushButton::clicked, this, [this]() {
+            int idProd = selectedProdId;
+            QString designation;
+            if (idProd <= 0 && ui->tableProduits && ui->tableProduits->currentRow() >= 0) {
+                QTableWidgetItem *it = ui->tableProduits->item(ui->tableProduits->currentRow(), 0);
+                QTableWidgetItem *itDes = ui->tableProduits->item(ui->tableProduits->currentRow(), 1);
+                if (it)
+                    idProd = it->text().toInt();
+                if (itDes)
+                    designation = itDes->text();
+            }
+            if (idProd <= 0) {
+                alerteWarning(QStringLiteral("Produit"), QStringLiteral("Sélectionnez d'abord un produit dans la liste."));
+                return;
+            }
+
+            qDebug() << "[MoteurSmart] Produit ID=" << idProd << designation;
+            const int st = declencherMoteurProduit(idProd, -1);
+            if (st == 1) {
+                alerteSucces(QStringLiteral("Moteur Smart"),
+                             QStringLiteral("✓ %1\n\n1er choix — 1/2 cercle (180°)\nOrdre envoyé à l'Arduino.")
+                                 .arg(designation));
+            } else if (st == 2) {
+                alerteSucces(QStringLiteral("Moteur Smart"),
+                             QStringLiteral("✓ %1\n\n2ème choix — 1/4 cercle (90°)\nOrdre envoyé à l'Arduino.")
+                                 .arg(designation));
+            } else if (st == 0) {
+                alerteInfo(QStringLiteral("Moteur Smart"),
+                           QStringLiteral("⚠ %1\n\nCe produit est en 3ème choix.\nAucun ordre moteur envoyé.\n\nPour changer : Modifier Produit -> champ Ordre Moteur.")
+                               .arg(designation));
+            } else {
+                alerteWarning(QStringLiteral("Moteur Smart"),
+                              QStringLiteral("Choix detecte, mais echec UART. Verifiez FIL_DOR_ARDUINO_PORT (ex: COM3) et le branchement."));
+            }
+        });
+    }
 
     connect(ui->btn_stats_prod, &QPushButton::clicked, [=](){
         rafraichirListeProduits(ui->le_search_coll->text());
@@ -3827,6 +3989,14 @@ void MainWindow::on_btn_valider_produit_clicked() {
 
     Produit p(0, nomTrim, cout, coll.trimmed(), cuir.trimmed(), temps, idClient, idEmpl);
     if(p.ajouter()) {
+        // Applique le choix moteur sur le produit fraîchement ajouté.
+        QSqlQuery qLast(Connexion::getInstance()->getDatabase());
+        int newId = -1;
+        if (qLast.exec(QStringLiteral("SELECT MAX(ID_PRODUIT) FROM PRODUITS")) && qLast.next())
+            newId = qLast.value(0).toInt();
+        if (newId > 0)
+            Produit::setProductChoix(newId, choixMoteurDepuisFormulaireNouveau());
+
         alerteSucces("Succès", "Produit ajouté !");
         rafraichirListeProduits(ui->le_search_coll->text());
         ui->tabWidgetProduits->setCurrentIndex(0);
@@ -3872,6 +4042,7 @@ void MainWindow::on_btn_valider_modif_produit_clicked() {
 
     Produit p(selectedProdId, nomTrim, cout, coll.trimmed(), cuir.trimmed(), temps, idClient, idEmpl);
     if(p.modifier(selectedProdId)) {
+        Produit::setProductChoix(selectedProdId, choixMoteurDepuisFormulaireModif());
         alerteSucces("Succès", "Produit modifié avec succès !");
         rafraichirListeProduits(ui->le_search_coll->text());
         ui->tabWidgetProduits->setCurrentIndex(0);
@@ -4286,6 +4457,12 @@ void MainWindow::preparerFormulaireProduit(bool estModif, int idx) {
         }
         reglerComboParIdDonnee(ui->cb_prod_client_modif, idCli);
         reglerComboParIdDonnee(ui->cb_prod_empl_modif, idEmp);
+        const int choixActuel = Produit::getProductChoix(selectedProdId);
+        if (m_rbChoixMod1 && m_rbChoixMod2 && m_rbChoixMod0) {
+            if (choixActuel == 1) m_rbChoixMod1->setChecked(true);
+            else if (choixActuel == 2) m_rbChoixMod2->setChecked(true);
+            else m_rbChoixMod0->setChecked(true);
+        }
 
         ui->tabWidgetProduits->setCurrentIndex(2);
     } else {
@@ -4297,6 +4474,8 @@ void MainWindow::preparerFormulaireProduit(bool estModif, int idx) {
         ui->sb_prod_temps->setValue(1);
         reglerComboParIdDonnee(ui->cb_prod_client, 0);
         reglerComboParIdDonnee(ui->cb_prod_empl, 0);
+        if (m_rbChoixNew0)
+            m_rbChoixNew0->setChecked(true);
 
         ui->tabWidgetProduits->setCurrentIndex(1);
     }

@@ -7,6 +7,47 @@
 #include <QVariant>
 #include <utility>
 
+namespace {
+bool ensureMoteurLogsTable(QSqlDatabase &db)
+{
+    if (!db.isOpen())
+        return false;
+
+    QSqlQuery check(db);
+    check.prepare(QStringLiteral(
+        "SELECT COUNT(*) FROM USER_TABLES "
+        "WHERE UPPER(TABLE_NAME) = UPPER('MOTEUR_LOGS')"));
+    if (!check.exec() || !check.next())
+        return false;
+    if (check.value(0).toInt() > 0)
+        return true;
+
+    // Compat Oracle ancien: pas d'IDENTITY (ORA-02000 "missing ALWAYS" selon version).
+    QSqlQuery ddl(db);
+    const bool ok = ddl.exec(QStringLiteral(
+        "CREATE TABLE MOTEUR_LOGS ("
+        "PRODUCT_ID NUMBER, "
+        "CHOIX NUMBER(1), "
+        "CREATED_AT TIMESTAMP DEFAULT SYSTIMESTAMP)"));
+    if (ok)
+        return true;
+
+    const QString err = ddl.lastError().text();
+    if (err.contains(QStringLiteral("ORA-00955")))
+        return true;
+
+    QSqlQuery recheck(db);
+    recheck.prepare(QStringLiteral(
+        "SELECT COUNT(*) FROM USER_TABLES "
+        "WHERE UPPER(TABLE_NAME) = UPPER('MOTEUR_LOGS')"));
+    if (recheck.exec() && recheck.next() && recheck.value(0).toInt() > 0)
+        return true;
+
+    qDebug() << "[MoteurSmart] create MOTEUR_LOGS:" << err;
+    return false;
+}
+} // namespace
+
 Produit::Produit() {}
 
 Produit::Produit(int id_produit,
@@ -32,6 +73,85 @@ static QSqlDatabase produitDatabase()
 {
     Connexion *cx = Connexion::getInstance();
     return cx ? cx->getDatabase() : QSqlDatabase();
+}
+
+bool Produit::ensureChoixColumn()
+{
+    QSqlDatabase db = produitDatabase();
+    if (!db.isOpen())
+        return false;
+
+    QSqlQuery check(db);
+    check.prepare(QStringLiteral(
+        "SELECT COUNT(*) FROM USER_TAB_COLUMNS "
+        "WHERE TABLE_NAME='PRODUITS' AND COLUMN_NAME='CHOIX'"));
+    if (!check.exec() || !check.next())
+        return false;
+
+    if (check.value(0).toInt() > 0)
+        return true;
+
+    QSqlQuery alter(db);
+    const bool ok = alter.exec(QStringLiteral("ALTER TABLE PRODUITS ADD (CHOIX NUMBER(1) DEFAULT 0 NOT NULL)"));
+    if (!ok)
+        qDebug() << "[MoteurSmart] ALTER TABLE PRODUITS CHOIX:" << alter.lastError().text();
+    else
+        qDebug() << "[MoteurSmart] Colonne CHOIX ajoutée à PRODUITS.";
+    return ok;
+}
+
+int Produit::getProductChoix(int productId)
+{
+    QSqlDatabase db = produitDatabase();
+    if (!db.isOpen())
+        return -1;
+
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral("SELECT NVL(CHOIX, 0) FROM PRODUITS WHERE ID_PRODUIT = :id"));
+    q.bindValue(QStringLiteral(":id"), productId);
+    if (q.exec() && q.next())
+        return q.value(0).toInt();
+    qDebug() << "[MoteurSmart] getProductChoix erreur:" << q.lastError().text();
+    return -1;
+}
+
+bool Produit::setProductChoix(int productId, int choix)
+{
+    QSqlDatabase db = produitDatabase();
+    if (!db.isOpen())
+        return false;
+
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral("UPDATE PRODUITS SET CHOIX = :choix WHERE ID_PRODUIT = :id"));
+    q.bindValue(QStringLiteral(":choix"), choix);
+    q.bindValue(QStringLiteral(":id"), productId);
+    const bool ok = q.exec();
+    qDebug() << "[MoteurSmart] setProductChoix id=" << productId << "choix=" << choix << "ok=" << ok;
+    if (!ok)
+        qDebug() << "[MoteurSmart] setProductChoix err:" << q.lastError().text();
+    return ok;
+}
+
+bool Produit::logMoteurAction(int productId, int choix)
+{
+    QSqlDatabase db = produitDatabase();
+    if (!db.isOpen())
+        return false;
+
+    if (!ensureMoteurLogsTable(db)) {
+        qDebug() << "[MoteurSmart] logMoteurAction: table MOTEUR_LOGS indisponible, insert ignore.";
+        return false;
+    }
+
+    QSqlQuery q(db);
+    q.setForwardOnly(true);
+    q.prepare(QStringLiteral("INSERT INTO MOTEUR_LOGS (PRODUCT_ID, CHOIX) VALUES (:pid, :choix)"));
+    q.bindValue(QStringLiteral(":pid"), productId);
+    q.bindValue(QStringLiteral(":choix"), choix);
+    const bool ok = q.exec();
+    if (!ok)
+        qDebug() << "[MoteurSmart] logMoteurAction erreur:" << q.lastError().text();
+    return ok;
 }
 
 bool Produit::ajouter()

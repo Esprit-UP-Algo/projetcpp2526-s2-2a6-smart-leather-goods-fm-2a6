@@ -80,3 +80,16 @@ CMakeLists.txt.user*
 .rcc/
 .uic/
 /build*/
+# Cache build local (CMake in-tree)
+.cmake/
+.qtc/
+.qt/
+qtcsettings.cmake
+CMakeFiles/
+
+# Python (fashion_oracle) — venvs et secrets
+fashion_oracle/.venv/
+fashion_oracle/.venv-new/
+fashion_oracle/.env
+fashion_oracle/uvicorn.*.log
+fashion_oracle/**/.pytest_cache/

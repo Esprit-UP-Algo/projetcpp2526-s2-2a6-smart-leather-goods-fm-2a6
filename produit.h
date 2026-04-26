@@ -35,6 +35,12 @@ public:
     QSqlQueryModel *afficher(const QString &filtreCollection = QString());
     bool supprimer(int id, QString *messageErreur = nullptr);
     bool modifier(int id);
+
+    // Métier Smart (Arduino)
+    static bool ensureChoixColumn();
+    static int getProductChoix(int productId);      // retourne 0,1,2 ou -1 (erreur)
+    static bool setProductChoix(int productId, int choix);
+    static bool logMoteurAction(int productId, int choix);
 };
 
 #endif

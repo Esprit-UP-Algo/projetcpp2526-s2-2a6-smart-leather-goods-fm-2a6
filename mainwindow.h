@@ -28,6 +28,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QComboBox>
+#include <QRadioButton>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QDoubleSpinBox>
@@ -35,6 +36,8 @@
 #include <QTextEdit>
 #include <QHeaderView>
 #include <QPointer>
+
+#include "smartmotorcontroller.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -204,6 +207,13 @@ private:
     void showClientFideliteTab();
     void showClientIaTab();
 
+    // Smart output (Atelier) : moteur + journalisation (si table Oracle presente)
+    void installerChoixMoteurProduitUi();
+    int choixMoteurDepuisFormulaireNouveau() const;
+    int choixMoteurDepuisFormulaireModif() const;
+    void journaliserMoteurSmart(int idProduit, int idCommande, const QString &actionCode, const QString &detail) const;
+    int declencherMoteurProduit(int idProduit, int idCommande = -1);
+
 
     void rafraichirListeDepots();
     void calculerStatsDepots();
@@ -252,6 +262,14 @@ private:
     QPointer<QNetworkReply> m_costSimReply;
     QPointer<QTextEdit> m_costSimHtmlOut;
     QPointer<QNetworkReply> m_histCapsuleReply;
+
+    SmartMotorController m_smartMotor;
+    QRadioButton *m_rbChoixNew0 = nullptr;
+    QRadioButton *m_rbChoixNew1 = nullptr;
+    QRadioButton *m_rbChoixNew2 = nullptr;
+    QRadioButton *m_rbChoixMod0 = nullptr;
+    QRadioButton *m_rbChoixMod1 = nullptr;
+    QRadioButton *m_rbChoixMod2 = nullptr;
 };
 
 #endif

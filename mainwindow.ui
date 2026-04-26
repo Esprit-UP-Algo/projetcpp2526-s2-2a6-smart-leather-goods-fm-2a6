@@ -1733,6 +1733,13 @@ QTabBar::tab:hover:!selected { background: #e0c097; }</string>
                 </property>
                </widget>
               </item>
+              <item>
+               <widget class="QPushButton" name="btn_moteur_prod">
+                <property name="text">
+                 <string>⚙️ Moteur Smart</string>
+                </property>
+               </widget>
+              </item>
              </layout>
             </item>
            </layout>
