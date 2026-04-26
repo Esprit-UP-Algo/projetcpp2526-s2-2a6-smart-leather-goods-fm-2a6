@@ -2,8 +2,11 @@
 #define MAINWINDOW_H
 #include "ordrefabrication.h"
 #include "matierepremiere.h"
-#include "employe.h"
-
+#include "etape.h"
+#include "depot.h"
+#include "produit.h"
+#include "client.h"
+#include <QSqlQueryModel>
 #include <QMainWindow>
 #include <QTableWidget>
 #include <QVector>
@@ -27,6 +30,18 @@
 #include <QGroupBox>
 #include <QTextEdit>
 #include <QHeaderView>
+#include <QJsonArray>
+#include <QDialog>
+#include <QPointer>
+#include <QTextBrowser>
+#include <QEvent>
+#include <QTextToSpeech>
+
+class QNetworkAccessManager;
+class QNetworkReply;
+class QProcess;
+class QTimer;
+class AssistantVoiceController;
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -61,28 +76,41 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
 private slots:
+    // === Slots CRUD Employés ===
     void on_btn_valider_emp_clicked();
-
     void on_btn_valider_modif_emp_clicked();
-
     void on_btn_delete_emp_clicked();
-
     void on_btn_edit_emp_clicked();
+    void on_btn_sort_alpha_emp_clicked();
 
+    // === Slots CRUD Produits ===
+    void on_btn_valider_produit_clicked();
+    void on_btn_valider_modif_produit_clicked();
+    void on_btn_delete_produit_clicked();
+    void on_btn_edit_produit_clicked();
+    void on_tableProduits_cellClicked(int row, int column);
 
-    void on_tabWidgetEmployes_currentChanged(int index);
-    void goToTabEmployesByText(const QString& title);
-    void goToTabEmployes(int index);
-    void forceTabEmployes(int index);
+    // === Stock — matières premières (auto-connexion setupUi) ===
+    void on_btn_valider_stock_clicked();
+
+    // === Slots CRUD Clients ===
+    void on_btn_valider_client_clicked();
+    void on_btn_valider_modif_client_clicked();
+
+    void onAssistantTtsStateChanged(QTextToSpeech::State state);
+
 private:
     Ui::MainWindow *ui;
-    OrdreFabrication tmpOrdre; // <--- AJOUTER CETTE LIGNE
-    MatierePremiere tmpMatiere; // Gestion MATIERES_PREMIERES (DB)
-    employe tmpEmploye;
-    int idEmployeAModifier = -1;
-     bool chargerEmployePourModification(int id);
-      bool m_ignoreEmpTabChange = false;
+    OrdreFabrication tmpOrdre;
+    MatierePremiere tmpMatiere;
+    Produit tmpProduit;
+    Depot tmpDepot;
+    Etape tmpEtape;
+
 
     QVector<CommandeInfo> mesCommandes;
     QVector<ProduitInfo> mesProduits;
@@ -92,6 +120,11 @@ private:
     QVector<DepotInfo> mesDepots;
 
     ColorDelegate *myColorDelegate;
+
+    // Sélection produit (utile même après tri de la table)
+    int selectedProdId = -1;
+    int rowToEdit = -1;
+    bool m_triProduitDesignationDescendant = false;
 
     int indexCommandeSelectionnee = -1;
     bool modeModification = false; int indexModification = -1;
@@ -111,8 +144,35 @@ private:
     void dessinerBarre(int ligne, int colDebut, int duree, QString texte, QColor bgCol, QColor textCol);
     void calculerEtAfficherStats();
 
+    int selectedEtapeId;       // ID_SUIVI sélectionné
+    int selectedEtapePlanifId; // ID_PLANIFICATION sélectionné
+
+    // Utilisé pour la modification d'un employé (lecture depuis Oracle).
+    int idEmployeAModifier = -1;
+
+    // Snapshot des valeurs initiales (pour détecter "aucune modification").
+    QString initialNomEmploye;
+    QString initialPrenomEmploye;
+    QString initialPosteEmploye;
+    QString initialEmailEmploye;
+    QString initialTelephoneDigitsEmploye;
+    QString initialDepartementEmploye;
+    QDate initialDateEmbaucheEmploye;
+    double initialSalaireEmploye = 0.0;
+    QString initialRfidEmploye;
+
+    // Tri (Employes - colonne Nom)
+    Qt::SortOrder employeTriAlphaOrdre = Qt::AscendingOrder;
+    bool employeTriAlphaActif = false;
+
+
+    void rafraichirListeEtapes();
+    void remplirTableEtapes(QSqlQueryModel *model);
+    void construirePageEtapes();
+    void verifierFinFabrication(int idPlanification);
     // Module Produits
-    void rafraichirListeProduits();
+    void rafraichirListeProduits(const QString &filtreCollection = QString());
+    void remplirCombosProduitClientEmplacement();
     void calculerStatsProduits();
     void showProdSimDialog(); // (déjà existant)
     void showProduitCoutDialog();
@@ -128,8 +188,15 @@ private:
     void showEmpAncienneteTab();
     void showEmpAssistantTab();
 
-    // Module Clients
+    // Helpers navigation / chargement fiche employé
+    void goToTabEmployes(int index);
+    void goToTabEmployesByText(const QString& title);
+    void forceTabEmployes(int index);
+    bool chargerEmployePourModification(int id);
+
+    // CRUD Clients
     void rafraichirListeClients();
+    void remplirTableClients(QSqlQueryModel *model);
     void calculerStatsClients();
     void exporterFactureClient();
     void showClientFideliteTab();
@@ -144,10 +211,11 @@ private:
     void showDepotRavitaillementTab();
 
     // Module Stock (NOUVEAU - SPA avec onglets)
+    bool validerMatiereAjout();
     void rafraichirListeMatieres();
     void calculerStatsStock();
     void preparerFormulaireStock(bool estModif, int idx = -1);
-    void showStockCompareTab();
+    void showStockRavitaillementTab();
     void showStockCalculTab();
     void preparerFormulairePlanif(bool estModification);
     void preparerFormulaireProduit(bool estModif, int idx = -1);
@@ -166,6 +234,9 @@ private:
     void ouvrirIAPrediction();
     // Dashboard global (Page d'Accueil)
     void construireDashboardAccueil();
+    // Pages dynamiques modernisées
+    void construirePageAccueil();
+    void construirePageLogin();
 
     // --- Alertes personnalisées FIL D'OR ---
     void alerteSucces(const QString &titre, const QString &message);
@@ -175,6 +246,49 @@ private:
 
     // Une petite fonction utilitaire pour le design des cartes KPI
     QFrame* creerCarteStat(QString icone, QString val, QString titre, QString couleurFond);
+
+    QNetworkAccessManager *m_namOpenRouter = nullptr;
+    QNetworkReply *m_classificationReply = nullptr;
+    QNetworkReply *m_assistantChatReply = nullptr;
+    /// Historique chat Assistant RH (messages OpenRouter : system + user + assistant).
+    QJsonArray m_assistantChatMessages;
+    /// Dernière introspection schéma Oracle (tables/colonnes, sans données).
+    QString m_assistantSchemaMetaOracle;
+
+    QString construireResumeSchemaOracleMeta() const;
+    QString construirePromptSystemeAssistant(const QString &schemaMeta) const;
+    /// Lecture sécurisée (extraits Oracle) pour enrichir la question envoyée au modèle.
+    QString contexteDonneesEmployesPourQuestion(const QString &question) const;
+    QString contextePlanificationsPourQuestion(const QString &question) const;
+    QString contexteClientsPourQuestion(const QString &question) const;
+    QString contexteProduitsPourQuestion(const QString &question) const;
+    QString contexteMatieresPourQuestion(const QString &question) const;
+    QString contexteEtapesPourQuestion(const QString &question) const;
+    QString contexteDonneesMetierPourQuestion(const QString &question) const;
+    /// Clé OpenRouter (variable d’environnement ou openrouter_key.txt), rechargée au démarrage et à l’onglet IA.
+    QString m_openRouterKeyImportee;
+
+    void rafraichirCleOpenRouterDisque();
+
+    /// Bouton flottant (robot) sur la page RH — ouvre le chat.
+    QPushButton *m_fabAssistant = nullptr;
+    QDialog *m_dialogAssistant = nullptr;
+    QPointer<QTextBrowser> m_ptrAssistantChatView;
+    QPointer<QLineEdit> m_ptrAssistantInput;
+    bool m_assistantUiConstruit = false;
+    bool m_assistantVoixActive = false;
+    QTextToSpeech *m_ttsAssistant = nullptr;
+    QProcess *m_ttsSpeakProcess = nullptr;
+    AssistantVoiceController *m_assistantVoice = nullptr;
+
+    void installerBulleAssistantFlottant();
+    void positionnerBulleAssistant();
+    void ouvrirFenetreAssistantRh();
+    void construireInterfaceAssistantSiBesoin();
+    void rafraichirAssistantVueChat();
+    void parlerTexteAssistant(const QString &texte);
+    /// Relance l’écoute après la réponse (après la fin du TTS si activé) — half-duplex.
+    void programmerReecouteMicroAssistantSiBesoin();
 };
 
 #endif // MAINWINDOW_H

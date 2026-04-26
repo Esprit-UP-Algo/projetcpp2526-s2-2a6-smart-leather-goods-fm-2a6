@@ -2386,7 +2386,7 @@ QTabBar::tab:hover:!selected { background: #e0c097; }</string>
           </widget>
           <widget class="QWidget" name="tab_evaluation_competences">
            <attribute name="title">
-            <string>📈 Évaluation Compétences</string>
+            <string>✨ Classification IA</string>
            </attribute>
           </widget>
           <widget class="QWidget" name="tab_anciennete">

@@ -80,6 +80,6 @@ CMakeLists.txt.user*
 .rcc/
 .uic/
 /build*/
-.qtcreator/
-*.user
-*.pro.user
+
+# Clé API locale (ne jamais committer)
+openrouter_key.txt
