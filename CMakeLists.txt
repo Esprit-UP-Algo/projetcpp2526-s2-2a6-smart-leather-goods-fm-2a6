@@ -17,8 +17,8 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Gui PrintSupport Charts Sql)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Gui PrintSupport Charts Sql)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Gui PrintSupport Charts Sql Network TextToSpeech Multimedia)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Gui PrintSupport Charts Sql Network TextToSpeech Multimedia)
 
 set(PROJECT_SOURCES
     main.cpp
@@ -42,6 +42,12 @@ set(PROJECT_SOURCES
     client.cpp
     employe.h
     employe.cpp
+    employee_ai.h
+    employee_ai.cpp
+    knn_graph_widget.h
+    knn_graph_widget.cpp
+    assistant_voice.h
+    assistant_voice.cpp
 )
 
 if(QT_VERSION_MAJOR VERSION_GREATER_EQUAL 6)
@@ -63,6 +69,9 @@ target_link_libraries(ProjetCpp PRIVATE
     Qt${QT_VERSION_MAJOR}::PrintSupport
     Qt${QT_VERSION_MAJOR}::Charts
     Qt${QT_VERSION_MAJOR}::Sql
+    Qt${QT_VERSION_MAJOR}::Network
+    Qt${QT_VERSION_MAJOR}::TextToSpeech
+    Qt${QT_VERSION_MAJOR}::Multimedia
 )
 
 set(BUNDLE_ID_OPTION "")

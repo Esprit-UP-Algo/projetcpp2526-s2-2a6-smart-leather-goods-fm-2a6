@@ -30,6 +30,18 @@
 #include <QGroupBox>
 #include <QTextEdit>
 #include <QHeaderView>
+#include <QJsonArray>
+#include <QDialog>
+#include <QPointer>
+#include <QTextBrowser>
+#include <QEvent>
+#include <QTextToSpeech>
+
+class QNetworkAccessManager;
+class QNetworkReply;
+class QProcess;
+class QTimer;
+class AssistantVoiceController;
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -64,6 +76,9 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
 private slots:
     // === Slots CRUD Employés ===
     void on_btn_valider_emp_clicked();
@@ -85,6 +100,8 @@ private slots:
     // === Slots CRUD Clients ===
     void on_btn_valider_client_clicked();
     void on_btn_valider_modif_client_clicked();
+
+    void onAssistantTtsStateChanged(QTextToSpeech::State state);
 
 private:
     Ui::MainWindow *ui;
@@ -229,6 +246,49 @@ private:
 
     // Une petite fonction utilitaire pour le design des cartes KPI
     QFrame* creerCarteStat(QString icone, QString val, QString titre, QString couleurFond);
+
+    QNetworkAccessManager *m_namOpenRouter = nullptr;
+    QNetworkReply *m_classificationReply = nullptr;
+    QNetworkReply *m_assistantChatReply = nullptr;
+    /// Historique chat Assistant RH (messages OpenRouter : system + user + assistant).
+    QJsonArray m_assistantChatMessages;
+    /// Dernière introspection schéma Oracle (tables/colonnes, sans données).
+    QString m_assistantSchemaMetaOracle;
+
+    QString construireResumeSchemaOracleMeta() const;
+    QString construirePromptSystemeAssistant(const QString &schemaMeta) const;
+    /// Lecture sécurisée (extraits Oracle) pour enrichir la question envoyée au modèle.
+    QString contexteDonneesEmployesPourQuestion(const QString &question) const;
+    QString contextePlanificationsPourQuestion(const QString &question) const;
+    QString contexteClientsPourQuestion(const QString &question) const;
+    QString contexteProduitsPourQuestion(const QString &question) const;
+    QString contexteMatieresPourQuestion(const QString &question) const;
+    QString contexteEtapesPourQuestion(const QString &question) const;
+    QString contexteDonneesMetierPourQuestion(const QString &question) const;
+    /// Clé OpenRouter (variable d’environnement ou openrouter_key.txt), rechargée au démarrage et à l’onglet IA.
+    QString m_openRouterKeyImportee;
+
+    void rafraichirCleOpenRouterDisque();
+
+    /// Bouton flottant (robot) sur la page RH — ouvre le chat.
+    QPushButton *m_fabAssistant = nullptr;
+    QDialog *m_dialogAssistant = nullptr;
+    QPointer<QTextBrowser> m_ptrAssistantChatView;
+    QPointer<QLineEdit> m_ptrAssistantInput;
+    bool m_assistantUiConstruit = false;
+    bool m_assistantVoixActive = false;
+    QTextToSpeech *m_ttsAssistant = nullptr;
+    QProcess *m_ttsSpeakProcess = nullptr;
+    AssistantVoiceController *m_assistantVoice = nullptr;
+
+    void installerBulleAssistantFlottant();
+    void positionnerBulleAssistant();
+    void ouvrirFenetreAssistantRh();
+    void construireInterfaceAssistantSiBesoin();
+    void rafraichirAssistantVueChat();
+    void parlerTexteAssistant(const QString &texte);
+    /// Relance l’écoute après la réponse (après la fin du TTS si activé) — half-duplex.
+    void programmerReecouteMicroAssistantSiBesoin();
 };
 
 #endif // MAINWINDOW_H
