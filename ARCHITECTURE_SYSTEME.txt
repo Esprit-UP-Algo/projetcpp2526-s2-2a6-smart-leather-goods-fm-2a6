@@ -1,0 +1,401 @@
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                                                                           ║
+║              🏗️ ARCHITECTURE DU MODULE ARDUINO SMART                     ║
+║                        Diagramme du Système                              ║
+║                                                                           ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+
+═══════════════════════════════════════════════════════════════════════════
+📐 VUE D'ENSEMBLE DU SYSTÈME
+═══════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                                                                         │
+│  ┌──────────────┐      USB       ┌──────────────┐                      │
+│  │              │  ═══════════>   │              │                      │
+│  │  Arduino Uno │                 │  PC Windows  │                      │
+│  │   + DHT11    │  <═══════════   │  (Qt App)    │                      │
+│  │              │   Port Série    │              │                      │
+│  └──────────────┘    9600 bauds   └──────────────┘                      │
+│         │                                 │                             │
+│         │ Lecture                         │ Affichage                   │
+│         │ Capteur                         │ + Sauvegarde                │
+│         ▼                                 ▼                             │
+│  ┌──────────────┐                  ┌──────────────┐                     │
+│  │  Température │                  │   Oracle DB  │                     │
+│  │  + Humidité  │                  │  (Historique)│                     │
+│  └──────────────┘                  └──────────────┘                     │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════
+🔄 FLUX DE DONNÉES
+═══════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                                                                         │
+│  1. CAPTEUR DHT11                                                       │
+│     ├─ Mesure température (°C)                                          │
+│     └─ Mesure humidité (%)                                              │
+│                                                                         │
+│  2. ARDUINO UNO                                                         │
+│     ├─ Lecture du capteur (toutes les 2 secondes)                       │
+│     ├─ Validation des données                                           │
+│     └─ Envoi au format : H:xx.xx;T:yy.yy\n                             │
+│                                                                         │
+│  3. PORT SÉRIE (USB)                                                    │
+│     ├─ Communication 9600 bauds                                         │
+│     ├─ 8 bits de données, pas de parité, 1 bit d'arrêt                  │
+│     └─ Flux continu de données                                          │
+│                                                                         │
+│  4. ARDUINOMANAGER (Qt)                                                 │
+│     ├─ Connexion au port série (QSerialPort)                            │
+│     ├─ Lecture et parsing des données                                   │
+│     ├─ Filtrage des valeurs aberrantes                                  │
+│     └─ Émission de signaux Qt                                           │
+│                                                                         │
+│  5. ARDUINOWIDGET (Qt)                                                  │
+│     ├─ Réception des signaux                                            │
+│     ├─ Mise à jour de l'interface (labels, graphique)                   │
+│     ├─ Analyse des seuils (alertes)                                     │
+│     └─ Sauvegarde en BDD (toutes les 30s)                               │
+│                                                                         │
+│  6. BASE DE DONNÉES ORACLE                                              │
+│     ├─ Table : historique_capteur                                       │
+│     ├─ Colonnes : id, date_mesure, humidite, temperature, alerte        │
+│     └─ Export CSV disponible                                            │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════
+🧩 ARCHITECTURE DES CLASSES C++
+═══════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────┐     │
+│  │                      MainWindow                               │     │
+│  │  ─────────────────────────────────────────────────────────    │     │
+│  │  + ouvrirModuleArduino() : void                               │     │
+│  └───────────────────────────────────────────────────────────────┘     │
+│                              │                                          │
+│                              │ crée                                     │
+│                              ▼                                          │
+│  ┌───────────────────────────────────────────────────────────────┐     │
+│  │                    ArduinoWidget                              │     │
+│  │  ─────────────────────────────────────────────────────────    │     │
+│  │  - m_arduinoManager : ArduinoManager*                         │     │
+│  │  - m_chart : QChart*                                          │     │
+│  │  - m_seriesHumidite : QLineSeries*                            │     │
+│  │  - m_seriesTemperature : QLineSeries*                         │     │
+│  │  - m_timerSauvegarde : QTimer*                                │     │
+│  │  ─────────────────────────────────────────────────────────    │     │
+│  │  + onBtnConnecterClicked() : void                             │     │
+│  │  + onDonneesRecues(double, double) : void                     │     │
+│  │  + sauvegarderEnBase() : void                                 │     │
+│  │  + exporterHistoriqueCSV(QString) : bool                      │     │
+│  └───────────────────────────────────────────────────────────────┘     │
+│                              │                                          │
+│                              │ utilise                                  │
+│                              ▼                                          │
+│  ┌───────────────────────────────────────────────────────────────┐     │
+│  │                   ArduinoManager                              │     │
+│  │  ─────────────────────────────────────────────────────────    │     │
+│  │  - m_serialPort : QSerialPort*                                │     │
+│  │  - m_buffer : QString                                         │     │
+│  │  - m_timerReconnexion : QTimer*                               │     │
+│  │  ─────────────────────────────────────────────────────────    │     │
+│  │  + connecter(QString) : bool                                  │     │
+│  │  + deconnecter() : void                                       │     │
+│  │  + estConnecte() : bool                                       │     │
+│  │  + listerPorts() : QStringList                                │     │
+│  │  ─────────────────────────────────────────────────────────    │     │
+│  │  signals:                                                     │     │
+│  │    • donneesRecues(double, double)                            │     │
+│  │    • erreurConnexion(QString)                                 │     │
+│  │    • statutChange(bool)                                       │     │
+│  │  ─────────────────────────────────────────────────────────    │     │
+│  │  private slots:                                               │     │
+│  │    • lireDonnees()                                            │     │
+│  │    • gererErreur(QSerialPort::SerialPortError)                │     │
+│  │    • tentativeReconnexion()                                   │     │
+│  └───────────────────────────────────────────────────────────────┘     │
+│                              │                                          │
+│                              │ utilise                                  │
+│                              ▼                                          │
+│  ┌───────────────────────────────────────────────────────────────┐     │
+│  │                     QSerialPort (Qt)                          │     │
+│  │  ─────────────────────────────────────────────────────────    │     │
+│  │  Communication série avec l'Arduino                           │     │
+│  └───────────────────────────────────────────────────────────────┘     │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════
+📡 DIAGRAMME DE SÉQUENCE (Connexion et Lecture)
+═══════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                                                                         │
+│  Utilisateur    ArduinoWidget    ArduinoManager    QSerialPort  Arduino │
+│      │               │                 │                │          │    │
+│      │ Clic          │                 │                │          │    │
+│      │ "Connecter"   │                 │                │          │    │
+│      ├──────────────>│                 │                │          │    │
+│      │               │ connecter()     │                │          │    │
+│      │               ├────────────────>│                │          │    │
+│      │               │                 │ open()         │          │    │
+│      │               │                 ├───────────────>│          │    │
+│      │               │                 │                │ USB      │    │
+│      │               │                 │                ├─────────>│    │
+│      │               │                 │                │          │    │
+│      │               │                 │ statutChange(true)        │    │
+│      │               │<────────────────┤                │          │    │
+│      │ Affichage     │                 │                │          │    │
+│      │ "Connecté"    │                 │                │          │    │
+│      │<──────────────┤                 │                │          │    │
+│      │               │                 │                │          │    │
+│      │               │                 │                │ Lecture  │    │
+│      │               │                 │                │ DHT11    │    │
+│      │               │                 │                │<─────────┤    │
+│      │               │                 │                │          │    │
+│      │               │                 │                │ Envoi    │    │
+│      │               │                 │                │ données  │    │
+│      │               │                 │ readyRead()    │<─────────┤    │
+│      │               │                 │<───────────────┤          │    │
+│      │               │                 │ lireDonnees()  │          │    │
+│      │               │                 ├───────────────>│          │    │
+│      │               │                 │ readAll()      │          │    │
+│      │               │                 ├───────────────>│          │    │
+│      │               │                 │ "H:45.5;T:22.3"│          │    │
+│      │               │                 │<───────────────┤          │    │
+│      │               │                 │ parserLigne()  │          │    │
+│      │               │                 ├───────────────>│          │    │
+│      │               │ donneesRecues(45.5, 22.3)        │          │    │
+│      │               │<────────────────┤                │          │    │
+│      │               │ mettreAJourAffichage()           │          │    │
+│      │               ├────────────────>│                │          │    │
+│      │ Affichage     │                 │                │          │    │
+│      │ Valeurs       │                 │                │          │    │
+│      │<──────────────┤                 │                │          │    │
+│      │               │                 │                │          │    │
+│      │               │ [Après 30s]     │                │          │    │
+│      │               │ sauvegarderEnBase()              │          │    │
+│      │               ├────────────────>│                │          │    │
+│      │               │                 │ INSERT INTO    │          │    │
+│      │               │                 │ historique_capteur         │    │
+│      │               │                 ├───────────────>│          │    │
+│      │               │                 │                │ Oracle   │    │
+│      │               │                 │                │ DB       │    │
+│      │               │                 │                │          │    │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════
+🗄️ SCHÉMA DE LA BASE DE DONNÉES
+═══════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                                                                         │
+│  Table : historique_capteur                                             │
+│  ─────────────────────────────────────────────────────────────────      │
+│                                                                         │
+│  ┌────────────────┬──────────────┬──────────────┬─────────────────┐    │
+│  │ id             │ date_mesure  │ humidite     │ temperature     │    │
+│  │ (NUMBER)       │ (TIMESTAMP)  │ (NUMBER 5,2) │ (NUMBER 5,2)    │    │
+│  ├────────────────┼──────────────┼──────────────┼─────────────────┤    │
+│  │ 1              │ 2026-04-26   │ 45.50        │ 22.30           │    │
+│  │                │ 14:30:15     │              │                 │    │
+│  ├────────────────┼──────────────┼──────────────┼─────────────────┤    │
+│  │ 2              │ 2026-04-26   │ 45.60        │ 22.40           │    │
+│  │                │ 14:30:45     │              │                 │    │
+│  ├────────────────┼──────────────┼──────────────┼─────────────────┤    │
+│  │ 3              │ 2026-04-26   │ 45.70        │ 22.50           │    │
+│  │                │ 14:31:15     │              │                 │    │
+│  └────────────────┴──────────────┴──────────────┴─────────────────┘    │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────┐       │
+│  │ alerte (VARCHAR2 200)                                       │       │
+│  ├─────────────────────────────────────────────────────────────┤       │
+│  │ "✅ Conditions optimales pour le stockage"                  │       │
+│  ├─────────────────────────────────────────────────────────────┤       │
+│  │ "✅ Conditions optimales pour le stockage"                  │       │
+│  ├─────────────────────────────────────────────────────────────┤       │
+│  │ "✅ Conditions optimales pour le stockage"                  │       │
+│  └─────────────────────────────────────────────────────────────┘       │
+│                                                                         │
+│  Clé primaire : id (auto-incrémenté)                                    │
+│  Index : date_mesure (pour requêtes temporelles)                        │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════
+🎨 ARCHITECTURE DE L'INTERFACE UTILISATEUR
+═══════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                                                                         │
+│  ArduinoWidget (QWidget)                                                │
+│  ┌───────────────────────────────────────────────────────────────────┐ │
+│  │ 🔌 MODULE ARDUINO SMART - Surveillance Temps Réel               │ │
+│  ├───────────────────────────────────────────────────────────────────┤ │
+│  │ ┌─────────────────────────────────────────────────────────────┐   │ │
+│  │ │ Connexion Arduino                                           │   │ │
+│  │ │ Port série: [QComboBox] [QPushButton] [QPushButton]        │   │ │
+│  │ │ Statut: [QLabel]                                            │   │ │
+│  │ └─────────────────────────────────────────────────────────────┘   │ │
+│  ├───────────────────────────────────────────────────────────────────┤ │
+│  │ ┌─────────────────────────────────────────────────────────────┐   │ │
+│  │ │ Données en Temps Réel                                       │   │ │
+│  │ │ ┌──────────────────┐  ┌──────────────────┐                 │   │ │
+│  │ │ │ [QLabel]         │  │ [QLabel]         │                 │   │ │
+│  │ │ │ Humidité         │  │ Température      │                 │   │ │
+│  │ │ │ [QProgressBar]   │  │                  │                 │   │ │
+│  │ │ └──────────────────┘  └──────────────────┘                 │   │ │
+│  │ └─────────────────────────────────────────────────────────────┘   │ │
+│  ├───────────────────────────────────────────────────────────────────┤ │
+│  │ [QLabel - Alerte]                                               │ │
+│  ├───────────────────────────────────────────────────────────────────┤ │
+│  │ ┌─────────────────────────────────────────────────────────────┐   │ │
+│  │ │ Graphique Temps Réel                                        │   │ │
+│  │ │ [QChartView]                                                │   │ │
+│  │ │   - QLineSeries (Humidité)                                  │   │ │
+│  │ │   - QLineSeries (Température)                               │   │ │
+│  │ │   - QDateTimeAxis (X)                                       │   │ │
+│  │ │   - QValueAxis (Y)                                          │   │ │
+│  │ └─────────────────────────────────────────────────────────────┘   │ │
+│  ├───────────────────────────────────────────────────────────────────┤ │
+│  │ [QLabel - Info] [QPushButton - Exporter]                        │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════
+⚙️ CONFIGURATION DU PORT SÉRIE
+═══════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                                                                         │
+│  QSerialPort Configuration                                              │
+│  ─────────────────────────────────────────────────────────────────      │
+│                                                                         │
+│  Port Name       : COM5 (Windows) ou /dev/ttyUSB0 (Linux)              │
+│  Baud Rate       : 9600                                                 │
+│  Data Bits       : 8                                                    │
+│  Parity          : None                                                 │
+│  Stop Bits       : 1                                                    │
+│  Flow Control    : None                                                 │
+│  Read Mode       : ReadOnly                                             │
+│                                                                         │
+│  Format de données : H:xx.xx;T:yy.yy\n                                 │
+│  Fréquence       : Toutes les 2 secondes                                │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════
+🔄 CYCLE DE VIE DES DONNÉES
+═══════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                                                                         │
+│  1. ACQUISITION (Arduino)                                               │
+│     ├─ Lecture capteur DHT11 : 2 secondes                               │
+│     └─ Validation : Plages réalistes                                    │
+│                                                                         │
+│  2. TRANSMISSION (Port Série)                                           │
+│     ├─ Format : H:xx.xx;T:yy.yy\n                                      │
+│     └─ Vitesse : 9600 bauds                                             │
+│                                                                         │
+│  3. RÉCEPTION (ArduinoManager)                                          │
+│     ├─ Buffer : Accumulation des données                                │
+│     ├─ Parsing : Extraction H et T                                      │
+│     └─ Filtrage : Valeurs aberrantes                                    │
+│                                                                         │
+│  4. AFFICHAGE (ArduinoWidget)                                           │
+│     ├─ Labels : Mise à jour immédiate                                   │
+│     ├─ Graphique : Ajout au buffer (50 points)                          │
+│     └─ Alertes : Analyse des seuils                                     │
+│                                                                         │
+│  5. SAUVEGARDE (Base de Données)                                        │
+│     ├─ Fréquence : Toutes les 30 secondes                               │
+│     ├─ Table : historique_capteur                                       │
+│     └─ Données : date, humidité, température, alerte                    │
+│                                                                         │
+│  6. EXPORT (CSV)                                                        │
+│     ├─ Déclenchement : Manuel (bouton)                                  │
+│     ├─ Format : CSV UTF-8                                               │
+│     └─ Contenu : Historique complet                                     │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════
+🛡️ GESTION DES ERREURS
+═══════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                                                                         │
+│  Niveau 1 : Arduino                                                     │
+│  ├─ Erreur lecture DHT11 → Message "ERREUR de lecture"                 │
+│  ├─ Valeurs hors plage → Filtrage                                      │
+│  └─ 5 erreurs consécutives → Alerte câblage                            │
+│                                                                         │
+│  Niveau 2 : Port Série                                                  │
+│  ├─ Port non disponible → Message "Aucun port disponible"              │
+│  ├─ Port déjà utilisé → Message "Port déjà utilisé"                    │
+│  └─ Arduino débranché → Reconnexion automatique                        │
+│                                                                         │
+│  Niveau 3 : Parsing                                                     │
+│  ├─ Format invalide → Ignorer la ligne                                 │
+│  ├─ Valeurs aberrantes (0.00) → Filtrer                                │
+│  └─ Buffer overflow → Vider le buffer                                  │
+│                                                                         │
+│  Niveau 4 : Base de Données                                             │
+│  ├─ Connexion perdue → Log erreur                                      │
+│  ├─ Table inexistante → Création automatique                           │
+│  └─ Erreur INSERT → Log erreur                                         │
+│                                                                         │
+│  Niveau 5 : Interface                                                   │
+│  ├─ Affichage erreurs → Label d'alerte                                 │
+│  ├─ Statut connexion → Indicateur visuel                               │
+│  └─ Notifications → QMessageBox                                        │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════
+📊 PERFORMANCES ET OPTIMISATIONS
+═══════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                                                                         │
+│  Fréquence de lecture Arduino    : 2 secondes                           │
+│  Fréquence d'affichage Qt        : Temps réel (signal/slot)             │
+│  Fréquence de sauvegarde BDD     : 30 secondes                          │
+│  Taille du buffer graphique      : 50 points (100 secondes)             │
+│  Taille du buffer série          : 1024 octets (auto-vidage)            │
+│                                                                         │
+│  Utilisation CPU                 : < 1% (en veille)                     │
+│  Utilisation Mémoire             : ~5 MB                                │
+│  Taille BDD (1 mois)             : ~1 MB (86400 entrées)                │
+│                                                                         │
+│  Optimisations :                                                        │
+│  ├─ Parsing avec QRegularExpression (compilé une fois)                  │
+│  ├─ Buffer limité pour éviter les fuites mémoire                        │
+│  ├─ Sauvegarde BDD espacée (30s au lieu de 2s)                          │
+│  └─ Graphique limité à 50 points (performance)                          │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════
+© 2026 FIL D'OR — Tous droits réservés
+═══════════════════════════════════════════════════════════════════════════

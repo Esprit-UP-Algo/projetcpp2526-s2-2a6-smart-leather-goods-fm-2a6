@@ -1,0 +1,62 @@
+-- ============================================
+-- Script de création de la table STOCK_MP
+-- Projet: FIL D'OR - Vue Stock des Matières Premières
+-- ============================================
+
+-- Suppression de la table si elle existe
+BEGIN
+   EXECUTE IMMEDIATE 'DROP TABLE STOCK_MP CASCADE CONSTRAINTS';
+EXCEPTION
+   WHEN OTHERS THEN
+      IF SQLCODE != -942 THEN
+         RAISE;
+      END IF;
+END;
+/
+
+-- Création de la table STOCK_MP (vue simplifiée du stock)
+CREATE TABLE STOCK_MP (
+    ID_STOCK NUMBER PRIMARY KEY,
+    CATEGORIE_MP VARCHAR2(50) NOT NULL,
+    QUANTITE NUMBER(10,2) NOT NULL CHECK (QUANTITE >= 0),
+    DATE_MAJ DATE DEFAULT SYSDATE
+);
+
+-- Création de la séquence pour l'ID
+CREATE SEQUENCE SEQ_STOCK_MP
+    START WITH 1
+    INCREMENT BY 1
+    NOCACHE
+    NOCYCLE;
+
+-- Insertion de données de test (agrégées par catégorie)
+INSERT INTO STOCK_MP (ID_STOCK, CATEGORIE_MP, QUANTITE)
+VALUES (SEQ_STOCK_MP.NEXTVAL, 'CUIR VACHETTE', 500.00);
+
+INSERT INTO STOCK_MP (ID_STOCK, CATEGORIE_MP, QUANTITE)
+VALUES (SEQ_STOCK_MP.NEXTVAL, 'CUIR AGNEAU', 420.00);
+
+INSERT INTO STOCK_MP (ID_STOCK, CATEGORIE_MP, QUANTITE)
+VALUES (SEQ_STOCK_MP.NEXTVAL, 'CUIR VEAU', 380.00);
+
+INSERT INTO STOCK_MP (ID_STOCK, CATEGORIE_MP, QUANTITE)
+VALUES (SEQ_STOCK_MP.NEXTVAL, 'FIL', 125.25);
+
+COMMIT;
+
+-- Affichage des données insérées
+SELECT * FROM STOCK_MP ORDER BY CATEGORIE_MP;
+
+-- Vue pour synchroniser STOCK_MP avec MATIERES_PREMIERES (optionnel)
+-- Cette vue agrège les quantités par catégorie depuis MATIERES_PREMIERES
+CREATE OR REPLACE VIEW V_STOCK_AGREGE AS
+SELECT 
+    CATEGORIE_MP,
+    SUM(QUANTITE) AS QUANTITE_TOTALE,
+    COUNT(*) AS NB_LOTS,
+    MAX(DATE_MODIFICATION) AS DERNIERE_MAJ
+FROM MATIERES_PREMIERES
+GROUP BY CATEGORIE_MP;
+
+-- Affichage de la vue
+SELECT * FROM V_STOCK_AGREGE;

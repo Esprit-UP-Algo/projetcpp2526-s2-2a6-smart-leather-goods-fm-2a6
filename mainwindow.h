@@ -6,6 +6,7 @@
 #include "depot.h"
 #include "produit.h"
 #include "client.h"
+#include "arduinowidget.h"
 #include <QSqlQueryModel>
 #include <QMainWindow>
 #include <QTableWidget>
@@ -200,6 +201,8 @@ private:
     void preparerFormulaireStock(bool estModif, int idx = -1);
     void showStockRavitaillementTab();
     void showStockCalculTab();
+    void setupStockExpertUI();
+    void setupDepotExpertUI();
     void preparerFormulairePlanif(bool estModification);
     void preparerFormulaireProduit(bool estModif, int idx = -1);
     void ouvrirDialogueClient(bool estModif);
@@ -215,6 +218,8 @@ private:
     void ouvrirStatsPlanification();
     void preparerFormulaireModif(int idx);
     void ouvrirIAPrediction();
+    void initialiserWidgetArduino(); // [NOUVEAU] Initialiser le widget Arduino dans l'onglet
+    void ouvrirModuleArduino(); // [NOUVEAU] Ouvrir le module Arduino Smart
     // Dashboard global (Page d'Accueil)
     void construireDashboardAccueil();
     // Pages dynamiques modernisées

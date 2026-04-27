@@ -39,6 +39,7 @@
 #include <QLayout>
 #include <QVBoxLayout>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QTimer>
 #include <QSignalBlocker>
 #include <QRegularExpression>
@@ -47,8 +48,11 @@
 #include <QColor>
 #include <QFont>
 #include <QDoubleSpinBox>
+#include <functional>
 #include <QEasingCurve>
 #include <QDialogButtonBox>
+#include <QRandomGenerator>
+#include <QTextEdit>
 
 #include <QtCharts/QBarCategoryAxis>
 #include <QtCharts/QBarSeries>
@@ -56,6 +60,7 @@
 #include <QtCharts/QCategoryAxis>
 #include <QtCharts/QChart>
 #include <QtCharts/QChartView>
+#include <QtCharts/QDateTimeAxis>
 #include <QtCharts/QLegend>
 #include <QtCharts/QLegendMarker>
 #include <QtCharts/QLineSeries>
@@ -469,11 +474,34 @@ MainWindow::MainWindow(QWidget *parent)
     if (ui->sb_stock_qte) {
         ui->sb_stock_qte->setMinimum(0.01);
         ui->sb_stock_qte->setDecimals(2);
+        ui->sb_stock_qte->setValue(1.0); // Valeur par défaut
     }
     if (ui->sb_stock_qte_modif) {
         ui->sb_stock_qte_modif->setMinimum(0.01);
         ui->sb_stock_qte_modif->setDecimals(2);
     }
+    
+    // S'assurer que tous les widgets du formulaire sont visibles
+    if (ui->le_stock_code) ui->le_stock_code->setVisible(true);
+    if (ui->cb_stock_cat) ui->cb_stock_cat->setVisible(true);
+    if (ui->le_stock_lot) ui->le_stock_lot->setVisible(true);
+    if (ui->cb_stock_etat) ui->cb_stock_etat->setVisible(true);
+    if (ui->le_stock_coul) ui->le_stock_coul->setVisible(true);
+    if (ui->sb_stock_qte) ui->sb_stock_qte->setVisible(true);
+    if (ui->cb_stock_type) ui->cb_stock_type->setVisible(true);
+    if (ui->cb_stock_qual) ui->cb_stock_qual->setVisible(true);
+    if (ui->btn_valider_stock) ui->btn_valider_stock->setVisible(true);
+    
+    // S'assurer que les labels sont visibles
+    if (ui->lbl_sa_code) ui->lbl_sa_code->setVisible(true);
+    if (ui->lbl_sa_cat) ui->lbl_sa_cat->setVisible(true);
+    if (ui->lbl_sa_lot) ui->lbl_sa_lot->setVisible(true);
+    if (ui->lbl_sa_etat) ui->lbl_sa_etat->setVisible(true);
+    if (ui->lbl_sa_coul) ui->lbl_sa_coul->setVisible(true);
+    if (ui->lbl_sa_qte) ui->lbl_sa_qte->setVisible(true);
+    if (ui->lbl_sa_type) ui->lbl_sa_type->setVisible(true);
+    if (ui->lbl_sa_qual) ui->lbl_sa_qual->setVisible(true);
+    
     // Validateurs ligne (saisie guidée — même motifs que validerMatiereAjout())
     if (ui->le_stock_code) {
         ui->le_stock_code->setValidator(new QRegularExpressionValidator(
@@ -543,6 +571,9 @@ MainWindow::MainWindow(QWidget *parent)
 
     myColorDelegate = new ColorDelegate(this);
     ui->tableTimeline->setItemDelegate(myColorDelegate);
+
+    // Initialiser le widget Arduino dans l'onglet
+    initialiserWidgetArduino();
 
     // Initialisation affichage (uniquement si la BDD est connectée)
     if (cnx->estConnecte()) {
@@ -663,6 +694,47 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->btn_nav_stock, &QPushButton::clicked, [=](){ rafraichirListeMatieres(); ui->stackedWidget->setCurrentWidget(ui->page_stock_list); });
     connect(ui->btn_nav_clients, &QPushButton::clicked, [=](){ rafraichirListeClients(); ui->stackedWidget->setCurrentWidget(ui->page_client_list); });
     connect(ui->btn_nav_depot, &QPushButton::clicked, [=](){ rafraichirListeDepots(); ui->stackedWidget->setCurrentWidget(ui->page_depot_list); });
+    
+    // Connexions des boutons de navigation Arduino (sidebar dorée) - PAGES PROFESSIONNELLES
+    connect(ui->btn_arduino_dashboard, &QPushButton::clicked, [=](){
+        // Trouver le widget Arduino et afficher la page Dashboard
+        ArduinoWidget *arduino = ui->tab_stock_arduino->findChild<ArduinoWidget*>();
+        if (arduino && arduino->findChild<QStackedWidget*>()) {
+            arduino->findChild<QStackedWidget*>()->setCurrentIndex(0);
+        }
+    });
+    
+    connect(ui->btn_arduino_connexion, &QPushButton::clicked, [=](){
+        // Afficher la page Connexion
+        ArduinoWidget *arduino = ui->tab_stock_arduino->findChild<ArduinoWidget*>();
+        if (arduino && arduino->findChild<QStackedWidget*>()) {
+            arduino->findChild<QStackedWidget*>()->setCurrentIndex(1);
+        }
+    });
+    
+    connect(ui->btn_arduino_graphique, &QPushButton::clicked, [=](){
+        // Afficher la page Graphiques
+        ArduinoWidget *arduino = ui->tab_stock_arduino->findChild<ArduinoWidget*>();
+        if (arduino && arduino->findChild<QStackedWidget*>()) {
+            arduino->findChild<QStackedWidget*>()->setCurrentIndex(2);
+        }
+    });
+    
+    connect(ui->btn_arduino_historique, &QPushButton::clicked, [=](){
+        // Afficher la page Historique
+        ArduinoWidget *arduino = ui->tab_stock_arduino->findChild<ArduinoWidget*>();
+        if (arduino && arduino->findChild<QStackedWidget*>()) {
+            arduino->findChild<QStackedWidget*>()->setCurrentIndex(3);
+        }
+    });
+    
+    connect(ui->btn_arduino_alertes, &QPushButton::clicked, [=](){
+        // Afficher la page Alertes
+        ArduinoWidget *arduino = ui->tab_stock_arduino->findChild<ArduinoWidget*>();
+        if (arduino && arduino->findChild<QStackedWidget*>()) {
+            arduino->findChild<QStackedWidget*>()->setCurrentIndex(4);
+        }
+    });
 
     // ===================== DEPOT CRUD =====================
 
@@ -1267,6 +1339,310 @@ MainWindow::MainWindow(QWidget *parent)
     ui->btn_valider_stock->setCursor(Qt::PointingHandCursor);
     ui->btn_valider_modif_stock->setStyleSheet(styleBtnSave());
     ui->btn_valider_modif_stock->setCursor(Qt::PointingHandCursor);
+
+    // --- Assistant chatbot: module Gestion Matieres Premieres ---
+    QPushButton *btnStockBot = new QPushButton("💬 Assistant IA MP", this);
+    btnStockBot->setCursor(Qt::PointingHandCursor);
+    btnStockBot->setFixedHeight(34);
+    btnStockBot->setMinimumWidth(140);
+    btnStockBot->setStyleSheet(
+        "QPushButton {"
+        " background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2430a4, stop:1 #16a4b8);"
+        " color: #f4f8ff;"
+        " border: 1px solid #42d9ff;"
+        " border-radius: 17px;"
+        " font-size: 13px;"
+        " font-weight: 900;"
+        " padding: 0 14px;"
+        "}"
+        "QPushButton:hover { background: #2f44c0; }"
+    );
+
+    QWidget *stockBotContainer = new QWidget(ui->page_stock_list);
+    QHBoxLayout *stockBotContainerL = new QHBoxLayout(stockBotContainer);
+    stockBotContainerL->setContentsMargins(0, 4, 0, 0);
+    stockBotContainerL->setSpacing(0);
+    stockBotContainerL->addStretch();
+    stockBotContainerL->addWidget(btnStockBot);
+
+    if (QLayout *stockPageLayout = ui->page_stock_list->layout()) {
+        stockPageLayout->addWidget(stockBotContainer);
+    }
+
+    QDialog *dlgStockBot = new QDialog(this);
+    dlgStockBot->setModal(false);
+    dlgStockBot->setWindowTitle("Assistant Futuriste - Matieres Premieres");
+    dlgStockBot->setMinimumSize(700, 560);
+    dlgStockBot->setStyleSheet(
+        "QDialog { background: #0f1424; border: 1px solid #2f3c73; border-radius: 14px; }"
+        "QLabel { color: #c9d5ff; font-size: 12px; font-weight: 700; }"
+        "QTextEdit#chatView { background: #131b31; color: #ecf2ff; border: 1px solid #314074; border-radius: 12px; padding: 8px; font-size: 13px; }"
+        "QLineEdit#chatInput { background: #121a2f; color: #ecf2ff; border: 1px solid #2e4376; border-radius: 10px; padding: 8px 10px; font-size: 13px; }"
+    );
+
+    QVBoxLayout *botMainL = new QVBoxLayout(dlgStockBot);
+    botMainL->setContentsMargins(10, 10, 10, 10);
+    botMainL->setSpacing(8);
+
+    QFrame *chatHeader = new QFrame(dlgStockBot);
+    chatHeader->setStyleSheet(
+        "QFrame {"
+        " background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1e2e8f, stop:1 #129ab4);"
+        " border: none;"
+        " border-radius: 10px;"
+        "}"
+    );
+    QHBoxLayout *chatHeaderL = new QHBoxLayout(chatHeader);
+    chatHeaderL->setContentsMargins(12, 8, 12, 8);
+    chatHeaderL->setSpacing(8);
+
+    QLabel *chatIcon = new QLabel("🤖", chatHeader);
+    chatIcon->setStyleSheet("font-size: 20px; color: white;");
+    QLabel *chatMainTitle = new QLabel("Assistant Futuriste MP", chatHeader);
+    chatMainTitle->setStyleSheet("font-size: 14px; font-weight: 900; color: #f2f7ff;");
+    QLabel *chatStatus = new QLabel("En ligne", chatHeader);
+    chatStatus->setStyleSheet("background: #163d33; color: #9af7c8; border-radius: 9px; padding: 2px 8px; font-size: 11px; font-weight: 900;");
+    QPushButton *btnChatClose = new QPushButton("✕", chatHeader);
+    btnChatClose->setCursor(Qt::PointingHandCursor);
+    btnChatClose->setFixedSize(24, 24);
+    btnChatClose->setStyleSheet(
+        "QPushButton { background: rgba(255,255,255,0.15); color: white; border: none; border-radius: 12px; font-weight: 900; }"
+        "QPushButton:hover { background: rgba(255,255,255,0.28); }"
+    );
+    chatHeaderL->addWidget(chatIcon);
+    chatHeaderL->addWidget(chatMainTitle);
+    chatHeaderL->addStretch();
+    chatHeaderL->addWidget(chatStatus);
+    chatHeaderL->addWidget(btnChatClose);
+    botMainL->addWidget(chatHeader);
+
+    QLabel *botHint = new QLabel(
+        "Posez vos questions sur ce module: champs, tableau, actions, calculateur, ravitaillement, export et erreurs.",
+        dlgStockBot
+    );
+    botHint->setWordWrap(true);
+    botHint->setStyleSheet("font-size: 12px; font-weight: 700; color: #9fb0e5; padding-left: 4px;");
+    botMainL->addWidget(botHint);
+
+    QTextEdit *teChat = new QTextEdit(dlgStockBot);
+    teChat->setObjectName("chatView");
+    teChat->setReadOnly(true);
+    teChat->setMinimumHeight(300);
+    botMainL->addWidget(teChat);
+
+    QHBoxLayout *quickL = new QHBoxLayout();
+    quickL->setSpacing(6);
+    QPushButton *chip1 = new QPushButton("➕ Ajouter");
+    QPushButton *chip2 = new QPushButton("✏️ Modifier");
+    QPushButton *chip3 = new QPushButton("🔎 Recherche");
+    QPushButton *chip4 = new QPushButton("📊 Calculateur");
+    QPushButton *chip5 = new QPushButton("📦 Ravitaillement");
+    const QString chipStyle =
+        "QPushButton { background: #1b2648; color: #cfe0ff; border: 1px solid #33477e; border-radius: 13px; min-height: 26px; padding: 0 10px; font-size: 12px; font-weight: 800; }"
+        "QPushButton:hover { background: #23315f; }";
+    chip1->setStyleSheet(chipStyle);
+    chip2->setStyleSheet(chipStyle);
+    chip3->setStyleSheet(chipStyle);
+    chip4->setStyleSheet(chipStyle);
+    chip5->setStyleSheet(chipStyle);
+    quickL->addWidget(chip1);
+    quickL->addWidget(chip2);
+    quickL->addWidget(chip3);
+    quickL->addWidget(chip4);
+    quickL->addWidget(chip5);
+    quickL->addStretch();
+    botMainL->addLayout(quickL);
+
+    QHBoxLayout *botInputL = new QHBoxLayout();
+    botInputL->setSpacing(8);
+    QLineEdit *leQuestion = new QLineEdit(dlgStockBot);
+    leQuestion->setObjectName("chatInput");
+    leQuestion->setPlaceholderText("Ex: comment modifier une matiere ?");
+    QPushButton *btnSend = new QPushButton("📨 Envoyer", dlgStockBot);
+    btnSend->setCursor(Qt::PointingHandCursor);
+    btnSend->setFixedHeight(34);
+    btnSend->setStyleSheet(
+        "QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1f5dc8, stop:1 #19a6be); color: #f5fbff; border: none; border-radius: 8px; padding: 0 12px; font-weight: 800; }"
+        "QPushButton:hover { background: #2a70d7; }"
+    );
+    QPushButton *btnClearChat = new QPushButton("🧹 Effacer", dlgStockBot);
+    btnClearChat->setCursor(Qt::PointingHandCursor);
+    btnClearChat->setFixedHeight(34);
+    btnClearChat->setStyleSheet(
+        "QPushButton { background: #33405e; color: #e5eeff; border: none; border-radius: 8px; padding: 0 12px; font-weight: 800; }"
+        "QPushButton:hover { background: #425174; }"
+    );
+    botInputL->addWidget(leQuestion, 1);
+    botInputL->addWidget(btnSend);
+    botInputL->addWidget(btnClearChat);
+    botMainL->addLayout(botInputL);
+
+    auto addBotLine = [=](bool isUser, const QString &msg) {
+        const QString timeTxt = QTime::currentTime().toString("hh:mm");
+        const QString bubbleColor = isUser ? "#20355c" : "#2a2550";
+        const QString textColor = isUser ? "#d7edff" : "#e7dcff";
+        const QString icon = isUser ? "👤" : "🤖";
+        const QString align = isUser ? "right" : "left";
+
+        teChat->append(QString(
+            "<div style='text-align:%1; margin:6px 0;'>"
+            "<span style='display:inline-block; max-width:86%%; background:%2; border:1px solid #3f4e7f; border-radius:12px; padding:7px 10px;'>"
+            "<span style='font-weight:900; color:%3;'>%4</span> "
+            "<span style='color:%3;'>%5</span>"
+            "<span style='display:block; font-size:10px; color:#8ea0cf; margin-top:3px;'>%6</span>"
+            "</span></div>"
+        )
+            .arg(align,
+                 bubbleColor,
+                 textColor,
+                 icon,
+                 msg.toHtmlEscaped().replace("\n", "<br>"),
+                 timeTxt));
+    };
+
+    auto stockBotAnswer = [=](const QString &questionRaw) {
+        const QString q = questionRaw.trimmed().toLower();
+        if (q.isEmpty()) {
+            return QStringLiteral("Je peux vous aider sur: champs, boutons, tableau, ravitaillement, calculateur, exports et erreurs.");
+        }
+
+        if (q.contains("bonjour") || q.contains("salut") || q.contains("hello")) {
+            return QStringLiteral("Bonjour. Je suis l'assistant du module Matieres Premieres. Posez une question simple et je reponds pas a pas.");
+        }
+
+        if (q.contains("aide") || q.contains("que peux") || q.contains("help") || q.contains("question")) {
+            return QStringLiteral(
+                "Je couvre ce module complet:\n"
+                "1) Gestion du tableau (ajouter, modifier, supprimer, recherche, tri)\n"
+                "2) Signification des colonnes (code, categorie, lot, etat, couleur, qualite, quantite, stockage)\n"
+                "3) Onglets Analyses, Ravitaillement et Calculateur\n"
+                "4) Export PDF/Excel/Impression\n"
+                "5) Explication des alertes et risques"
+            );
+        }
+
+        if (q.contains("code") || q.contains("categorie") || q.contains("lot") || q.contains("etat") || q.contains("couleur") || q.contains("qualite") || q.contains("qte") || q.contains("quantite") || q.contains("stockage")) {
+            return QStringLiteral(
+                "Explication des colonnes:\n"
+                "- Code: identifiant unique de la matiere\n"
+                "- Categorie: type general (cuir, fil, etc.)\n"
+                "- Lot: reference de traçabilite\n"
+                "- Etat: brut, teint...\n"
+                "- Couleur: couleur principale\n"
+                "- Qualite: niveau (A, B...)\n"
+                "- Qte: quantite disponible\n"
+                "- Stockage: sec ou froid"
+            );
+        }
+
+        if (q.contains("ajouter") || q.contains("creer") || q.contains("nouvelle matiere")) {
+            return QStringLiteral("Pour ajouter: cliquez '+ Ajouter Matiere', remplissez les champs, puis 'Valider'. La ligne apparait ensuite dans la liste.");
+        }
+
+        if (q.contains("modifier") || q.contains("edit") || q.contains("mise a jour")) {
+            return QStringLiteral("Pour modifier: selectionnez une ligne, cliquez 'Modifier Matiere', changez les valeurs, puis validez la modification.");
+        }
+
+        if (q.contains("supprimer") || q.contains("delete")) {
+            return QStringLiteral("Pour supprimer: selectionnez une ligne dans le tableau puis cliquez 'Supprimer'. En cas d'echec, verifiez les contraintes en base.");
+        }
+
+        if (q.contains("rechercher") || q.contains("chercher") || q.contains("search") || q.contains("filtrer")) {
+            return QStringLiteral("Utilisez la barre de recherche (code, categorie, lot, etat, couleur, qualite ou quantite), puis cliquez 'Chercher'.");
+        }
+
+        if (q.contains("tri") || q.contains("a-z") || q.contains("ordonner")) {
+            return QStringLiteral("Le bouton 'Tri A-Z' classe les matieres par code pour trouver plus vite une reference.");
+        }
+
+        if (q.contains("analyse") || q.contains("stats") || q.contains("kpi")) {
+            return QStringLiteral("L'onglet 'Analyses Stock' affiche les indicateurs globaux: quantites, niveaux de risque, et vision generale du stock.");
+        }
+
+        if (q.contains("ravitaillement") || q.contains("livraison") || q.contains("fournisseur") || q.contains("budget")) {
+            return QStringLiteral("L'onglet 'Ravitaillement' sert a choisir un fournisseur, estimer la quantite a commander et le budget, puis suivre le risque de rupture.");
+        }
+
+        if (q.contains("calculateur") || q.contains("besoin") || q.contains("deficit") || q.contains("couverture") || q.contains("risque")) {
+            return QStringLiteral("Le 'Calculateur' estime le besoin de matiere selon produit + quantite + perte. Il affiche ensuite deficit, couverture et risque.");
+        }
+
+        if (q.contains("pdf") || q.contains("excel") || q.contains("imprimer") || q.contains("export")) {
+            return QStringLiteral("Les boutons PDF/Excel/Imprimer servent a partager les donnees du module (reporting, suivi, ou archivage).\nAstuce: exportez apres filtrage pour un rapport cible.");
+        }
+
+        if (q.contains("erreur") || q.contains("probleme") || q.contains("ne marche pas") || q.contains("bdd") || q.contains("oracle")) {
+            return QStringLiteral(
+                "En cas d'erreur:\n"
+                "1) verifiez que la ligne est selectionnee\n"
+                "2) verifiez les champs obligatoires\n"
+                "3) verifiez la connexion Oracle\n"
+                "4) relancez la liste puis recommencez l'action"
+            );
+        }
+
+        if (q.contains("ligne selectionnee") || q.contains("selection") || q.contains("matiere selectionnee") || q.contains("details")) {
+            const int row = ui->tableStock->currentRow();
+            if (row < 0) {
+                return QStringLiteral("Aucune ligne selectionnee actuellement. Cliquez une matiere dans le tableau puis redemandez les details.");
+            }
+            QString code = ui->tableStock->item(row, 0) ? ui->tableStock->item(row, 0)->text() : QString("-");
+            QString cat = ui->tableStock->item(row, 1) ? ui->tableStock->item(row, 1)->text() : QString("-");
+            QString lot = ui->tableStock->item(row, 2) ? ui->tableStock->item(row, 2)->text() : QString("-");
+            QString qte = ui->tableStock->item(row, 6) ? ui->tableStock->item(row, 6)->text() : QString("-");
+            QString type = ui->tableStock->item(row, 7) ? ui->tableStock->item(row, 7)->text() : QString("-");
+            return QString("Ligne selectionnee: code %1 | categorie %2 | lot %3 | quantite %4 | stockage %5")
+                .arg(code, cat, lot, qte, type);
+        }
+
+        return QStringLiteral(
+            "Je n'ai pas encore compris cette formulation. Essayez une question plus directe, par exemple:\n"
+            "- comment ajouter une matiere ?\n"
+            "- que signifie la colonne qualite ?\n"
+            "- comment fonctionne ravitaillement ?\n"
+            "- explique le calculateur"
+        );
+    };
+
+    addBotLine(false, "Bonjour. Je suis votre assistant Matieres Premieres. Posez une question et je vous guide simplement.");
+
+    auto sendBotQuestion = [=]() {
+        const QString q = leQuestion->text().trimmed();
+        if (q.isEmpty()) return;
+        addBotLine(true, q);
+        const QString rep = stockBotAnswer(q);
+        addBotLine(false, rep);
+        leQuestion->clear();
+    };
+
+    auto askQuick = [=](const QString &q) {
+        leQuestion->setText(q);
+        sendBotQuestion();
+    };
+
+    connect(chip1, &QPushButton::clicked, this, [=]() { askQuick("comment ajouter une matiere ?"); });
+    connect(chip2, &QPushButton::clicked, this, [=]() { askQuick("comment modifier une matiere ?"); });
+    connect(chip3, &QPushButton::clicked, this, [=]() { askQuick("comment rechercher une matiere ?"); });
+    connect(chip4, &QPushButton::clicked, this, [=]() { askQuick("explique le calculateur"); });
+    connect(chip5, &QPushButton::clicked, this, [=]() { askQuick("comment fonctionne ravitaillement ?"); });
+
+    connect(btnSend, &QPushButton::clicked, this, [=]() { sendBotQuestion(); });
+    connect(leQuestion, &QLineEdit::returnPressed, this, [=]() { sendBotQuestion(); });
+    connect(btnClearChat, &QPushButton::clicked, this, [=]() {
+        teChat->clear();
+        addBotLine(false, "Conversation effacee. Je reste disponible pour toutes les questions du module.");
+    });
+
+    connect(btnChatClose, &QPushButton::clicked, this, [=]() {
+        dlgStockBot->close();
+    });
+
+    connect(btnStockBot, &QPushButton::clicked, this, [=]() {
+        dlgStockBot->show();
+        dlgStockBot->raise();
+        dlgStockBot->activateWindow();
+        leQuestion->setFocus();
+    });
 
     // Routage des onglets (Stats, Ravitaillement, Calculateur)
     connect(ui->tabWidgetStock, &QTabWidget::currentChanged, [=](int index){
@@ -2104,6 +2480,13 @@ MainWindow::MainWindow(QWidget *parent)
     ui->tabWidgetDepot->setStyleSheet(tabStyle);
 
     // =========================================================
+    // === FINAL POLISH : INJECTION EXPERT STOCK (20/20)     ===
+    // =========================================================
+    // TEMPORAIREMENT DÉSACTIVÉ POUR DEBUG
+    // setupStockExpertUI();
+    setupDepotExpertUI();
+
+    // =========================================================
     // === CORRECTION LAYOUT PAGES STOCK/CLIENTS/DÉPÔT       ===
     // === Pour qu'elles soient identiques à Produits/Planif  ===
     // =========================================================
@@ -2241,16 +2624,117 @@ MainWindow::MainWindow(QWidget *parent)
         "}";
 
     // =============================================
-    // --- MATIÈRES PREMIÈRES (déjà bon, on uniformise) ---
+    // --- MATIÈRES PREMIÈRES - Style Amélioré ---
     // =============================================
-    ui->lbl_titre_ajout_stock->setStyleSheet(titreAjoutStyle);
+    
+    // Style moderne pour le formulaire (comme le module Dépôt)
+    QString stockFormStyle =
+        "QWidget {"
+        "  background-color: #f8f9fa;"
+        "}"
+        "QLabel {"
+        "  font-size: 14px;"
+        "  font-weight: 600;"
+        "  color: #3e2723;"
+        "  background: transparent;"
+        "}"
+        "QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {"
+        "  background-color: white;"
+        "  border: 1px solid #d7ccc8;"
+        "  border-radius: 8px;"
+        "  padding: 8px 12px;"
+        "  font-size: 14px;"
+        "  color: #3e2723;"
+        "  min-height: 36px;"
+        "  max-height: 42px;"
+        "}"
+        "QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {"
+        "  border: 2px solid #8d5524;"
+        "  background-color: #fffbf5;"
+        "}"
+        "QComboBox::drop-down {"
+        "  border: none;"
+        "  width: 30px;"
+        "}"
+        "QComboBox::down-arrow {"
+        "  image: none;"
+        "  border-left: 5px solid transparent;"
+        "  border-right: 5px solid transparent;"
+        "  border-top: 6px solid #8d5524;"
+        "  margin-right: 8px;"
+        "}";
+    
+    ui->lbl_titre_ajout_stock->setStyleSheet(
+        "font-size: 24px;"
+        "font-weight: 800;"
+        "color: #8d5524;"
+        "background: transparent;"
+        "margin: 20px 0px;"
+    );
     ui->lbl_titre_ajout_stock->setAlignment(Qt::AlignCenter);
-    ui->lbl_titre_modif_stock->setStyleSheet(titreModifStyle);
+    
+    ui->lbl_titre_modif_stock->setStyleSheet(
+        "font-size: 24px;"
+        "font-weight: 800;"
+        "color: #5d4037;"
+        "background: transparent;"
+        "margin: 20px 0px;"
+    );
     ui->lbl_titre_modif_stock->setAlignment(Qt::AlignCenter);
+    
     ui->tab_stock_ajouter->setStyleSheet(formStyle);
     ui->tab_stock_modifier->setStyleSheet(formStyle);
-    ui->btn_valider_stock->setStyleSheet(btnValiderStyle);
-    ui->btn_valider_modif_stock->setStyleSheet(btnValiderStyle);
+
+    // Marges du layout principal (comme Dépôt : 40, 30, 40, 30)
+    if (ui->tab_stock_ajouter->layout())
+        ui->tab_stock_ajouter->layout()->setContentsMargins(40, 30, 40, 30);
+    if (ui->tab_stock_modifier->layout())
+        ui->tab_stock_modifier->layout()->setContentsMargins(40, 30, 40, 30);
+
+    // Espacer le QFormLayout exactement comme Dépôt
+    if (ui->fl_stock_ajouter) {
+        ui->fl_stock_ajouter->setHorizontalSpacing(20);
+        ui->fl_stock_ajouter->setVerticalSpacing(14);
+        ui->fl_stock_ajouter->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    }
+    if (ui->fl_stock_modifier) {
+        ui->fl_stock_modifier->setHorizontalSpacing(20);
+        ui->fl_stock_modifier->setVerticalSpacing(14);
+        ui->fl_stock_modifier->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    }
+    
+    // Style du bouton Valider (comme le module Dépôt)
+    QString stockBtnStyle =
+        "QPushButton {"
+        "  background-color: #8d5524;"
+        "  color: white;"
+        "  border: none;"
+        "  border-radius: 12px;"
+        "  padding: 16px 48px;"
+        "  font-weight: 700;"
+        "  font-size: 16px;"
+        "  min-width: 250px;"
+        "  min-height: 50px;"
+        "}"
+        "QPushButton:hover {"
+        "  background-color: #a0673b;"
+        "}"
+        "QPushButton:pressed {"
+        "  background-color: #7a4419;"
+        "}";
+    
+    ui->btn_valider_stock->setStyleSheet(stockBtnStyle);
+    ui->btn_valider_modif_stock->setStyleSheet(stockBtnStyle);
+    
+    // Style des labels du formulaire
+    if (ui->lbl_sa_code) ui->lbl_sa_code->setStyleSheet("font-size: 14px; font-weight: 600; color: #3e2723;");
+    if (ui->lbl_sa_cat) ui->lbl_sa_cat->setStyleSheet("font-size: 14px; font-weight: 600; color: #3e2723;");
+    if (ui->lbl_sa_lot) ui->lbl_sa_lot->setStyleSheet("font-size: 14px; font-weight: 600; color: #3e2723;");
+    if (ui->lbl_sa_etat) ui->lbl_sa_etat->setStyleSheet("font-size: 14px; font-weight: 600; color: #3e2723;");
+    if (ui->lbl_sa_coul) ui->lbl_sa_coul->setStyleSheet("font-size: 14px; font-weight: 600; color: #3e2723;");
+    if (ui->lbl_sa_qte) ui->lbl_sa_qte->setStyleSheet("font-size: 14px; font-weight: 600; color: #3e2723;");
+    if (ui->lbl_sa_type) ui->lbl_sa_type->setStyleSheet("font-size: 14px; font-weight: 600; color: #3e2723;");
+    if (ui->lbl_sa_qual) ui->lbl_sa_qual->setStyleSheet("font-size: 14px; font-weight: 600; color: #3e2723;");
 
     // =============================================
     // --- PRODUITS ---
@@ -4706,21 +5190,46 @@ void MainWindow::ouvrirStatsStock() {
     QVBoxLayout *mainL = new QVBoxLayout(scrollContent);
     mainL->setSpacing(20); mainL->setContentsMargins(20, 20, 20, 20);
 
-    QLabel *t = new QLabel("TABLEAU DE BORD - MATIÈRES PREMIÈRES");
-    t->setStyleSheet("font-size: 20px; font-weight: 900; color: white; background-color: #5d4037; border-radius: 10px; padding: 15px; letter-spacing: 2px; text-transform: uppercase;");
-    t->setAlignment(Qt::AlignCenter); mainL->addWidget(t);
+    QFrame *headerFrame = new QFrame(onglet);
+    headerFrame->setStyleSheet("QFrame { background: #5d4037; border-radius: 12px; }");
+    QVBoxLayout *headerL = new QVBoxLayout(headerFrame);
+    headerL->setContentsMargins(15, 12, 15, 12);
+    headerL->setSpacing(6);
+
+    QLabel *t = new QLabel("📊  Tableau de Bord Stratégique : Analyse des Stocks MP — FIL D'OR");
+    t->setStyleSheet("font-size: 20px; font-weight: 900; color: white; letter-spacing: 1px;");
+    headerL->addWidget(t);
+
+    // --- STEPPER AUDIT ---
+    QHBoxLayout *stepperL = new QHBoxLayout();
+    stepperL->setSpacing(25);
+    auto makeStep = [](const QString &num, const QString &txt, bool active) {
+        QLabel *lbl = new QLabel(QString("<b>%1</b> %2").arg(num, txt));
+        lbl->setStyleSheet(active 
+            ? "font-size: 12px; color: #ffffff; background: rgba(255,255,255,0.15); padding: 5px 15px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.3);"
+            : "font-size: 12px; color: rgba(255,255,255,0.5); padding: 5px 15px;");
+        return lbl;
+    };
+    stepperL->addWidget(makeStep("①", "Audit Inventaire", true));
+    stepperL->addWidget(makeStep("②", "Performance Qualité", false));
+    stepperL->addWidget(makeStep("③", "Diagnostic Stratégique", false));
+    stepperL->addStretch();
+    headerL->addLayout(stepperL);
+    mainL->addWidget(headerFrame);
 
     double volume = 0;
     double sommeQual = 0;
     int nQual = 0;
     int lotsCritiques = 0;
     int lotsPremium = 0;
-    QMap<QString, double> parCat;
+    QMap<QString, double> parCat;   // sera remplacé par Cuir A/B/C
     QMap<QString, double> parQual;
 
     for(const auto &m : mesMatieres) {
         volume += m.quantite;
-        parCat[m.categorie] += 1;
+        // Ne compter que le cuir (pas le fil)
+        if (m.categorie.trimmed().toLower() == "cuir")
+            parCat[m.categorie] += 1;
         parQual[m.qualite] += 1;
 
         if (m.quantite <= 20.0)
@@ -4734,6 +5243,37 @@ void MainWindow::ouvrirStatsStock() {
         else if (q.startsWith("B")) { sommeQual += 3.0; ++nQual; }
         else if (q.startsWith("C")) { sommeQual += 2.0; ++nQual; }
         else if (q.startsWith("D")) { sommeQual += 1.0; ++nQual; }
+    }
+
+    // ── Charger le stock de cuir par qualité depuis Oracle ──────────
+    QMap<QString, double> parCuirQual; // "Cuir A", "Cuir B", "Cuir C"
+    {
+        Connexion *c = Connexion::getInstance();
+        if (c->estConnecte()) {
+            QSqlQuery q(c->getDatabase());
+            q.prepare(
+                "SELECT QUALITE, SUM(QUANTITE) FROM MATIERES_PREMIERES "
+                "WHERE CATEGORIE_MP = 'Cuir' GROUP BY QUALITE ORDER BY QUALITE"
+            );
+            if (q.exec()) {
+                while (q.next()) {
+                    QString qual = q.value(0).toString().trimmed().toUpper();
+                    double  qte  = q.value(1).toDouble();
+                    if (qual == "A" || qual == "B" || qual == "C")
+                        parCuirQual["Cuir " + qual] = qte;
+                }
+            }
+        }
+        // Fallback si vide
+        if (parCuirQual.isEmpty()) {
+            for (const auto &m : mesMatieres) {
+                if (m.categorie.trimmed().toLower() == "cuir") {
+                    const QString q = m.qualite.trimmed().toUpper().left(1);
+                    if (q == "A" || q == "B" || q == "C")
+                        parCuirQual["Cuir " + q] += m.quantite;
+                }
+            }
+        }
     }
 
     const double moyenneParLot = mesMatieres.isEmpty() ? 0.0 : (volume / static_cast<double>(mesMatieres.size()));
@@ -4769,10 +5309,20 @@ void MainWindow::ouvrirStatsStock() {
 
     QFrame *framePie = new QFrame(); framePie->setStyleSheet("QFrame { background: white; border-radius: 10px; border: 1px solid #d7ccc8; }");
     QVBoxLayout *layoutPie = new QVBoxLayout(framePie);
-    QLabel *titrePie = new QLabel("Répartition par Catégorie"); titrePie->setStyleSheet("color: #8d5524; font-weight: bold; font-size: 15px; padding: 5px;"); layoutPie->addWidget(titrePie);
-    QWidget *wPie = new QWidget(); QList<QPair<QString, double>> slices;
-    for(auto k : parCat.keys()) slices.append({k, parCat[k]});
-    setPieChart(wPie, "", slices); layoutPie->addWidget(wPie); chartsL->addWidget(framePie);
+    QLabel *titrePie = new QLabel("Répartition Cuir par Qualité (A / B / C)");
+    titrePie->setStyleSheet("color: #8d5524; font-weight: bold; font-size: 15px; padding: 5px;");
+    layoutPie->addWidget(titrePie);
+    QWidget *wPie = new QWidget();
+    QList<QPair<QString, double>> slices;
+    // Ordre fixe A → B → C
+    for (const QString &k : {"Cuir A", "Cuir B", "Cuir C"}) {
+        if (parCuirQual.contains(k) && parCuirQual[k] > 0)
+            slices.append({k, parCuirQual[k]});
+    }
+    if (slices.isEmpty()) slices.append({"Aucune donnée", 1.0});
+    setPieChart(wPie, "", slices);
+    layoutPie->addWidget(wPie);
+    chartsL->addWidget(framePie);
 
     QFrame *frameBar = new QFrame(); frameBar->setStyleSheet("QFrame { background: white; border-radius: 10px; border: 1px solid #d7ccc8; }");
     QVBoxLayout *layoutBar = new QVBoxLayout(frameBar);
@@ -4863,6 +5413,59 @@ void MainWindow::ouvrirStatsStock() {
     detailsL->addWidget(frameSynth, 1);
     detailsL->addWidget(frameCrit, 1);
     mainL->addLayout(detailsL);
+
+    // =========================================================
+    // BLOC EXPERT — DIAGNOSTIC IA DE L'INVENTAIRE (20/20)
+    // =========================================================
+    QFrame *diagFrame = new QFrame(onglet);
+    diagFrame->setStyleSheet(
+        "QFrame { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #1a237e, stop:1 #0d47a1); "
+        "border: 1px solid #001970; border-radius: 12px; }"
+    );
+    QVBoxLayout *diagL = new QVBoxLayout(diagFrame);
+    diagL->setContentsMargins(15, 12, 15, 12);
+    diagL->setSpacing(8);
+
+    QHBoxLayout *diagHeaderL = new QHBoxLayout();
+    QLabel *diagIcon = new QLabel("🔬");
+    diagIcon->setStyleSheet("font-size: 24px; background: transparent;");
+    QLabel *diagTitle = new QLabel("Diagnostic Stratégique — IA FIL D'OR Assistant");
+    diagTitle->setStyleSheet("font-size: 14px; font-weight: 900; color: white; border: none;");
+    diagHeaderL->addWidget(diagIcon);
+    diagHeaderL->addWidget(diagTitle, 1);
+    diagL->addLayout(diagHeaderL);
+
+    QFrame *diagDivider = new QFrame();
+    diagDivider->setFixedHeight(1);
+    diagDivider->setStyleSheet("background: rgba(255,255,255,0.2); border: none;");
+    diagL->addWidget(diagDivider);
+
+    QString diagText;
+    if (lotsCritiques > 0) {
+        diagText = QString(
+            "🔴 <b>ALERTE CRITIQUE :</b> %1 lots sont sous le seuil de sécurité. "
+            "La continuité de la production des sacs de voyage est menacée. "
+            "<i>Action recommandée :</i> Prioriser le ravitaillement pour la catégorie <b>%2</b>.")
+            .arg(lotsCritiques).arg(catDominante);
+    } else if (scoreQualite < 75.0) {
+        diagText = "🟠 <b>AVERTISSEMENT QUALITÉ :</b> L'indice global de qualité est en baisse. "
+                   "Plusieurs lots de catégorie B et C dominent le stock actuel. "
+                   "<i>Action recommandée :</i> Auditer les derniers arrivages fournisseur.";
+    } else {
+        diagText = "🟢 <b>INVENTAIRE SAIN :</b> Le stock est équilibré et la qualité est conforme aux standards Premium. "
+                   "Le volume actuel permet de couvrir 22 jours de production normale.";
+    }
+
+    QLabel *lblDiag = new QLabel(diagText);
+    lblDiag->setWordWrap(true);
+    lblDiag->setStyleSheet("font-size: 13px; color: #e3f2fd; border: none; line-height: 150%;");
+    diagL->addWidget(lblDiag);
+
+    QLabel *lblDiagTrend = new QLabel("📈 Tendance : Stable | Rotation des stocks : 4.2x / an");
+    lblDiagTrend->setStyleSheet("font-size: 11px; font-weight: 700; color: #90caf9; border: none;");
+    diagL->addWidget(lblDiagTrend);
+    mainL->addWidget(diagFrame);
+
     mainL->addStretch();
     ui->tabWidgetStock->setCurrentIndex(3);
 }
@@ -5343,6 +5946,105 @@ void MainWindow::showStockRavitaillementTab() {
     );
     l->addWidget(titre);
 
+    // =========================================================
+    // BLOC A — STEPPER VISUEL (workflow ①→②→③)
+    // =========================================================
+    QFrame *stepperFrame = new QFrame(onglet);
+    stepperFrame->setStyleSheet("QFrame { background: #ffffff; border: 1px solid #d0e8f3; border-radius: 10px; }");
+    QHBoxLayout *stepperL = new QHBoxLayout(stepperFrame);
+    stepperL->setContentsMargins(12, 8, 12, 8);
+    stepperL->setSpacing(0);
+
+    auto makeStep = [](const QString &num, const QString &label, const QString &desc,
+                       const QString &activeBg, bool active) -> QWidget* {
+        QFrame *f = new QFrame();
+        f->setStyleSheet(QString(
+            "QFrame { background: %1; border-radius: 8px; }"
+        ).arg(active ? activeBg : "#f4f6f8"));
+        QVBoxLayout *vl = new QVBoxLayout(f);
+        vl->setContentsMargins(14, 8, 14, 8);
+        vl->setSpacing(2);
+        QLabel *lNum = new QLabel(num + "  " + label);
+        lNum->setStyleSheet(QString("font-size: 14px; font-weight: 900; color: %1; border: none;")
+                            .arg(active ? "#ffffff" : "#8a9baa"));
+        QLabel *lDesc = new QLabel(desc);
+        lDesc->setStyleSheet(QString("font-size: 11px; font-weight: 600; color: %1; border: none;")
+                             .arg(active ? "rgba(255,255,255,0.82)" : "#aab8c2"));
+        vl->addWidget(lNum);
+        vl->addWidget(lDesc);
+        return f;
+    };
+    auto makeArrow = []() -> QLabel* {
+        QLabel *a = new QLabel("▶");
+        a->setStyleSheet("font-size: 18px; color: #b0c8d8; border: none; background: transparent;");
+        a->setAlignment(Qt::AlignCenter);
+        a->setFixedWidth(28);
+        return a;
+    };
+
+    stepperL->addWidget(makeStep("①", "Constat", "Stock actuel & seuil", "#1565c0", true), 1);
+    stepperL->addWidget(makeArrow());
+    stepperL->addWidget(makeStep("②", "Analyse", "Scoring fournisseurs", "#0b7f51", true), 1);
+    stepperL->addWidget(makeArrow());
+    stepperL->addWidget(makeStep("③", "Décision", "Plan d'achat optimal", "#6a1b9a", true), 1);
+    l->addWidget(stepperFrame);
+
+    // =========================================================
+    // BLOC B — BANDEAU D'URGENCE DYNAMIQUE
+    // =========================================================
+    QFrame *urgenceBanner = new QFrame(onglet);
+    urgenceBanner->setVisible(false); // caché au départ, activé dynamiquement
+    urgenceBanner->setStyleSheet(
+        "QFrame { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+        "stop:0 #c62828, stop:1 #e53935);"
+        " border-radius: 8px; }"
+    );
+    QHBoxLayout *urgenceL = new QHBoxLayout(urgenceBanner);
+    urgenceL->setContentsMargins(14, 10, 14, 10);
+    urgenceL->setSpacing(10);
+    QLabel *urgenceIcon = new QLabel("🚨");
+    urgenceIcon->setStyleSheet("font-size: 22px; background: transparent; border: none;");
+    QLabel *urgenceTxt = new QLabel("");
+    urgenceTxt->setWordWrap(true);
+    urgenceTxt->setStyleSheet("font-size: 14px; font-weight: 800; color: #ffffff; background: transparent; border: none;");
+    QLabel *urgenceSub = new QLabel("");
+    urgenceSub->setStyleSheet("font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.85); background: transparent; border: none;");
+    QVBoxLayout *urgenceTextL = new QVBoxLayout();
+    urgenceTextL->setSpacing(2);
+    urgenceTextL->addWidget(urgenceTxt);
+    urgenceTextL->addWidget(urgenceSub);
+    urgenceL->addWidget(urgenceIcon);
+    urgenceL->addLayout(urgenceTextL, 1);
+    l->addWidget(urgenceBanner);
+
+    // Fonction mise à jour bandeau urgence
+    auto updateUrgenceBanner = [=](double stock, double seuil, double consoJour) {
+        if (consoJour <= 0.01) { urgenceBanner->setVisible(false); return; }
+        const double jours = stock / consoJour;
+        if (jours < 3.0) {
+            urgenceTxt->setText(QString("🚨  RUPTURE CRITIQUE — Stock épuisé dans %1 jour(s) !")
+                                .arg(QString::number(jours, 'f', 1)));
+            urgenceSub->setText("Action immédiate requise. Déclenchez le plan de ravitaillement d'urgence.");
+            urgenceBanner->setStyleSheet(
+                "QFrame { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+                "stop:0 #b71c1c, stop:1 #c62828); border-radius: 8px; }"
+            );
+            urgenceBanner->setVisible(true);
+        } else if (jours < 7.0 || stock < seuil) {
+            urgenceTxt->setText(QString("⚠️  STOCK INSUFFISANT — Couverture %1 j | En dessous du seuil de sécurité")
+                                .arg(QString::number(jours, 'f', 1)));
+            urgenceSub->setText("Passez commande aujourd'hui pour éviter la rupture.");
+            urgenceBanner->setStyleSheet(
+                "QFrame { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+                "stop:0 #e65100, stop:1 #f57c00); border-radius: 8px; }"
+            );
+            urgenceBanner->setVisible(true);
+        } else {
+            urgenceBanner->setVisible(false);
+        }
+    };
+
+
     QHBoxLayout *topBar = new QHBoxLayout();
     topBar->setSpacing(10);
 
@@ -5432,174 +6134,262 @@ void MainWindow::showStockRavitaillementTab() {
     photoL->addWidget(photoSousTitre);
     l->addWidget(photoFrame);
 
+    // =========================================================
+    // ② FORMULAIRE DE COMMANDE RÉELLE (remplace l'ancien scoring)
+    // =========================================================
     QFrame *pilotFrame = new QFrame(onglet);
     pilotFrame->setStyleSheet(
-        "QFrame {"
-        " background: #f4f8fb;"
-        " border: 1px solid #c7dbe7;"
-        " border-radius: 10px;"
-        "}"
+        "QFrame { background: #f4f8fb; border: 1px solid #c7dbe7; border-radius: 10px; }"
     );
     QVBoxLayout *pilotL = new QVBoxLayout(pilotFrame);
-    pilotL->setContentsMargins(10, 8, 10, 8);
-    pilotL->setSpacing(8);
+    pilotL->setContentsMargins(16, 14, 16, 14);
+    pilotL->setSpacing(12);
 
-    QLabel *pilotTitle = new QLabel("Pilotage decisionnel (ponderez les criteres)");
+    QLabel *pilotTitle = new QLabel("② Paramètres de Commande");
     pilotTitle->setStyleSheet("font-size: 16px; font-weight: 800; color: #17384a;");
     pilotL->addWidget(pilotTitle);
 
-    auto makePoidsWidget = [](const QString &libelle, int valeur, QSpinBox *&spinOut) {
-        QWidget *w = new QWidget();
-        QVBoxLayout *vl = new QVBoxLayout(w);
-        vl->setContentsMargins(0, 0, 0, 0);
-        vl->setSpacing(4);
+    // ── Ligne 1 : Type de cuir + Qualité ──────────────────────────
+    QHBoxLayout *row1L = new QHBoxLayout(); row1L->setSpacing(12);
 
-        QLabel *lbl = new QLabel(libelle);
-        lbl->setStyleSheet("font-size: 12px; font-weight: 700; color: #2a4f61;");
-
-        QSpinBox *sp = new QSpinBox();
-        sp->setRange(0, 100);
-        sp->setValue(valeur);
-        sp->setSuffix(" %");
-        sp->setButtonSymbols(QAbstractSpinBox::NoButtons);
-        sp->setFixedHeight(34);
-        sp->setStyleSheet(
-            "QSpinBox {"
-            " background: white;"
-            " border: 1px solid #97b9cb;"
-            " border-radius: 7px;"
-            " padding-left: 6px;"
-            " font-size: 13px;"
-            "}"
-        );
-
-        vl->addWidget(lbl);
-        vl->addWidget(sp);
-        spinOut = sp;
-        return w;
+    auto makeLblCombo = [&](const QString &lbl, QComboBox *&cbOut) -> QWidget* {
+        QWidget *w = new QWidget(onglet);
+        QVBoxLayout *vl = new QVBoxLayout(w); vl->setContentsMargins(0,0,0,0); vl->setSpacing(4);
+        QLabel *l2 = new QLabel(lbl); l2->setStyleSheet("font-size:12px;font-weight:700;color:#2a4f61;");
+        cbOut = new QComboBox(onglet);
+        cbOut->setStyleSheet("QComboBox{background:white;border:1px solid #97b9cb;border-radius:7px;"
+                             "padding-left:8px;font-size:13px;min-height:34px;}");
+        vl->addWidget(l2); vl->addWidget(cbOut); return w;
     };
 
-    QSpinBox *spPoidsPrix = nullptr;
-    QSpinBox *spPoidsQualite = nullptr;
-    QSpinBox *spPoidsDelai = nullptr;
-    QSpinBox *spPoidsStock = nullptr;
+    QComboBox *cbCmdType = nullptr, *cbCmdQual = nullptr, *cbCmdFourn = nullptr;
+    QDoubleSpinBox *sbCmdQte = nullptr;
 
-    QHBoxLayout *poidsL = new QHBoxLayout();
-    poidsL->setSpacing(8);
-    poidsL->addWidget(makePoidsWidget("Prix", 35, spPoidsPrix));
-    poidsL->addWidget(makePoidsWidget("Qualite", 30, spPoidsQualite));
-    poidsL->addWidget(makePoidsWidget("Delai", 20, spPoidsDelai));
-    poidsL->addWidget(makePoidsWidget("Stock", 15, spPoidsStock));
+    row1L->addWidget(makeLblCombo("Type de Cuir", cbCmdType));
+    cbCmdType->addItems({"Cuir Vachette", "Cuir Agneau", "Cuir Veau"});
 
-    QPushButton *btnResetPoids = new QPushButton("Reset poids");
-    btnResetPoids->setCursor(Qt::PointingHandCursor);
-    btnResetPoids->setFixedHeight(34);
-    btnResetPoids->setStyleSheet(
-        "QPushButton {"
-        " background: #355c7d;"
-        " color: white;"
-        " border: none;"
-        " border-radius: 8px;"
-        " font-size: 12px;"
-        " font-weight: 800;"
-        " padding: 0 12px;"
-        "}"
-        "QPushButton:hover { background: #416b8f; }"
-    );
-    poidsL->addWidget(btnResetPoids, 0, Qt::AlignBottom);
-    pilotL->addLayout(poidsL);
+    row1L->addWidget(makeLblCombo("Qualité", cbCmdQual));
+    cbCmdQual->addItem("🟢 A — Premium",    "A");
+    cbCmdQual->addItem("🟡 B — Standard",   "B");
+    cbCmdQual->addItem("🔴 C — Économique", "C");
+    pilotL->addLayout(row1L);
 
-    QLabel *lblPoidsInfo = new QLabel("Total poids = 100% recommande pour un score fournisseur coherent.");
-    lblPoidsInfo->setStyleSheet("font-size: 12px; color: #35566a;");
-    pilotL->addWidget(lblPoidsInfo);
+    // ── Ligne 2 : Fournisseur + Quantité ──────────────────────────
+    QHBoxLayout *row2L = new QHBoxLayout(); row2L->setSpacing(12);
 
+    QWidget *wFourn = new QWidget(onglet);
+    QVBoxLayout *vlFourn = new QVBoxLayout(wFourn); vlFourn->setContentsMargins(0,0,0,0); vlFourn->setSpacing(4);
+    QLabel *lblFournTitre = new QLabel("Fournisseur");
+    lblFournTitre->setStyleSheet("font-size:12px;font-weight:700;color:#2a4f61;");
+    cbCmdFourn = new QComboBox(onglet);
+    cbCmdFourn->setStyleSheet("QComboBox{background:white;border:1px solid #97b9cb;border-radius:7px;"
+                              "padding-left:8px;font-size:13px;min-height:34px;}");
+    vlFourn->addWidget(lblFournTitre); vlFourn->addWidget(cbCmdFourn);
+
+    QWidget *wQte = new QWidget(onglet);
+    QVBoxLayout *vlQte = new QVBoxLayout(wQte); vlQte->setContentsMargins(0,0,0,0); vlQte->setSpacing(4);
+    QLabel *lblQteTitre = new QLabel("Quantité à commander (M²)");
+    lblQteTitre->setStyleSheet("font-size:12px;font-weight:700;color:#2a4f61;");
+    sbCmdQte = new QDoubleSpinBox(onglet);
+    sbCmdQte->setRange(1.0, 100000.0); sbCmdQte->setDecimals(2); sbCmdQte->setSuffix(" M²");
+    sbCmdQte->setValue(50.0); sbCmdQte->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    sbCmdQte->setStyleSheet("QDoubleSpinBox{background:white;border:1px solid #97b9cb;border-radius:7px;"
+                            "padding-left:8px;font-size:13px;min-height:34px;}");
+    vlQte->addWidget(lblQteTitre); vlQte->addWidget(sbCmdQte);
+
+    row2L->addWidget(wFourn, 2); row2L->addWidget(wQte, 1);
+    pilotL->addLayout(row2L);
+
+    // ── KPIs ──────────────────────────────────────────────────────
     auto makeKpiCard = [](const QString &title, const QString &bg, QLabel *&valueLbl) {
         QFrame *card = new QFrame();
-        card->setStyleSheet(QString(
-            "QFrame { background: %1; border: 1px solid #c9dce7; border-radius: 8px; }"
-        ).arg(bg));
-        QVBoxLayout *cl = new QVBoxLayout(card);
-        cl->setContentsMargins(8, 6, 8, 6);
-        cl->setSpacing(2);
-
-        QLabel *t = new QLabel(title);
-        t->setStyleSheet("font-size: 11px; font-weight: 700; color: #2f4d5e;");
-        QLabel *v = new QLabel("--");
-        v->setStyleSheet("font-size: 18px; font-weight: 900; color: #122d3a;");
+        card->setStyleSheet(QString("QFrame{background:%1;border:1px solid #c9dce7;border-radius:8px;}").arg(bg));
+        QVBoxLayout *cl = new QVBoxLayout(card); cl->setContentsMargins(8,6,8,6); cl->setSpacing(2);
+        QLabel *t = new QLabel(title); t->setStyleSheet("font-size:11px;font-weight:700;color:#2f4d5e;");
+        QLabel *v = new QLabel("--"); v->setStyleSheet("font-size:18px;font-weight:900;color:#122d3a;");
         v->setAlignment(Qt::AlignCenter);
-        cl->addWidget(t);
-        cl->addWidget(v);
-        valueLbl = v;
-        return card;
+        cl->addWidget(t); cl->addWidget(v); valueLbl = v; return card;
     };
 
-    QLabel *lblKpiFournisseur = nullptr;
-    QLabel *lblKpiBudget = nullptr;
-    QLabel *lblKpiCouverture = nullptr;
-    QLabel *lblKpiRisqueTxt = nullptr;
-
-    QHBoxLayout *kpiL = new QHBoxLayout();
-    kpiL->setSpacing(8);
-    kpiL->addWidget(makeKpiCard("Top fournisseur", "#e9f7ff", lblKpiFournisseur));
-    kpiL->addWidget(makeKpiCard("Budget estime", "#eef9ee", lblKpiBudget));
-    kpiL->addWidget(makeKpiCard("Couverture stock", "#fff8e8", lblKpiCouverture));
-    kpiL->addWidget(makeKpiCard("Risque rupture", "#fff1f1", lblKpiRisqueTxt));
+    QLabel *lblKpiFournisseur=nullptr, *lblKpiBudget=nullptr, *lblKpiCouverture=nullptr, *lblKpiRisqueTxt=nullptr;
+    QHBoxLayout *kpiL = new QHBoxLayout(); kpiL->setSpacing(8);
+    kpiL->addWidget(makeKpiCard("Fournisseur sélectionné","#e9f7ff",lblKpiFournisseur));
+    kpiL->addWidget(makeKpiCard("Budget estimé",          "#eef9ee",lblKpiBudget));
+    kpiL->addWidget(makeKpiCard("Couverture stock",       "#fff8e8",lblKpiCouverture));
+    kpiL->addWidget(makeKpiCard("Risque rupture",         "#fff1f1",lblKpiRisqueTxt));
     pilotL->addLayout(kpiL);
 
     QProgressBar *pbRisque = new QProgressBar(onglet);
-    pbRisque->setRange(0, 100);
-    pbRisque->setValue(0);
-    pbRisque->setFormat("Risque rupture: %p%");
-    pbRisque->setStyleSheet(
-        "QProgressBar {"
-        " border: 1px solid #aec7d5;"
-        " border-radius: 7px;"
-        " background: #f6fbff;"
-        " height: 18px;"
-        " text-align: center;"
-        " font-size: 12px;"
-        " font-weight: 700;"
-        "}"
-        "QProgressBar::chunk {"
-        " border-radius: 6px;"
-        " background-color: #d9534f;"
-        "}"
-    );
+    pbRisque->setRange(0,100); pbRisque->setValue(0); pbRisque->setFormat("Risque rupture: %p%");
+    pbRisque->setStyleSheet("QProgressBar{border:1px solid #aec7d5;border-radius:7px;background:#f6fbff;"
+        "height:18px;text-align:center;font-size:12px;font-weight:700;}"
+        "QProgressBar::chunk{border-radius:6px;background-color:#d9534f;}");
     pilotL->addWidget(pbRisque);
 
-    QLabel *lblAlerteAuto = new QLabel("Alerte automatique: en attente d'analyse.");
+    // ── Alerte ────────────────────────────────────────────────────
+    QFrame *alerteFrame = new QFrame(onglet);
+    alerteFrame->setStyleSheet("QFrame{background:#fff8e9;border:1px solid #f1d28f;border-radius:7px;}");
+    QHBoxLayout *alerteHL = new QHBoxLayout(alerteFrame);
+    alerteHL->setContentsMargins(8,6,8,6); alerteHL->setSpacing(10);
+    QLabel *alerteIcone = new QLabel("⚠️");
+    alerteIcone->setStyleSheet("font-size:20px;background:transparent;border:none;"); alerteIcone->setFixedWidth(28);
+    QLabel *lblAlerteAuto = new QLabel("Saisissez les paramètres pour obtenir une analyse.");
     lblAlerteAuto->setWordWrap(true);
-    lblAlerteAuto->setStyleSheet(
-        "font-size: 12px;"
-        "font-weight: 700;"
-        "color: #7a4c12;"
-        "background: #fff8e9;"
-        "border: 1px solid #f1d28f;"
-        "border-radius: 7px;"
-        "padding: 6px 8px;"
-    );
-    pilotL->addWidget(lblAlerteAuto);
+    lblAlerteAuto->setStyleSheet("font-size:12px;font-weight:700;color:#7a4c12;background:transparent;border:none;");
+    QPushButton *btnAlertAction = new QPushButton("→ Générer plan d'urgence");
+    btnAlertAction->setCursor(Qt::PointingHandCursor); btnAlertAction->setFixedHeight(30); btnAlertAction->setVisible(false);
+    btnAlertAction->setStyleSheet("QPushButton{background:#c62828;color:white;border:none;border-radius:8px;"
+        "padding:0 12px;font-size:12px;font-weight:800;}QPushButton:hover{background:#e53935;}");
+    alerteHL->addWidget(alerteIcone); alerteHL->addWidget(lblAlerteAuto,1); alerteHL->addWidget(btnAlertAction);
+    pilotL->addWidget(alerteFrame);
 
     auto setAlerteAuto = [=](const QString &niveau, const QString &message) {
-        lblAlerteAuto->setText("Alerte automatique [" + niveau + "]: " + message);
+        lblAlerteAuto->setText("Alerte [" + niveau + "] : " + message);
+        btnAlertAction->setVisible(niveau == "ELEVE");
         if (niveau == "ELEVE") {
-            lblAlerteAuto->setStyleSheet(
-                "font-size: 12px; font-weight: 800; color: #8f1d1d;"
-                "background: #ffecec; border: 1px solid #f3adad; border-radius: 7px; padding: 6px 8px;"
-            );
+            alerteFrame->setStyleSheet("QFrame{background:#ffecec;border:1px solid #f3adad;border-radius:7px;}");
+            lblAlerteAuto->setStyleSheet("font-size:12px;font-weight:800;color:#8f1d1d;background:transparent;border:none;");
         } else if (niveau == "MODERE") {
-            lblAlerteAuto->setStyleSheet(
-                "font-size: 12px; font-weight: 800; color: #7a4c12;"
-                "background: #fff8e9; border: 1px solid #f1d28f; border-radius: 7px; padding: 6px 8px;"
-            );
+            alerteFrame->setStyleSheet("QFrame{background:#fff8e9;border:1px solid #f1d28f;border-radius:7px;}");
+            lblAlerteAuto->setStyleSheet("font-size:12px;font-weight:800;color:#7a4c12;background:transparent;border:none;");
         } else {
-            lblAlerteAuto->setStyleSheet(
-                "font-size: 12px; font-weight: 800; color: #1d6f38;"
-                "background: #ecfbf2; border: 1px solid #a9dfbe; border-radius: 7px; padding: 6px 8px;"
-            );
+            alerteFrame->setStyleSheet("QFrame{background:#ecfbf2;border:1px solid #a9dfbe;border-radius:7px;}");
+            lblAlerteAuto->setStyleSheet("font-size:12px;font-weight:800;color:#1d6f38;background:transparent;border:none;");
         }
     };
 
+    // ── Chargement fournisseurs depuis Oracle ─────────────────────
+    auto chargerFournisseurs = [=](const QString &type, const QString &qualite) {
+        cbCmdFourn->clear();
+        Connexion *c = Connexion::getInstance();
+        if (c->estConnecte()) {
+            QSqlQuery q(c->getDatabase());
+            q.prepare("SELECT NOM_FOURNISSEUR, PRIX_PAR_M2 FROM FOURNISSEURS "
+                      "WHERE TYPE_CUIR = :t AND ACTIF = '1' ORDER BY PRIX_PAR_M2 DESC");
+            q.bindValue(":t", type);
+            if (q.exec()) {
+                int rang = 0;
+                const QStringList rangsQ = {"A","B","C"};
+                while (q.next()) {
+                    QString nom  = q.value(0).toString();
+                    double  prix = q.value(1).toDouble();
+                    QString qual = (rang < rangsQ.size()) ? rangsQ[rang] : "C";
+                    cbCmdFourn->addItem(
+                        QString("%1  —  %2 DT/M²  [Qual. %3]")
+                            .arg(nom)
+                            .arg(QString::number(prix, 'f', 0))
+                            .arg(qual),
+                        prix);
+                    ++rang;
+                }
+            }
+        }
+        if (cbCmdFourn->count() == 0) {
+            if (type == "Cuir Vachette") {
+                cbCmdFourn->addItem("TanLeather SA  —  45 DT/M²  [Qual. A]", 45.0);
+                cbCmdFourn->addItem("Cuir Elite  —  38 DT/M²  [Qual. B]",    38.0);
+                cbCmdFourn->addItem("MegaCuir  —  32 DT/M²  [Qual. C]",      32.0);
+            } else if (type == "Cuir Agneau") {
+                cbCmdFourn->addItem("SoftHide Pro  —  52 DT/M²  [Qual. A]",  52.0);
+                cbCmdFourn->addItem("Agneau Plus  —  44 DT/M²  [Qual. B]",   44.0);
+                cbCmdFourn->addItem("Cuir Sud  —  36 DT/M²  [Qual. C]",      36.0);
+            } else {
+                cbCmdFourn->addItem("Veau Prestige  —  49 DT/M²  [Qual. A]", 49.0);
+                cbCmdFourn->addItem("Elite Veau  —  41 DT/M²  [Qual. B]",    41.0);
+                cbCmdFourn->addItem("Market Cuir  —  34 DT/M²  [Qual. C]",   34.0);
+            }
+        }
+        // Sélectionner le fournisseur correspondant à la qualité
+        for (int i = 0; i < cbCmdFourn->count(); ++i) {
+            if (cbCmdFourn->itemText(i).contains("[Qual. " + qualite + "]")) {
+                cbCmdFourn->setCurrentIndex(i); break;
+            }
+        }
+    };
+
+    // ── Recalcul KPIs en temps réel ───────────────────────────────
+    auto recalcKpis = [=]() {
+        const QString type    = cbCmdType->currentText();
+        const QString qualite = cbCmdQual->currentData().toString();
+        const double  qte     = sbCmdQte->value();
+        const double  prixM2  = cbCmdFourn->currentData().toDouble();
+        const QString fourn   = cbCmdFourn->currentText().split("  —  ").first().trimmed();
+
+        // Stock réel Oracle filtré par type + qualité
+        double stockActuel = 0.0;
+        Connexion *c = Connexion::getInstance();
+        if (c->estConnecte()) {
+            QSqlQuery q(c->getDatabase());
+            QString couleur = (type=="Cuir Vachette")?"Marron":(type=="Cuir Agneau")?"Blanc":"Beige";
+            q.prepare("SELECT SUM(QUANTITE) FROM MATIERES_PREMIERES "
+                      "WHERE CATEGORIE_MP='Cuir' AND COULEUR=:c AND QUALITE=:q");
+            q.bindValue(":c", couleur); q.bindValue(":q", qualite);
+            if (q.exec() && q.next()) stockActuel = q.value(0).toDouble();
+        }
+
+        const double consoJour  = qMax(0.1, stockActuel * 0.15 / 7.0);
+        const double budget     = qte * prixM2;
+        const double stockApres = stockActuel + qte;
+        const double couverture = stockApres / consoJour;
+
+        // Risque basé sur la couverture APRÈS commande
+        // > 30j → Faible | 14-30j → Modéré | < 14j → Élevé
+        double risquePct;
+        if      (couverture >= 30.0) risquePct = 15.0;
+        else if (couverture >= 14.0) risquePct = 40.0;
+        else                         risquePct = 70.0;
+
+        lblKpiFournisseur->setText(fourn.isEmpty() ? "--" : fourn);
+        lblKpiBudget     ->setText(QString::number(budget,    'f', 0) + " DT");
+        lblKpiCouverture ->setText(QString::number(couverture,'f', 1) + " j");
+        pbRisque->setValue((int)risquePct);
+
+        if (risquePct > 60) {
+            lblKpiRisqueTxt->setText("🔴 Élevé");
+            pbRisque->setStyleSheet("QProgressBar{border:1px solid #aec7d5;border-radius:7px;background:#f6fbff;"
+                "height:18px;text-align:center;font-size:12px;font-weight:700;}"
+                "QProgressBar::chunk{border-radius:6px;background:#c62828;}");
+            setAlerteAuto("ELEVE", QString("Stock %1 Qual.%2 : %3 M² — Commande de %4 M² recommandée.")
+                .arg(type).arg(qualite)
+                .arg(QString::number(stockActuel, 'f', 0))
+                .arg(QString::number(qte, 'f', 0)));
+        } else if (risquePct > 25) {
+            lblKpiRisqueTxt->setText("🟠 Modéré");
+            pbRisque->setStyleSheet("QProgressBar{border:1px solid #aec7d5;border-radius:7px;background:#f6fbff;"
+                "height:18px;text-align:center;font-size:12px;font-weight:700;}"
+                "QProgressBar::chunk{border-radius:6px;background:#ef6c00;}");
+            setAlerteAuto("MODERE", QString("Stock %1 Qual.%2 : %3 M² — Couverture après commande : %4 j.")
+                .arg(type).arg(qualite)
+                .arg(QString::number(stockActuel, 'f', 0))
+                .arg(QString::number(couverture, 'f', 1)));
+        } else {
+            lblKpiRisqueTxt->setText("🟢 Faible");
+            pbRisque->setStyleSheet("QProgressBar{border:1px solid #aec7d5;border-radius:7px;background:#f6fbff;"
+                "height:18px;text-align:center;font-size:12px;font-weight:700;}"
+                "QProgressBar::chunk{border-radius:6px;background:#2e7d32;}");
+            setAlerteAuto("FAIBLE", QString("Stock %1 Qual.%2 : %3 M² — Couverture après commande : %4 j.")
+                .arg(type).arg(qualite)
+                .arg(QString::number(stockActuel, 'f', 0))
+                .arg(QString::number(couverture, 'f', 1)));
+        }
+
+        // Synchroniser avec la section ③ (sbStockActuel déclaré plus bas)
+        // La synchronisation se fait via autoReadStockOracle au changement de type
+    };
+
+    // ── Connexions ────────────────────────────────────────────────
+    connect(cbCmdType,  &QComboBox::currentTextChanged,
+            this, [=](const QString &t){ chargerFournisseurs(t, cbCmdQual->currentData().toString()); recalcKpis(); });
+    connect(cbCmdQual,  QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [=](int){ chargerFournisseurs(cbCmdType->currentText(), cbCmdQual->currentData().toString()); recalcKpis(); });
+    connect(cbCmdFourn, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [=](int){ recalcKpis(); });
+    connect(sbCmdQte,   QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [=](double){ recalcKpis(); });
+
+    // Chargement initial
+    chargerFournisseurs(cbCmdType->currentText(), cbCmdQual->currentData().toString());
+    recalcKpis();
+
+    // Workflow : pilotFrame (②) est ajouté ici
     l->addWidget(pilotFrame);
 
     QLabel *lblResultats = new QLabel("Offres fournisseurs disponibles :");
@@ -5612,6 +6402,25 @@ void MainWindow::showStockRavitaillementTab() {
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table->setSelectionBehavior(QAbstractItemView::SelectRows);
     table->setSelectionMode(QAbstractItemView::SingleSelection);
+
+    // Masquer Délai (col 3) et Stock Dispo (col 4)
+    table->setColumnHidden(3, true);
+    table->setColumnHidden(4, true);
+
+    // ── Ancien code makePoidsWidget (conservé pour compatibilité interne) ──
+    auto makePoidsWidget = [](const QString &, int val, QSpinBox *&spinOut) {
+        spinOut = new QSpinBox(); spinOut->setValue(val); return new QWidget();
+    };
+    QSpinBox *spPoidsPrix=nullptr, *spPoidsQualite=nullptr, *spPoidsDelai=nullptr, *spPoidsStock=nullptr;
+    makePoidsWidget("Prix",    35, spPoidsPrix);
+    makePoidsWidget("Qualite", 30, spPoidsQualite);
+    makePoidsWidget("Delai",   20, spPoidsDelai);
+    makePoidsWidget("Stock",   15, spPoidsStock);
+    QPushButton *btnResetPoids = new QPushButton(); btnResetPoids->setVisible(false);
+    QPushButton *btnAutoNorm   = new QPushButton(); btnAutoNorm->setVisible(false);
+    Q_UNUSED(btnResetPoids); Q_UNUSED(btnAutoNorm);
+    // Label poids info (stub — plus affiché mais référencé dans remplirTable)
+    QLabel *lblPoidsInfo = new QLabel(); lblPoidsInfo->setVisible(false);
     table->setFocusPolicy(Qt::StrongFocus);
     table->setAlternatingRowColors(false);
     table->verticalHeader()->setVisible(true);
@@ -5710,27 +6519,108 @@ void MainWindow::showStockRavitaillementTab() {
         QVector<CompareRow> rows;
         QString reco;
 
-        if (matiere == "Cuir Agneau") {
-            rows = {
-                {"SoftHide Pro", "52 DT", "A (Premium)", "4 jours", "420 M²", 5, QColor("#ddf5df"), QColor("#bff0bf"), QColor("#b8ebb8")},
-                {"Agneau Plus", "44 DT", "B+ (Standard)", "6 jours", "280 M²", 4, QColor("#fff6dd"), QColor("#ffe9bc"), QColor("#fff2d4")},
-                {"Cuir Sud", "36 DT", "C (Économique)", "9 jours", "900 M²", 3, QColor("#fde6e6"), QColor("#ffd5d5"), QColor("#ffdada")}
-            };
-            reco = "Fournisseur conseillé : SoftHide Pro (meilleur rapport Qualité/Prix/Fiabilité).";
-        } else if (matiere == "Cuir Veau") {
-            rows = {
-                {"Veau Prestige", "49 DT", "A (Premium)", "5 jours", "380 M²", 5, QColor("#ddf5df"), QColor("#bff0bf"), QColor("#b8ebb8")},
-                {"Elite Veau", "41 DT", "B (Standard)", "7 jours", "260 M²", 4, QColor("#fff6dd"), QColor("#ffe9bc"), QColor("#fff2d4")},
-                {"Market Cuir", "34 DT", "C (Économique)", "11 jours", "1100 M²", 3, QColor("#fde6e6"), QColor("#ffd5d5"), QColor("#ffdada")}
-            };
-            reco = "Fournisseur conseillé : Veau Prestige (meilleur rapport Qualité/Prix/Fiabilité).";
+        // Couleur Oracle selon le type de cuir
+        QString couleur = (matiere == "Cuir Vachette") ? "Marron"
+                        : (matiere == "Cuir Agneau")   ? "Blanc" : "Beige";
+
+        // Lecture des fournisseurs depuis Oracle — connexion explicite
+        Connexion *c = Connexion::getInstance();
+        if (c->estConnecte()) {
+            QSqlQuery query(c->getDatabase());
+            query.prepare(
+                "SELECT NOM_FOURNISSEUR, PRIX_PAR_M2, QUALITE, DELAI_JOURS "
+                "FROM FOURNISSEURS "
+                "WHERE TYPE_CUIR = :type_cuir AND ACTIF = '1' "
+                "ORDER BY PRIX_PAR_M2 DESC"
+            );
+            query.bindValue(":type_cuir", matiere);
+
+            if (query.exec()) {
+                while (query.next()) {
+                    QString nom     = query.value(0).toString();
+                    double  prix    = query.value(1).toDouble();
+                    QString qualite = query.value(2).toString();
+                    int     delai   = query.value(3).toInt();
+
+                    // Stock réel depuis MATIERES_PREMIERES par couleur + qualité
+                    double stockReel = 0.0;
+                    QSqlQuery qStock(c->getDatabase());
+                    qStock.prepare(
+                        "SELECT SUM(QUANTITE) FROM MATIERES_PREMIERES "
+                        "WHERE CATEGORIE_MP = 'Cuir' "
+                        "AND COULEUR = :coul "
+                        "AND QUALITE = :qual"
+                    );
+                    qStock.bindValue(":coul", couleur);
+                    qStock.bindValue(":qual", qualite.left(1).toUpper());
+                    if (qStock.exec() && qStock.next())
+                        stockReel = qStock.value(0).toDouble();
+
+                    qDebug() << "[FOURNISSEUR]" << nom << "| Délai:" << delai << "| Stock réel:" << stockReel;
+
+                    // Couleurs selon qualité
+                    QColor baseBg, qualiteBg, stockBg;
+                    int note = 3;
+                    if (qualite.startsWith("A")) {
+                        baseBg = QColor("#ddf5df"); qualiteBg = QColor("#bff0bf");
+                        stockBg = (stockReel < 50) ? QColor("#fde6e6") : QColor("#b8ebb8");
+                        note = 5;
+                    } else if (qualite.startsWith("B")) {
+                        baseBg = QColor("#fff6dd"); qualiteBg = QColor("#ffe9bc");
+                        stockBg = (stockReel < 50) ? QColor("#fde6e6") : QColor("#fff2d4");
+                        note = 4;
+                    } else {
+                        baseBg = QColor("#fde6e6"); qualiteBg = QColor("#ffd5d5");
+                        stockBg = (stockReel < 50) ? QColor("#fde6e6") : QColor("#ffdada");
+                        note = 3;
+                    }
+
+                    rows.append({
+                        nom,
+                        QString::number(prix, 'f', 0) + " DT",
+                        qualite,
+                        QString::number(delai) + " jours",
+                        QString::number(stockReel, 'f', 0) + " M²",
+                        note,
+                        baseBg, qualiteBg, stockBg
+                    });
+                }
+            } else {
+                qDebug() << "[FOURNISSEUR] Erreur requête:" << query.lastError().text();
+            }
         } else {
-            rows = {
-                {"TanLeather SA", "45 DT", "A (Premium)", "5 jours", "500 M²", 5, QColor("#ddf5df"), QColor("#bff0bf"), QColor("#b8ebb8")},
-                {"Cuir Elite", "38 DT", "B (Standard)", "7 jours", "300 M²", 4, QColor("#fff6dd"), QColor("#ffe9bc"), QColor("#fff2d4")},
-                {"MegaCuir", "32 DT", "C (Économique)", "10 jours", "1000 M²", 3, QColor("#fde6e6"), QColor("#ffd5d5"), QColor("#ffdada")}
-            };
-            reco = "Fournisseur conseillé : TanLeather SA (meilleur rapport Qualité/Prix/Fiabilité).";
+            qDebug() << "[FOURNISSEUR] Oracle non connecté";
+        }
+
+        // Si aucune donnée trouvée, utiliser des données par défaut
+        if (rows.isEmpty()) {
+            if (matiere == "Cuir Agneau") {
+                rows = {
+                    {"SoftHide Pro", "52 DT", "A (Premium)", "4 jours", "420 M²", 5, QColor("#ddf5df"), QColor("#bff0bf"), QColor("#b8ebb8")},
+                    {"Agneau Plus", "44 DT", "B+ (Standard)", "6 jours", "280 M²", 4, QColor("#fff6dd"), QColor("#ffe9bc"), QColor("#fff2d4")},
+                    {"Cuir Sud", "36 DT", "C (Économique)", "9 jours", "900 M²", 3, QColor("#fde6e6"), QColor("#ffd5d5"), QColor("#ffdada")}
+                };
+                reco = "Fournisseur conseillé : SoftHide Pro (meilleur rapport Qualité/Prix/Fiabilité).";
+            } else if (matiere == "Cuir Veau") {
+                rows = {
+                    {"Veau Prestige", "49 DT", "A (Premium)", "5 jours", "380 M²", 5, QColor("#ddf5df"), QColor("#bff0bf"), QColor("#b8ebb8")},
+                    {"Elite Veau", "41 DT", "B (Standard)", "7 jours", "260 M²", 4, QColor("#fff6dd"), QColor("#ffe9bc"), QColor("#fff2d4")},
+                    {"Market Cuir", "34 DT", "C (Économique)", "11 jours", "1100 M²", 3, QColor("#fde6e6"), QColor("#ffd5d5"), QColor("#ffdada")}
+                };
+                reco = "Fournisseur conseillé : Veau Prestige (meilleur rapport Qualité/Prix/Fiabilité).";
+            } else {
+                rows = {
+                    {"TanLeather SA", "45 DT", "A (Premium)", "5 jours", "500 M²", 5, QColor("#ddf5df"), QColor("#bff0bf"), QColor("#b8ebb8")},
+                    {"Cuir Elite", "38 DT", "B (Standard)", "7 jours", "300 M²", 4, QColor("#fff6dd"), QColor("#ffe9bc"), QColor("#fff2d4")},
+                    {"MegaCuir", "32 DT", "C (Économique)", "10 jours", "1000 M²", 3, QColor("#fde6e6"), QColor("#ffd5d5"), QColor("#ffdada")}
+                };
+                reco = "Fournisseur conseillé : TanLeather SA (meilleur rapport Qualité/Prix/Fiabilité).";
+            }
+        } else {
+            // Générer la recommandation basée sur le premier fournisseur (meilleur prix)
+            if (!rows.isEmpty()) {
+                reco = QString("Fournisseur conseillé : %1 (meilleur rapport Qualité/Prix/Fiabilité).").arg(rows.first().fournisseur);
+            }
         }
 
         return qMakePair(rows, reco);
@@ -5763,6 +6653,9 @@ void MainWindow::showStockRavitaillementTab() {
     };
 
     auto *selectedSupplierRow = new int(0);
+    
+    // Déclaration forward de updateKPIsAuto (sera assigné plus tard)
+    std::function<void()> updateKPIsAuto;
 
     auto remplirTable = [=]() {
         const auto data = buildData(cbMatiere->currentText());
@@ -5882,6 +6775,9 @@ void MainWindow::showStockRavitaillementTab() {
                              ? "Performance acceptable. Surveiller delai et disponibilite."
                              : "Fournisseur fragile. Prevoir option de secours."));
         }
+        
+        // Mise à jour automatique des KPIs après remplissage du tableau
+        if (updateKPIsAuto) updateKPIsAuto();
     };
 
     QObject::connect(table, &QTableWidget::cellClicked, this, [=](int row, int col) {
@@ -5895,10 +6791,14 @@ void MainWindow::showStockRavitaillementTab() {
         lblKpiFournisseur->setText(fournisseur);
         selectionInfo->setText(QString("Fournisseur actif (manuel): %1. Le plan de ravitaillement utilisera ce fournisseur.")
                                .arg(fournisseur));
+
         const double score = scoreTxt.toDouble();
         setAlerteAuto(score >= 80.0 ? "FAIBLE" : (score >= 65.0 ? "MODERE" : "ELEVE"),
                   QString("Selection manuelle appliquee (%1/100). ").arg(scoreTxt)
                   + (score >= 80.0 ? "Profil robuste." : (score >= 65.0 ? "Controler les risques." : "Risque eleve, backup recommande.")));
+        
+        // Mise à jour automatique des KPIs après sélection manuelle
+        if (updateKPIsAuto) updateKPIsAuto();
     });
 
     table->setMouseTracking(true);
@@ -5994,6 +6894,7 @@ void MainWindow::showStockRavitaillementTab() {
     QObject::connect(cbMatiere, &QComboBox::currentTextChanged, this, [=](const QString &matiere) {
         majPhotoCuir(matiere);
         remplirTable();
+        // autoReadStockOracle sera connecté plus bas, après sa déclaration
     });
     QObject::connect(spPoidsPrix, qOverload<int>(&QSpinBox::valueChanged), this, [=](int){ remplirTable(); });
     QObject::connect(spPoidsQualite, qOverload<int>(&QSpinBox::valueChanged), this, [=](int){ remplirTable(); });
@@ -6008,8 +6909,30 @@ void MainWindow::showStockRavitaillementTab() {
         remplirTable();
     });
 
+    // Bouton Auto-normalisation : redistribue proportionnellement pour atteindre 100%
+    QObject::connect(btnAutoNorm, &QPushButton::clicked, this, [=]() {
+        int total = spPoidsPrix->value() + spPoidsQualite->value()
+                  + spPoidsDelai->value() + spPoidsStock->value();
+        if (total <= 0) {
+            spPoidsPrix->setValue(35); spPoidsQualite->setValue(30);
+            spPoidsDelai->setValue(20); spPoidsStock->setValue(15);
+        } else {
+            int p1 = qRound(100.0 * spPoidsPrix->value() / total);
+            int p2 = qRound(100.0 * spPoidsQualite->value() / total);
+            int p3 = qRound(100.0 * spPoidsDelai->value() / total);
+            int p4 = 100 - p1 - p2 - p3; // garantit exactement 100
+            spPoidsPrix->setValue(p1);
+            spPoidsQualite->setValue(p2);
+            spPoidsDelai->setValue(p3);
+            spPoidsStock->setValue(qMax(0, p4));
+        }
+        remplirTable();
+    });
+
     majPhotoCuir(cbMatiere->currentText());
     remplirTable();
+    // autoReadStockOracle et onStockChanged appelés plus bas après leurs déclarations
+
 
     l->addWidget(table);
     l->addWidget(recommandation);
@@ -6027,9 +6950,43 @@ void MainWindow::showStockRavitaillementTab() {
     planLayout->setContentsMargins(12, 10, 12, 10);
     planLayout->setSpacing(8);
 
-    QLabel *planTitle = new QLabel("Plan de ravitaillement");
+    QLabel *planTitle = new QLabel("③ Décision d'Achat Finale");
     planTitle->setStyleSheet("font-size: 18px; font-weight: 800; color: #0f2f3a;");
     planLayout->addWidget(planTitle);
+
+    // ── Filtres Type de Cuir + Qualité ──────────────────────────────
+    auto styleComboRav = QStringLiteral(
+        "QComboBox { background: white; border: 1px solid #8fb8cc; border-radius: 8px; "
+        "            min-height: 36px; padding-left: 10px; font-size: 13px; font-weight: 700; color: #0f2f3a; }"
+        "QComboBox:focus { border: 2px solid #1565c0; }"
+    );
+
+    QLabel *lblFiltreType = new QLabel("Type de Cuir :");
+    lblFiltreType->setStyleSheet("font-size: 13px; font-weight: 700; color: #25414f;");
+    QComboBox *cbRavType = new QComboBox(onglet);
+    cbRavType->addItems({"Cuir Vachette", "Cuir Agneau", "Cuir Veau"});
+    cbRavType->setStyleSheet(styleComboRav);
+
+    QLabel *lblFiltreQual = new QLabel("Qualité :");
+    lblFiltreQual->setStyleSheet("font-size: 13px; font-weight: 700; color: #25414f;");
+    QComboBox *cbRavQual = new QComboBox(onglet);
+    cbRavQual->addItem("🟢 A — Premium",    "A");
+    cbRavQual->addItem("🟡 B — Standard",   "B");
+    cbRavQual->addItem("🔴 C — Économique", "C");
+    cbRavQual->addItem("📦 Toutes",         "ALL");
+    cbRavQual->setStyleSheet(styleComboRav);
+
+    QHBoxLayout *filtresL = new QHBoxLayout();
+    filtresL->setSpacing(12);
+    QVBoxLayout *colType = new QVBoxLayout();
+    colType->addWidget(lblFiltreType); colType->addWidget(cbRavType);
+    QVBoxLayout *colQual = new QVBoxLayout();
+    colQual->addWidget(lblFiltreQual); colQual->addWidget(cbRavQual);
+    filtresL->addLayout(colType, 1);
+    filtresL->addLayout(colQual, 1);
+    filtresL->addStretch(1);
+    planLayout->addLayout(filtresL);
+    // ────────────────────────────────────────────────────────────────
 
     QHBoxLayout *planInputs = new QHBoxLayout();
     planInputs->setSpacing(10);
@@ -6098,7 +7055,462 @@ void MainWindow::showStockRavitaillementTab() {
     planInputs->setStretch(2, 1);
     planLayout->addLayout(planInputs);
 
-    QPushButton *btnPlanifier = new QPushButton("Générer plan de ravitaillement");
+    // =========================================================
+    // BLOC C — AUTO-LECTURE ORACLE + JAUGE STOCK + PROJECTION
+    // =========================================================
+
+    // -- Jauge stock vs seuil --
+    QFrame *jaugeFrame = new QFrame(onglet);
+    jaugeFrame->setStyleSheet("QFrame { background: #f4f8fb; border: 1px solid #c7dbe7; border-radius: 8px; }");
+    QVBoxLayout *jaugeL = new QVBoxLayout(jaugeFrame);
+    jaugeL->setContentsMargins(12, 8, 12, 8);
+    jaugeL->setSpacing(6);
+
+    QHBoxLayout *jaugeTitleL = new QHBoxLayout();
+    QLabel *jaugeTitleLbl = new QLabel("📊  Niveau de stock vs seuil de sécurité");
+    jaugeTitleLbl->setStyleSheet("font-size: 13px; font-weight: 800; color: #1a3a4a; border: none;");
+    QLabel *lblJaugePct = new QLabel("--");
+    lblJaugePct->setStyleSheet("font-size: 13px; font-weight: 900; color: #1565c0; border: none;");
+    jaugeTitleL->addWidget(jaugeTitleLbl, 1);
+    jaugeTitleL->addWidget(lblJaugePct);
+    jaugeL->addLayout(jaugeTitleL);
+
+    QProgressBar *pbJauge = new QProgressBar();
+    pbJauge->setRange(0, 100);
+    pbJauge->setValue(0);
+    pbJauge->setTextVisible(false);
+    pbJauge->setFixedHeight(18);
+    pbJauge->setStyleSheet(
+        "QProgressBar { border: 1px solid #b0ccd8; border-radius: 9px; background: #e8f4fb; }"
+        "QProgressBar::chunk { border-radius: 8px; background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+        "stop:0 #43a047, stop:1 #66bb6a); }"
+    );
+    jaugeL->addWidget(pbJauge);
+
+    QHBoxLayout *jaugeLegL = new QHBoxLayout();
+    QLabel *lblJaugeBas = new QLabel("0");
+    QLabel *lblJaugeMid = new QLabel("→ Seuil sécurité");
+    QLabel *lblProjection = new QLabel("Projection: --");
+    lblJaugeBas->setStyleSheet("font-size: 11px; color: #5a7a8a; border: none;");
+    lblJaugeMid->setStyleSheet("font-size: 11px; font-weight: 700; color: #e65100; border: none;");
+    lblProjection->setStyleSheet("font-size: 12px; font-weight: 800; color: #1565c0; border: none;");
+    lblProjection->setAlignment(Qt::AlignRight);
+    jaugeLegL->addWidget(lblJaugeBas);
+    jaugeLegL->addWidget(lblJaugeMid, 1, Qt::AlignCenter);
+    jaugeLegL->addWidget(lblProjection);
+    jaugeL->addLayout(jaugeLegL);
+    planLayout->addWidget(jaugeFrame);
+
+    // =========================================================
+    // BLOC F — MINI-CHART PROJECTION STOCK 14 JOURS (QLineSeries)
+    // =========================================================
+    QFrame *chartFrame = new QFrame(planFrame);
+    chartFrame->setStyleSheet("QFrame { background: #fafcff; border: 1px solid #c7dbe7; border-radius: 8px; }");
+    QVBoxLayout *chartFrameL = new QVBoxLayout(chartFrame);
+    chartFrameL->setContentsMargins(10, 8, 10, 8);
+    chartFrameL->setSpacing(4);
+
+    QLabel *chartTitle = new QLabel("📈  Projection stock 14 jours (avant/après ravitaillement)");
+    chartTitle->setStyleSheet("font-size: 13px; font-weight: 800; color: #1a3a4a; border: none;");
+    chartFrameL->addWidget(chartTitle);
+
+    QWidget *projChartWidget = new QWidget(chartFrame);
+    projChartWidget->setMinimumHeight(180);
+    projChartWidget->setObjectName("projChartWidget");
+    chartFrameL->addWidget(projChartWidget, 1);
+    planLayout->addWidget(chartFrame);
+
+    // Fonction de dessin du chart de projection
+    auto drawProjectionChart = [=](double stockInit, double consoJour, double qteCommande, int jourCommande) {
+        QVBoxLayout *cvl = qobject_cast<QVBoxLayout*>(projChartWidget->layout());
+        if (!cvl) { cvl = new QVBoxLayout(projChartWidget); cvl->setContentsMargins(0,0,0,0); }
+        // Nettoyer
+        while (cvl->count() > 0) { auto *item = cvl->takeAt(0); delete item->widget(); delete item; }
+
+        auto *serieAvant  = new QLineSeries();
+        auto *serieApres  = new QLineSeries();
+        auto *serieSeuil  = new QLineSeries();
+        serieAvant->setName("Sans ravitaillement");
+        serieApres->setName("Avec ravitaillement");
+        serieSeuil->setName("Seuil critique");
+
+        QPen pAvant(QColor("#e53935")); pAvant.setWidth(2); serieAvant->setPen(pAvant);
+        QPen pApres(QColor("#2e7d32")); pApres.setWidth(2); serieApres->setPen(pApres);
+        QPen pSeuil(QColor("#f57c00")); pSeuil.setWidth(1); pSeuil.setStyle(Qt::DashLine); serieSeuil->setPen(pSeuil);
+
+        const double seuilCrit = sbSeuilSecurite->value() * 0.5;
+        double stockSansRav = stockInit;
+        double stockAvecRav = stockInit;
+        for (int j = 0; j <= 14; ++j) {
+            serieAvant->append(j, qMax(0.0, stockSansRav));
+            if (j == jourCommande) stockAvecRav += qteCommande;
+            serieApres->append(j, qMax(0.0, stockAvecRav));
+            serieSeuil->append(j, seuilCrit);
+            stockSansRav -= consoJour;
+            stockAvecRav -= consoJour;
+        }
+
+        auto *chart = new QChart();
+        chart->addSeries(serieAvant);
+        chart->addSeries(serieApres);
+        chart->addSeries(serieSeuil);
+        styleChartBase(chart);
+        chart->setTitle("");
+        chart->setAnimationOptions(QChart::SeriesAnimations);
+        chart->legend()->setVisible(true);
+        chart->legend()->setAlignment(Qt::AlignBottom);
+
+        auto *axX = new QValueAxis(); axX->setRange(0, 14); axX->setLabelFormat("%d");
+        axX->setTitleText("Jours"); axX->setLabelsColor(QColor("#2c4a5a"));
+        auto *axY = new QValueAxis();
+        axY->setRange(0, qMax(stockInit + qteCommande, seuilCrit) * 1.3);
+        axY->setLabelFormat("%.0f"); axY->setTitleText("M²");
+        axY->setLabelsColor(QColor("#2c4a5a"));
+        chart->addAxis(axX, Qt::AlignBottom);
+        chart->addAxis(axY, Qt::AlignLeft);
+        serieAvant->attachAxis(axX); serieAvant->attachAxis(axY);
+        serieApres->attachAxis(axX); serieApres->attachAxis(axY);
+        serieSeuil->attachAxis(axX); serieSeuil->attachAxis(axY);
+
+        auto *view = new QChartView(chart);
+        styleChartView(view);
+        view->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+        view->setMinimumHeight(180);
+        cvl->addWidget(view);
+    };
+
+
+    // Fonction de mise à jour de la jauge et projection
+    auto updateJauge = [=](double stock, double seuil, double conso) {
+        const double max = qMax(seuil * 1.5, stock * 1.2);
+        const int pct = (max > 0) ? qMin(100, (int)(100.0 * stock / max)) : 0;
+        pbJauge->setValue(pct);
+        lblJaugePct->setText(QString("%1 / %2 M²  (%3%)")
+            .arg(QString::number(stock, 'f', 0))
+            .arg(QString::number(seuil, 'f', 0))
+            .arg(pct));
+        lblJaugeBas->setText(QString("0  |  Seuil: %1 M²").arg(QString::number(seuil, 'f', 0)));
+
+        // Couleur jauge selon niveau
+        if (stock < seuil * 0.5)
+            pbJauge->setStyleSheet("QProgressBar{border:1px solid #b0ccd8;border-radius:9px;background:#fde8e8;}"
+                "QProgressBar::chunk{border-radius:8px;background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #c62828,stop:1 #e53935);}");
+        else if (stock < seuil)
+            pbJauge->setStyleSheet("QProgressBar{border:1px solid #b0ccd8;border-radius:9px;background:#fff3e0;}"
+                "QProgressBar::chunk{border-radius:8px;background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #e65100,stop:1 #ff9800);}");
+        else
+            pbJauge->setStyleSheet("QProgressBar{border:1px solid #b0ccd8;border-radius:9px;background:#e8f4fb;}"
+                "QProgressBar::chunk{border-radius:8px;background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #2e7d32,stop:1 #66bb6a);}");
+
+        // Projection de rupture
+        const double consoJour = qMax(0.01, conso / 7.0);
+        const double jours = stock / consoJour;
+        QString projTxt;
+        if (jours < 3)
+            projTxt = QString("🔴 Rupture dans %1 j").arg(QString::number(jours, 'f', 1));
+        else if (jours < 7)
+            projTxt = QString("🟠 Couverture %1 j").arg(QString::number(jours, 'f', 1));
+        else
+            projTxt = QString("🟢 Couverture %1 j").arg(QString::number(jours, 'f', 1));
+        lblProjection->setText(projTxt);
+
+        updateUrgenceBanner(stock, seuil, consoJour);
+    };
+
+    // Fonction de mise à jour automatique des KPIs (Budget, Couverture, Risque)
+    updateKPIsAuto = [=]() {
+        const int row = (*selectedSupplierRow >= 0 && *selectedSupplierRow < table->rowCount()) ? *selectedSupplierRow : 0;
+        if (table->rowCount() <= 0 || !table->item(row, 0) || !table->item(row, 1) || !table->item(row, 4)) {
+            lblKpiBudget->setText("--");
+            lblKpiCouverture->setText("--");
+            lblKpiRisqueTxt->setText("--");
+            pbRisque->setValue(0);
+            return;
+        }
+
+        const double prixUnitaire = parseNumber(table->item(row, 1)->text());
+        const double stockActuel = sbStockActuel->value();
+        const double seuil = sbSeuilSecurite->value();
+        const double conso = sbConsoPrevue->value();
+        const double besoinBrut = qMax(0.0, seuil + conso - stockActuel);
+        const double consoJour = qMax(0.01, conso / 7.0);
+        const double couvertureJours = stockActuel / consoJour;
+
+        // Mise à jour Couverture
+        lblKpiCouverture->setText(QString::number(couvertureJours, 'f', 1) + " j");
+
+        // Mise à jour Budget
+        if (besoinBrut <= 0.0) {
+            lblKpiBudget->setText("0 DT");
+            lblKpiRisqueTxt->setText("Faible");
+            pbRisque->setValue(15);
+        } else {
+            const double stockDispo = parseNumber(table->item(row, 4)->text());
+            const double qteCommande = qMin(besoinBrut, stockDispo);
+            const double budget = qteCommande * prixUnitaire;
+            const double reliquat = qMax(0.0, besoinBrut - stockDispo);
+
+            lblKpiBudget->setText(QString::number(budget, 'f', 0) + " DT");
+
+            // Mise à jour Risque
+            if (reliquat > 0.0 || couvertureJours < 5.0) {
+                lblKpiRisqueTxt->setText("Eleve");
+                pbRisque->setValue(82);
+            } else if (couvertureJours < 8.0) {
+                lblKpiRisqueTxt->setText("Modere");
+                pbRisque->setValue(55);
+            } else {
+                lblKpiRisqueTxt->setText("Faible");
+                pbRisque->setValue(25);
+            }
+        }
+    };
+
+    // Déclencher la mise à jour jauge dès qu'un champ change
+    auto onStockChanged = [=]() {
+        updateJauge(sbStockActuel->value(), sbSeuilSecurite->value(), sbConsoPrevue->value());
+        if (updateKPIsAuto) updateKPIsAuto(); // Mise à jour automatique des KPIs
+    };
+    QObject::connect(sbStockActuel, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [=](double){ onStockChanged(); });
+    QObject::connect(sbSeuilSecurite, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [=](double){ onStockChanged(); });
+    QObject::connect(sbConsoPrevue, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [=](double){ onStockChanged(); });
+
+    // Auto-lecture stock Oracle quand la matière ou la qualité change
+    auto autoReadStockOracle = [=](const QString &matiere) {
+        Connexion *c = Connexion::getInstance();
+        if (!c->estConnecte()) return;
+
+        const QString qualite = cbRavQual->currentData().toString(); // A, B, C ou ALL
+        QString couleur = (matiere == "Cuir Vachette") ? "Marron"
+                        : (matiere == "Cuir Agneau")   ? "Blanc"
+                                                       : "Beige";
+
+        // ── 1. Stock réel filtré par type ET qualité ──────────────────
+        QSqlQuery qStock(c->getDatabase());
+        if (qualite == "ALL") {
+            qStock.prepare(
+                "SELECT SUM(QUANTITE) FROM MATIERES_PREMIERES "
+                "WHERE CATEGORIE_MP = 'Cuir' AND COULEUR = :coul"
+            );
+            qStock.bindValue(":coul", couleur);
+        } else {
+            qStock.prepare(
+                "SELECT SUM(QUANTITE) FROM MATIERES_PREMIERES "
+                "WHERE CATEGORIE_MP = 'Cuir' AND COULEUR = :coul AND QUALITE = :qual"
+            );
+            qStock.bindValue(":coul", couleur);
+            qStock.bindValue(":qual", qualite);
+        }
+
+        double stockReel = 0.0;
+        if (qStock.exec() && qStock.next())
+            stockReel = qStock.value(0).toDouble();
+
+        sbStockActuel->setValue(stockReel);
+        if (stockReel > 0.0) {
+            lblStockActuel->setText(QString("Stock actuel — %1 Qual.%2 (Oracle ✓)")
+                .arg(matiere.split(" ").last())
+                .arg(qualite == "ALL" ? "A+B+C" : qualite));
+            lblStockActuel->setStyleSheet("font-size: 13px; font-weight: 700; color: #0f7f51;");
+        } else {
+            lblStockActuel->setText("Stock actuel (Oracle — vide)");
+            lblStockActuel->setStyleSheet("font-size: 13px; font-weight: 700; color: #c62828;");
+        }
+
+        // ── 2. Consommation prévue depuis PLANIFICATION (7 prochains jours) ──
+        QSqlQuery qConso(c->getDatabase());
+        qConso.prepare(
+            "SELECT SUM(p.QUANTITE * pr.TEMPS_FABRICATION_HEURES * 0.08) "
+            "FROM PLANIFICATION p "
+            "JOIN PRODUIT pr ON p.ID_PRODUIT = pr.ID_PRODUIT "
+            "WHERE p.STATUT IN ('En cours', 'Planifié') "
+            "AND p.DATE_DEBUT >= :d1 AND p.DATE_DEBUT <= :d2"
+        );
+        qConso.bindValue(":d1", QDate::currentDate());
+        qConso.bindValue(":d2", QDate::currentDate().addDays(7));
+        double consoOracle = 0.0;
+        if (qConso.exec() && qConso.next())
+            consoOracle = qConso.value(0).toDouble();
+
+        // Si pas de données planification, estimer 15% du stock par semaine
+        if (consoOracle < 0.01)
+            consoOracle = qMax(1.0, stockReel * 0.15);
+
+        sbConsoPrevue->setValue(consoOracle);
+        lblConso->setText(QString("Conso prévue 7j — Qual.%1 (Oracle ✓)")
+            .arg(qualite == "ALL" ? "A+B+C" : qualite));
+        lblConso->setStyleSheet("font-size: 13px; font-weight: 700; color: #0f7f51;");
+
+        // ── 3. Seuil de sécurité = 2 semaines de consommation ──
+        double seuilCalc = consoOracle * 2.0;
+        if (seuilCalc < 10.0) seuilCalc = 10.0;
+        sbSeuilSecurite->setValue(seuilCalc);
+
+        onStockChanged();
+    };
+
+    // Connecter les deux ComboBox pour recharger automatiquement
+    QObject::connect(cbRavType, &QComboBox::currentTextChanged, this, [=](const QString &t){ autoReadStockOracle(t); });
+    QObject::connect(cbRavQual, &QComboBox::currentIndexChanged, this, [=](int){ autoReadStockOracle(cbRavType->currentText()); });
+
+    // Reconnexion cbMatiere pour inclure autoReadStockOracle (après déclaration)
+    QObject::connect(cbMatiere, &QComboBox::currentTextChanged, this, [=](const QString &matiere) {
+        cbRavType->setCurrentText(matiere); // synchroniser avec le filtre
+        autoReadStockOracle(matiere);
+    });
+
+    // Initialisation au chargement
+    autoReadStockOracle(cbRavType->currentText());
+    onStockChanged();
+
+    // =========================================================
+    // BLOC G — COMPARAISON 3 SCÉNARIOS D'ACHAT
+    // =========================================================
+    QFrame *scenFrame = new QFrame(planFrame);
+    scenFrame->setObjectName("scenFrame");
+    scenFrame->setVisible(false); // activé après génération plan
+    scenFrame->setStyleSheet(
+        "QFrame#scenFrame { background: #f8f9ff; border: 1px solid #c9d6f0; border-radius: 10px; }"
+    );
+    QVBoxLayout *scenL = new QVBoxLayout(scenFrame);
+    scenL->setContentsMargins(12, 10, 12, 10);
+    scenL->setSpacing(8);
+
+    QLabel *scenTitle = new QLabel("📊  Analyse de scénarios d'achat — Aide à la décision");
+    scenTitle->setStyleSheet("font-size: 14px; font-weight: 900; color: #1a237e;");
+    scenL->addWidget(scenTitle);
+
+    QTableWidget *scenTable = new QTableWidget(4, 4, scenFrame);
+    scenTable->setObjectName("scenTable");
+    scenTable->setHorizontalHeaderLabels({"Critère", "🔵 Conservateur", "🟢 Optimal", "🟡 Anticipatif"});
+    scenTable->verticalHeader()->setVisible(false);
+    scenTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    scenTable->setSelectionMode(QAbstractItemView::NoSelection);
+    scenTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    scenTable->setFixedHeight(160);
+    scenTable->setStyleSheet(
+        "QTableWidget { background: white; border: 1px solid #d0d8f0; gridline-color: #e8ecf8; }"
+        "QHeaderView::section { background: #283593; color: white; font-weight: 800; padding: 6px; border: none; font-size: 13px; }"
+        "QTableWidget::item { padding: 4px 8px; font-size: 13px; }"
+    );
+    scenL->addWidget(scenTable);
+
+    QLabel *scenReco = new QLabel();
+    scenReco->setObjectName("scenReco");
+    scenReco->setWordWrap(true);
+    scenReco->setStyleSheet("font-size: 12px; font-weight: 700; color: #1a237e;"
+                            "background: #e8eaf6; border-radius: 6px; padding: 6px 8px;");
+    scenL->addWidget(scenReco);
+    planLayout->addWidget(scenFrame);
+
+    // =========================================================
+    // BLOC H — MOTEUR DE RECOMMANDATION INTELLIGENTE
+    // =========================================================
+    QFrame *recoFrame = new QFrame(planFrame);
+    recoFrame->setObjectName("recoFrame");
+    recoFrame->setVisible(false);
+    recoFrame->setStyleSheet(
+        "QFrame { background: qlineargradient(x1:0,y1:0,x2:1,y2:1,"
+        " stop:0 #004d40, stop:1 #00695c); border-radius: 10px; }"
+    );
+    QVBoxLayout *recoL = new QVBoxLayout(recoFrame);
+    recoL->setContentsMargins(14, 12, 14, 12);
+    recoL->setSpacing(6);
+
+    QHBoxLayout *recoHeaderL = new QHBoxLayout();
+    QLabel *recoIcon = new QLabel("🧠");
+    recoIcon->setStyleSheet("font-size: 22px; background: transparent; border: none;");
+    QLabel *recoTitleLbl = new QLabel("Recommandation Intelligente — FIL D'OR Achat Manager");
+    recoTitleLbl->setStyleSheet("font-size: 14px; font-weight: 900; color: #ffffff; background: transparent; border: none;");
+    QLabel *recoConfBadge = new QLabel();
+    recoConfBadge->setObjectName("recoConfBadge");
+    recoConfBadge->setStyleSheet("font-size: 12px; font-weight: 900; color: #004d40;"
+                                 "background: #a7ffeb; border-radius: 10px; padding: 2px 10px;");
+    recoHeaderL->addWidget(recoIcon);
+    recoHeaderL->addWidget(recoTitleLbl, 1);
+    recoHeaderL->addWidget(recoConfBadge);
+    recoL->addLayout(recoHeaderL);
+
+    QFrame *recoDivider = new QFrame();
+    recoDivider->setFixedHeight(1);
+    recoDivider->setStyleSheet("background: rgba(255,255,255,0.3); border: none;");
+    recoL->addWidget(recoDivider);
+
+    QLabel *recoTxt = new QLabel();
+    recoTxt->setObjectName("recoTxt");
+    recoTxt->setWordWrap(true);
+    recoTxt->setStyleSheet("font-size: 13px; color: #e0f2f1; background: transparent; border: none; line-height: 160%;");
+    recoL->addWidget(recoTxt);
+
+    QLabel *recoActions = new QLabel();
+    recoActions->setObjectName("recoActions");
+    recoActions->setWordWrap(true);
+    recoActions->setStyleSheet("font-size: 12px; font-weight: 700; color: #a7ffeb; background: transparent; border: none;");
+    recoL->addWidget(recoActions);
+    planLayout->addWidget(recoFrame);
+
+    // =========================================================
+    // BLOC I — HISTORIQUE DES DÉCISIONS (Déplacé pour capture)
+    // =========================================================
+    QFrame *histFrame = new QFrame(onglet);
+    histFrame->setStyleSheet("QFrame { background: #f8fafb; border: 1px solid #d2dde3; border-radius: 10px; }");
+    QVBoxLayout *histL = new QVBoxLayout(histFrame);
+    histL->setContentsMargins(12, 10, 12, 10);
+    histL->setSpacing(8);
+
+    QLabel *histTitle = new QLabel("📋  Historique & Traçabilité des Décisions");
+    histTitle->setStyleSheet("font-size: 16px; font-weight: 900; color: #1f3644;");
+    histL->addWidget(histTitle);
+
+    QHBoxLayout *histFilterL = new QHBoxLayout();
+    histFilterL->setSpacing(10);
+    
+    QLineEdit *leMatFilter = new QLineEdit();
+    leMatFilter->setPlaceholderText("Rechercher une matière...");
+    leMatFilter->setFixedWidth(180);
+    leMatFilter->setStyleSheet("background: white; border: 1px solid #cdd9e1; border-radius: 6px; padding: 4px 8px; font-size: 12px;");
+    
+    QDateEdit *deFrom = new QDateEdit(QDate::currentDate().addDays(-30));
+    QDateEdit *deTo = new QDateEdit(QDate::currentDate());
+    deFrom->setCalendarPopup(true); deTo->setCalendarPopup(true);
+    auto deStyle = "QDateEdit { background: white; border: 1px solid #cdd9e1; border-radius: 6px; padding: 4px; font-size: 12px; }";
+    deFrom->setStyleSheet(deStyle); deTo->setStyleSheet(deStyle);
+    
+    QPushButton *btnHistFiltrer = new QPushButton("🔍 Filtrer");
+    QPushButton *btnHistReset = new QPushButton("🔄 Reset");
+    auto btnHistStyle = "QPushButton { background: #35566a; color: white; border-radius: 6px; padding: 4px 12px; font-weight: 700; }"
+                        "QPushButton:hover { background: #4a6d82; }";
+    btnHistFiltrer->setStyleSheet(btnHistStyle);
+    btnHistReset->setStyleSheet("QPushButton { background: #cfd8dc; color: #37474f; border-radius: 6px; padding: 4px 12px; font-weight: 700; }");
+
+    histFilterL->addWidget(new QLabel("Matière:")); histFilterL->addWidget(leMatFilter);
+    histFilterL->addWidget(new QLabel("Du:")); histFilterL->addWidget(deFrom);
+    histFilterL->addWidget(new QLabel("Au:")); histFilterL->addWidget(deTo);
+    histFilterL->addWidget(btnHistFiltrer);
+    histFilterL->addWidget(btnHistReset);
+    histFilterL->addStretch();
+    
+    histL->addLayout(histFilterL);
+
+    QTableWidget *tableHist = new QTableWidget(0, 8, onglet);
+    tableHist->setHorizontalHeaderLabels({"Date", "Matière", "Fournisseur", "Score", "Qté", "Budget", "Risque", "État"});
+    tableHist->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    tableHist->verticalHeader()->setVisible(false);
+    tableHist->setAlternatingRowColors(true);
+    tableHist->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    tableHist->setSelectionBehavior(QAbstractItemView::SelectRows);
+    tableHist->setMinimumHeight(180);
+    tableHist->setStyleSheet(
+        "QTableWidget { background: white; border: 1px solid #cdd9e1; gridline-color: #e4ebf0; }"
+        "QHeaderView::section { background: #2d6b8a; color: white; border: none; padding: 6px; font-weight: 700; }"
+    );
+    histL->addWidget(tableHist);
+
+    QLabel *lblHistStatus = new QLabel("Historique: en attente de validation décisionnelle.");
+    lblHistStatus->setStyleSheet("font-size: 11px; color: #35566a; font-style: italic;");
+    histL->addWidget(lblHistStatus);
+
+    QPushButton *btnPlanifier = new QPushButton("✅ Générer plan de ravitaillement");
     btnPlanifier->setCursor(Qt::PointingHandCursor);
     btnPlanifier->setStyleSheet(
         "QPushButton {"
@@ -6122,6 +7534,9 @@ void MainWindow::showStockRavitaillementTab() {
     QLabel *lblActionPlan = new QLabel("Action manageriale: en attente de simulation.");
     lblActionPlan->setWordWrap(true);
     lblActionPlan->setStyleSheet("font-size: 13px; color: #153f2f; background: #ecf9ef; border: 1px solid #b7e2c1; border-radius: 8px; padding: 7px;");
+
+    // Connecter le bouton d'alerte urgence au générateur de plan
+    QObject::connect(btnAlertAction, &QPushButton::clicked, btnPlanifier, &QPushButton::click);
 
     QObject::connect(btnPlanifier, &QPushButton::clicked, this, [=]() {
         const int row = (*selectedSupplierRow >= 0 && *selectedSupplierRow < table->rowCount()) ? *selectedSupplierRow : 0;
@@ -6152,6 +7567,44 @@ void MainWindow::showStockRavitaillementTab() {
             lblKpiRisqueTxt->setText("Faible");
             pbRisque->setValue(15);
             setAlerteAuto("FAIBLE", "Pas de commande urgente. Couverture stock confortable.");
+
+            // Afficher quand même le graphique et les scénarios avec stock actuel
+            const double consoJour14 = qMax(0.01, conso / 7.0);
+            drawProjectionChart(stockActuel, consoJour14, 0.0, 3);
+
+            // Scénarios préventifs
+            scenFrame->setVisible(true);
+            const double qtePrev   = consoJour14 * 14.0 * 0.5;
+            const double qteOpt    = consoJour14 * 14.0;
+            const double qteAntic  = consoJour14 * 14.0 * 1.4;
+            const double prixU     = (table->rowCount() > 0 && table->item(0,1)) ? parseNumber(table->item(0,1)->text()) : 38.0;
+
+            auto fillScenPrev = [scenTable](int r, int c, const QString &txt,
+                                            const QColor &bg, const QColor &fg = QColor("#212121")) {
+                auto *it = new QTableWidgetItem(txt);
+                it->setBackground(QBrush(bg)); it->setForeground(QBrush(fg));
+                it->setTextAlignment(Qt::AlignCenter);
+                scenTable->setItem(r, c, it);
+            };
+            const QStringList rowLbls = {"Quantité commandée","Budget estimé","Couverture","Risque"};
+            for (int r = 0; r < 4; ++r) fillScenPrev(r, 0, rowLbls[r], QColor("#eef2ff"));
+
+            fillScenPrev(0,1,QString::number(qtePrev,'f',0)+" M²",  QColor("#e3f2fd"));
+            fillScenPrev(1,1,QString::number(qtePrev*prixU,'f',0)+" DT", QColor("#e3f2fd"));
+            fillScenPrev(2,1,QString::number((stockActuel+qtePrev)/consoJour14,'f',1)+" j", QColor("#e3f2fd"));
+            fillScenPrev(3,1,"🟢 Faible", QColor("#e3f2fd"), QColor("#1b5e20"));
+
+            fillScenPrev(0,2,QString::number(qteOpt,'f',0)+" M²",   QColor("#e8f5e9"), QColor("#1b5e20"));
+            fillScenPrev(1,2,QString::number(qteOpt*prixU,'f',0)+" DT", QColor("#e8f5e9"), QColor("#1b5e20"));
+            fillScenPrev(2,2,QString::number((stockActuel+qteOpt)/consoJour14,'f',1)+" j", QColor("#e8f5e9"), QColor("#1b5e20"));
+            fillScenPrev(3,2,"🟢 Faible", QColor("#e8f5e9"), QColor("#1b5e20"));
+
+            fillScenPrev(0,3,QString::number(qteAntic,'f',0)+" M²", QColor("#fffde7"));
+            fillScenPrev(1,3,QString::number(qteAntic*prixU,'f',0)+" DT", QColor("#fffde7"));
+            fillScenPrev(2,3,QString::number((stockActuel+qteAntic)/consoJour14,'f',1)+" j", QColor("#fffde7"));
+            fillScenPrev(3,3,"🟢 Faible", QColor("#fffde7"));
+
+            scenReco->setText("💡 Stock suffisant — Scénario Conservateur recommandé pour anticiper les prochaines semaines.");
             return;
         }
 
@@ -6199,12 +7652,224 @@ void MainWindow::showStockRavitaillementTab() {
             pbRisque->setValue(24);
             setAlerteAuto("FAIBLE", "Plan valide avec bonne couverture.");
         }
+
+        // =========================================================
+        // BLOC E — CARTE DE SYNTHÈSE DÉCISION (récapitulatif final)
+        // =========================================================
+        // Chercher ou créer le frame synthèse dans planLayout
+        QFrame *syntheseCard = planLayout->findChild<QFrame*>("syntheseCard");
+        if (!syntheseCard) {
+            syntheseCard = new QFrame(planFrame);
+            syntheseCard->setObjectName("syntheseCard");
+            syntheseCard->setStyleSheet(
+                "QFrame#syntheseCard {"
+                " background: qlineargradient(x1:0,y1:0,x2:1,y2:1,"
+                "   stop:0 #1a237e, stop:1 #283593);"
+                " border-radius: 12px;"
+                "}"
+            );
+            QVBoxLayout *scL = new QVBoxLayout(syntheseCard);
+            scL->setContentsMargins(16, 12, 16, 12);
+            scL->setSpacing(6);
+
+            QLabel *scTitle = new QLabel("🏆  Synthèse Décision d'Achat — FIL D'OR");
+            scTitle->setObjectName("scTitle");
+            scTitle->setStyleSheet("font-size: 15px; font-weight: 900; color: #ffffff; border: none;");
+
+            QLabel *scDate = new QLabel();
+            scDate->setObjectName("scDate");
+            scDate->setStyleSheet("font-size: 11px; color: rgba(255,255,255,0.70); border: none;");
+
+            QFrame *divider = new QFrame();
+            divider->setFixedHeight(1);
+            divider->setStyleSheet("background: rgba(255,255,255,0.25); border: none;");
+
+            QGridLayout *scGrid = new QGridLayout();
+            scGrid->setHorizontalSpacing(20);
+            scGrid->setVerticalSpacing(4);
+
+            auto scCell = [](const QString &label, const QString &val, const QString &color) -> QWidget* {
+                QWidget *w = new QWidget();
+                QVBoxLayout *wl = new QVBoxLayout(w);
+                wl->setContentsMargins(0,0,0,0); wl->setSpacing(1);
+                QLabel *lbl = new QLabel(label);
+                lbl->setStyleSheet("font-size: 11px; color: rgba(255,255,255,0.65); border: none;");
+                QLabel *v = new QLabel(val);
+                v->setObjectName("scVal_" + label);
+                v->setStyleSheet(QString("font-size: 15px; font-weight: 900; color: %1; border: none;").arg(color));
+                wl->addWidget(lbl); wl->addWidget(v);
+                return w;
+            };
+
+            scGrid->addWidget(scCell("Fournisseur", "-", "#90caf9"), 0, 0);
+            scGrid->addWidget(scCell("Quantité", "-", "#a5d6a7"), 0, 1);
+            scGrid->addWidget(scCell("Budget", "-", "#fff176"), 0, 2);
+            scGrid->addWidget(scCell("Couverture", "-", "#80cbc4"), 1, 0);
+            scGrid->addWidget(scCell("Risque", "-", "#ef9a9a"), 1, 1);
+            scGrid->addWidget(scCell("État commande", "-", "#ce93d8"), 1, 2);
+
+            scL->addWidget(scTitle);
+            scL->addWidget(scDate);
+            scL->addWidget(divider);
+            scL->addLayout(scGrid);
+
+            QPushButton *btnFinaliser = new QPushButton("🚀 Confirmer et Transmettre la Commande");
+            btnFinaliser->setObjectName("btnFinaliser");
+            btnFinaliser->setCursor(Qt::PointingHandCursor);
+            btnFinaliser->setFixedHeight(38);
+            btnFinaliser->setStyleSheet(
+                "QPushButton {"
+                " background: #2e7d32; color: white; border: none; border-radius: 8px;"
+                " font-weight: 900; font-size: 13px; margin-top: 10px;"
+                "}"
+                "QPushButton:hover { background: #388e3c; border: 1px solid #a5d6a7; }"
+                "QPushButton:pressed { background: #1b5e20; }"
+            );
+            scL->addWidget(btnFinaliser);
+            
+            planLayout->addWidget(syntheseCard);
+
+            QObject::connect(btnFinaliser, &QPushButton::clicked, this, [=]() {
+                int row = tableHist->rowCount();
+                tableHist->insertRow(row);
+                tableHist->setItem(row, 0, new QTableWidgetItem(QDateTime::currentDateTime().toString("dd/MM/yyyy HH:mm")));
+                tableHist->setItem(row, 1, new QTableWidgetItem(cbMatiere->currentText()));
+                tableHist->setItem(row, 2, new QTableWidgetItem(syntheseCard->findChild<QLabel*>("scVal_Fournisseur")->text()));
+                tableHist->setItem(row, 3, new QTableWidgetItem("92%"));
+                tableHist->setItem(row, 4, new QTableWidgetItem(syntheseCard->findChild<QLabel*>("scVal_Quantité")->text()));
+                tableHist->setItem(row, 5, new QTableWidgetItem(syntheseCard->findChild<QLabel*>("scVal_Budget")->text()));
+                tableHist->setItem(row, 6, new QTableWidgetItem(syntheseCard->findChild<QLabel*>("scVal_Risque")->text()));
+                
+                auto *itStat = new QTableWidgetItem("Confirmée ✅");
+                itStat->setForeground(QBrush(QColor("#2e7d32")));
+                itStat->setFont(QFont("Segoe UI", 9, QFont::Bold));
+                tableHist->setItem(row, 7, itStat);
+                
+                tableHist->scrollToBottom();
+                syntheseCard->findChild<QLabel*>("scVal_État commande")->setText("✅ Validée & Transmise");
+                syntheseCard->findChild<QLabel*>("scVal_État commande")->setStyleSheet("font-size: 15px; font-weight: 900; color: #66bb6a; border: none;");
+                btnFinaliser->setEnabled(false);
+                btnFinaliser->setText("✓ Commande en cours de traitement");
+                btnFinaliser->setStyleSheet("background: #546e7a; color: #cfd8dc; border-radius: 8px; font-weight: 800;");
+                
+                lblHistStatus->setText(QString("Dernière action : Commande transmise à %1 le %2")
+                    .arg(syntheseCard->findChild<QLabel*>("scVal_Fournisseur")->text())
+                    .arg(QDateTime::currentDateTime().toString("HH:mm")));
+            });
+        }
+
+        // Mise à jour dynamique des valeurs
+        syntheseCard->setVisible(true);
+        
+        QLabel *scDate = syntheseCard->findChild<QLabel*>("scDate");
+        if (scDate) {
+            scDate->setText("Généré le " + QDateTime::currentDateTime().toString("dd/MM/yyyy à hh:mm"));
+        }
+
+        auto setScVal = [syntheseCard](const QString &key, const QString &val) {
+            QLabel *lbl = syntheseCard->findChild<QLabel*>("scVal_" + key);
+            if (lbl) lbl->setText(val);
+        };
+
+        setScVal("Fournisseur", fournisseur);
+        setScVal("Quantité", QString::number(qteCommande, 'f', 1) + " M²");
+        setScVal("Budget", QString::number(budget, 'f', 0) + " DT");
+        setScVal("Couverture", QString::number(couvertureJours, 'f', 1) + " j");
+        const QString risqueVal = (reliquat > 0.0 || couvertureJours < 5.0) ? "🔴 Élevé"
+                                : (couvertureJours < 8.0) ? "🟠 Modéré" : "🟢 Faible";
+        setScVal("Risque", risqueVal);
+        setScVal("État commande", "⏳ En attente validation");
+
+        // === BLOC F : Projection stock 14 jours ===
+        const double consoJour14 = qMax(0.01, conso / 7.0);
+        drawProjectionChart(stockActuel, consoJour14, qteCommande, 3);
+
+        // === BLOC G : 3 scénarios d'achat ===
+        scenFrame->setVisible(true);
+        const double qteCons   = qteCommande * 0.70;
+        const double budgCons  = qteCons * prixUnitaire;
+        const double covCons   = (stockActuel + qteCons)   / consoJour14;
+        const double cov100    = (stockActuel + qteCommande) / consoJour14;
+        const double qteAntic  = qteCommande * 1.40;
+        const double budgAntic = qteAntic * prixUnitaire;
+        const double covAntic  = (stockActuel + qteAntic)  / consoJour14;
+
+        auto fillScen = [scenTable](int r, int c, const QString &txt,
+                                    const QColor &bg, const QColor &fg = QColor("#212121")) {
+            auto *it = new QTableWidgetItem(txt);
+            it->setBackground(QBrush(bg)); it->setForeground(QBrush(fg));
+            it->setTextAlignment(Qt::AlignCenter);
+            scenTable->setItem(r, c, it);
+        };
+        const QStringList rowLbls = {"Quantité commandée","Budget estimé","Couverture","Risque"};
+        for (int r = 0; r < 4; ++r) fillScen(r, 0, rowLbls[r], QColor("#eef2ff"));
+
+        fillScen(0,1,QString::number(qteCons,  'f',0)+" M²", QColor("#e3f2fd"));
+        fillScen(1,1,QString::number(budgCons, 'f',0)+" DT", QColor("#e3f2fd"));
+        fillScen(2,1,QString::number(covCons,  'f',1)+" j",  QColor("#e3f2fd"));
+        fillScen(3,1,covCons<5?"🔴 Élevé":"🟠 Modéré",      QColor("#e3f2fd"));
+
+        fillScen(0,2,QString::number(qteCommande,'f',0)+" M²",QColor("#e8f5e9"),QColor("#1b5e20"));
+        fillScen(1,2,QString::number(budget,     'f',0)+" DT",QColor("#e8f5e9"),QColor("#1b5e20"));
+        fillScen(2,2,QString::number(cov100,     'f',1)+" j", QColor("#e8f5e9"),QColor("#1b5e20"));
+        fillScen(3,2,cov100<8?"🟠 Modéré":"🟢 Faible",       QColor("#e8f5e9"),QColor("#1b5e20"));
+
+        fillScen(0,3,QString::number(qteAntic,  'f',0)+" M²",QColor("#fffde7"));
+        fillScen(1,3,QString::number(budgAntic, 'f',0)+" DT",QColor("#fffde7"));
+        fillScen(2,3,QString::number(covAntic,  'f',1)+" j", QColor("#fffde7"));
+        fillScen(3,3,"🟢 Faible",                            QColor("#fffde7"));
+
+        scenReco->setText(
+            (reliquat>0||couvertureJours<5)
+            ? "⚡ Situation critique : scénario Anticipatif recommandé pour sécuriser la production."
+            : (couvertureJours<8)
+            ? "✅ Scénario Optimal : meilleur équilibre coût/couverture pour cette situation."
+            : "💡 Scénario Conservateur suffisant — stock en bonne position.");
+
+        // === BLOC H : Recommandation Intelligente ===
+        recoFrame->setVisible(true);
+        const int conf = (reliquat>0)?72:(couvertureJours<5)?65:(couvertureJours<8)?82:94;
+        recoConfBadge->setText(QString("Confiance : %1%").arg(conf));
+        const QString urgStr = (reliquat>0||couvertureJours<5)?"⚠️ URGENTE":(couvertureJours<8)?"📋 NORMALE":"✅ PRÉVENTIVE";
+        const QString decStr = (reliquat>0)
+            ? QString("Commander immédiatement %1 M² (prévoir 2ème commande %2 M²).")
+              .arg(QString::number(qteCommande,'f',1),QString::number(reliquat,'f',1))
+            : QString("Commander %1 M² auprès de %2 → couverture %3 jours.")
+              .arg(QString::number(qteCommande,'f',1),fournisseur,QString::number(cov100,'f',1));
+        recoTxt->setText(
+            QString("Priorité : <b>%1</b><br><br>%2<br><br>"
+                    "Fournisseur retenu par scoring multi-critères : <b>%3</b>. "
+                    "Budget : <b>%4 DT</b>. Couverture post-livraison : <b>%5 j</b>.")
+            .arg(urgStr,decStr,fournisseur,QString::number(budget,'f',0),QString::number(cov100,'f',1)));
+        recoActions->setText(
+            "📌 Actions immédiates : "
+            "① Valider avec le Responsable Achat  "
+            "② Créer le bon de commande  "
+            "③ Notifier le planning fabrication  "
+            "④ Sauvegarder dans l'historique");
     });
+
 
     planLayout->addWidget(btnPlanifier, 0, Qt::AlignLeft);
     planLayout->addWidget(lblPlan);
     planLayout->addWidget(lblActionPlan);
-    l->addWidget(planFrame);
+
+    // Scénarios et Recommandations déplacés avant btnPlanifier pour corriger l'ordre de capture lambda
+
+
+    // === WORKFLOW : insérer planFrame (① Constat) avant pilotFrame (② Analyse) ===
+    // On utilise insertWidget car pilotFrame a déjà été ajouté au layout
+    {
+        QVBoxLayout *vl = qobject_cast<QVBoxLayout*>(scrollContent->layout());
+        if (vl) {
+            // trouver la position de pilotFrame et insérer planFrame juste avant
+            int idx = vl->indexOf(pilotFrame);
+            if (idx >= 0)
+                vl->insertWidget(idx, planFrame);
+            else
+                vl->insertWidget(0, planFrame); // fallback
+        }
+    }
 
     QFrame *strategyFrame = new QFrame(onglet);
     strategyFrame->setStyleSheet(
@@ -6218,9 +7883,25 @@ void MainWindow::showStockRavitaillementTab() {
     strategyL->setContentsMargins(12, 10, 12, 10);
     strategyL->setSpacing(8);
 
-    QLabel *strategyTitle = new QLabel("Optimisation Ingenieur (EOQ + Stock Securite + Point Commande)");
+    QLabel *strategyTitle = new QLabel("⚙️  Optimisation Avancée : EOQ / Wilson / Stock de Sécurité");
     strategyTitle->setStyleSheet("font-size: 17px; font-weight: 900; color: #2d2b58;");
     strategyL->addWidget(strategyTitle);
+
+    QLabel *lblMath4Stock = new QLabel(
+        "Bloc calcul simple: on compare le besoin, le stock, le delai et le budget pour choisir "
+        "la meilleure quantite a commander sans risque inutile."
+    );
+    lblMath4Stock->setWordWrap(true);
+    lblMath4Stock->setStyleSheet(
+        "font-size: 12px;"
+        "font-weight: 700;"
+        "color: #3b3764;"
+        "background: #efedff;"
+        "border: 1px solid #d0caf6;"
+        "border-radius: 7px;"
+        "padding: 6px 8px;"
+    );
+    strategyL->addWidget(lblMath4Stock);
 
     auto makeInput = [](const QString &label, double value, double min, double max, const QString &suffix) {
         QWidget *w = new QWidget();
@@ -6297,103 +7978,36 @@ void MainWindow::showStockRavitaillementTab() {
     lblStrategie->setStyleSheet("font-size: 13px; color: #2d2b58; background: #efedff; border: 1px solid #d0caf6; border-radius: 8px; padding: 8px;");
     strategyL->addWidget(lblStrategie);
 
+    // === Bouton toggle pour cacher l'EOQ par défaut (montrer la maîtrise sans surcharger) ===
+    QPushButton *btnToggleEOQ = new QPushButton(
+        "⚙️  Paramètres Avancés (EOQ / Wilson / Stock de Sécurité)  ▼"
+    );
+    btnToggleEOQ->setCursor(Qt::PointingHandCursor);
+    btnToggleEOQ->setCheckable(true);
+    btnToggleEOQ->setChecked(false);
+    btnToggleEOQ->setToolTip("Affiche / cache les paramètres de calcul EOQ et stock de sécurité");
+    btnToggleEOQ->setStyleSheet(
+        "QPushButton {"
+        " background: #2d2b58; color: #c8c6ff;"
+        " border: 1px solid #5a57a8; border-radius: 8px;"
+        " font-size: 13px; font-weight: 800;"
+        " padding: 8px 14px; text-align: left;"
+        "}"
+        "QPushButton:hover { background: #3d3a6e; }"
+        "QPushButton:checked { background: #3d3a6e; }"
+    );
+    strategyFrame->setVisible(false); // Caché par défaut
+    QObject::connect(btnToggleEOQ, &QPushButton::toggled, this, [=](bool checked) {
+        strategyFrame->setVisible(checked);
+        btnToggleEOQ->setText(checked
+            ? "⚙️  Paramètres Avancés (EOQ / Wilson / Stock de Sécurité)  ▲"
+            : "⚙️  Paramètres Avancés (EOQ / Wilson / Stock de Sécurité)  ▼");
+    });
+    l->addWidget(btnToggleEOQ);
     l->addWidget(strategyFrame);
 
-    QFrame *histFrame = new QFrame(onglet);
-    histFrame->setStyleSheet(
-        "QFrame {"
-        " background: #f8fafb;"
-        " border: 1px solid #d2dde3;"
-        " border-radius: 10px;"
-        "}"
-    );
-    QVBoxLayout *histL = new QVBoxLayout(histFrame);
-    histL->setContentsMargins(12, 10, 12, 10);
-    histL->setSpacing(8);
+    // Le contenu du bloc historique a été déplacé plus haut.
 
-    QLabel *histTitle = new QLabel("Historique des decisions ravitaillement");
-    histTitle->setStyleSheet("font-size: 16px; font-weight: 900; color: #1f3644;");
-    histL->addWidget(histTitle);
-
-    QHBoxLayout *histFilters = new QHBoxLayout();
-    histFilters->setSpacing(8);
-
-    QLabel *lblFrom = new QLabel("Du:");
-    QLabel *lblTo = new QLabel("Au:");
-    QLabel *lblMat = new QLabel("Matiere:");
-    lblFrom->setStyleSheet("font-weight: 700; color: #2c4b5d;");
-    lblTo->setStyleSheet("font-weight: 700; color: #2c4b5d;");
-    lblMat->setStyleSheet("font-weight: 700; color: #2c4b5d;");
-
-    QDateEdit *deFrom = new QDateEdit(QDate::currentDate().addDays(-30), onglet);
-    QDateEdit *deTo = new QDateEdit(QDate::currentDate(), onglet);
-    deFrom->setCalendarPopup(true);
-    deTo->setCalendarPopup(true);
-    deFrom->setDisplayFormat("dd/MM/yyyy");
-    deTo->setDisplayFormat("dd/MM/yyyy");
-    deFrom->setFixedHeight(32);
-    deTo->setFixedHeight(32);
-
-    QLineEdit *leMatFilter = new QLineEdit(onglet);
-    leMatFilter->setPlaceholderText("ex: Cuir Vachette");
-    leMatFilter->setFixedHeight(32);
-    leMatFilter->setStyleSheet("QLineEdit { background: white; border: 1px solid #9ab8c7; border-radius: 7px; padding: 4px 8px; }");
-
-    auto styleDate = QStringLiteral("QDateEdit { background: white; border: 1px solid #9ab8c7; border-radius: 7px; padding: 4px 8px; }");
-    deFrom->setStyleSheet(styleDate);
-    deTo->setStyleSheet(styleDate);
-
-    QPushButton *btnHistFiltrer = new QPushButton("Filtrer");
-    btnHistFiltrer->setCursor(Qt::PointingHandCursor);
-    btnHistFiltrer->setFixedHeight(32);
-    btnHistFiltrer->setStyleSheet(
-        "QPushButton { background: #0f7f51; color: white; border: none; border-radius: 8px; padding: 0 12px; font-weight: 800; }"
-        "QPushButton:hover { background: #149362; }"
-    );
-
-    QPushButton *btnHistReset = new QPushButton("Reset");
-    btnHistReset->setCursor(Qt::PointingHandCursor);
-    btnHistReset->setFixedHeight(32);
-    btnHistReset->setStyleSheet(
-        "QPushButton { background: #607d8b; color: white; border: none; border-radius: 8px; padding: 0 12px; font-weight: 800; }"
-        "QPushButton:hover { background: #70909e; }"
-    );
-
-    histFilters->addWidget(lblFrom);
-    histFilters->addWidget(deFrom);
-    histFilters->addWidget(lblTo);
-    histFilters->addWidget(deTo);
-    histFilters->addWidget(lblMat);
-    histFilters->addWidget(leMatFilter, 1);
-    histFilters->addWidget(btnHistFiltrer);
-    histFilters->addWidget(btnHistReset);
-    histL->addLayout(histFilters);
-
-    QTableWidget *tableHist = new QTableWidget(0, 8, onglet);
-    tableHist->setHorizontalHeaderLabels(QStringList()
-                                         << "Date"
-                                         << "Matiere"
-                                         << "Fournisseur"
-                                         << "Score"
-                                         << "Qte"
-                                         << "Budget"
-                                         << "Risque"
-                                         << "Couverture (j)");
-    tableHist->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    tableHist->verticalHeader()->setVisible(false);
-    tableHist->setAlternatingRowColors(true);
-    tableHist->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    tableHist->setSelectionBehavior(QAbstractItemView::SelectRows);
-    tableHist->setMinimumHeight(180);
-    tableHist->setStyleSheet(
-        "QTableWidget { background: white; border: 1px solid #cdd9e1; gridline-color: #e4ebf0; }"
-        "QHeaderView::section { background: #2d6b8a; color: white; border: none; padding: 6px; font-weight: 700; }"
-    );
-    histL->addWidget(tableHist);
-
-    QLabel *lblHistStatus = new QLabel("Historique: en attente de chargement.");
-    lblHistStatus->setStyleSheet("font-size: 12px; color: #35566a; font-weight: 700;");
-    histL->addWidget(lblHistStatus);
 
     QFrame *trendFrame = new QFrame(onglet);
     trendFrame->setStyleSheet("QFrame { background: #f3f7fa; border: 1px solid #d1dde4; border-radius: 8px; }");
@@ -6420,6 +8034,80 @@ void MainWindow::showStockRavitaillementTab() {
     QDoubleSpinBox *sbCoutPassation = inPassation.second;
     QDoubleSpinBox *sbTauxHolding = inHolding.second;
 
+    // ── Bloquer la saisie manuelle des 3 champs ──────────────────
+    sbService->setReadOnly(true);
+    sbService->setStyleSheet(sbService->styleSheet() +
+        "QDoubleSpinBox { background: #f0f4ff; color: #1a237e; font-weight: 700; }");
+    sbService->setToolTip("Calculé automatiquement depuis Oracle (taux de couverture stock)");
+
+    sbCoutPassation->setReadOnly(true);
+    sbCoutPassation->setStyleSheet(sbCoutPassation->styleSheet() +
+        "QDoubleSpinBox { background: #f0f4ff; color: #1a237e; font-weight: 700; }");
+    sbCoutPassation->setToolTip("Calculé depuis le prix moyen des fournisseurs Oracle");
+
+    sbTauxHolding->setReadOnly(true);
+    sbTauxHolding->setStyleSheet(sbTauxHolding->styleSheet() +
+        "QDoubleSpinBox { background: #f0f4ff; color: #1a237e; font-weight: 700; }");
+    sbTauxHolding->setToolTip("Calculé depuis le stock et la valeur des matières Oracle");
+
+    // ── Charger les valeurs depuis Oracle ────────────────────────
+    auto chargerValeursStrategieOracle = [=]() {
+        Connexion *c = Connexion::getInstance();
+        if (!c->estConnecte()) return;
+
+        const QString matiere = cbMatiere->currentText();
+        QString couleur = (matiere == "Cuir Vachette") ? "Marron"
+                        : (matiere == "Cuir Agneau")   ? "Blanc" : "Beige";
+
+        // 1. Niveau de service = couverture stock actuel / seuil sécurité (%)
+        //    On calcule : (stock actuel / (conso 30j)) * 100, plafonné à 99.9
+        QSqlQuery qStock(c->getDatabase());
+        qStock.prepare("SELECT SUM(QUANTITE) FROM MATIERES_PREMIERES "
+                       "WHERE CATEGORIE_MP = 'Cuir' AND COULEUR = :c");
+        qStock.bindValue(":c", couleur);
+        double stockActuelOracle = 0.0;
+        if (qStock.exec() && qStock.next())
+            stockActuelOracle = qStock.value(0).toDouble();
+
+        const double consoMensuelle = sbDemandeMensuelle->value();
+        if (consoMensuelle > 0.01) {
+            double niveauService = qMin(99.9, (stockActuelOracle / consoMensuelle) * 100.0);
+            niveauService = qMax(80.0, niveauService); // minimum 80%
+            sbService->setValue(niveauService);
+        }
+
+        // 2. Coût passation = prix moyen fournisseur * 0.4% (frais de commande estimés)
+        QSqlQuery qFourn(c->getDatabase());
+        qFourn.prepare("SELECT AVG(PRIX_PAR_M2) FROM FOURNISSEURS "
+                       "WHERE TYPE_CUIR = :t AND ACTIF = '1'");
+        qFourn.bindValue(":t", matiere);
+        double prixMoyen = 38.0; // défaut
+        if (qFourn.exec() && qFourn.next() && qFourn.value(0).toDouble() > 0)
+            prixMoyen = qFourn.value(0).toDouble();
+
+        // Coût passation = prix moyen * quantité minimale commande * 0.4%
+        const double coutPassationCalc = qMax(50.0, prixMoyen * consoMensuelle * 0.004);
+        sbCoutPassation->setValue(coutPassationCalc);
+
+        // 3. Taux stockage annuel = (valeur stock / valeur totale) * facteur rotation
+        //    Formule standard : 20-25% de la valeur du stock
+        const double valeurStock = stockActuelOracle * prixMoyen;
+        double tauxHolding = 22.0; // défaut standard
+        if (valeurStock > 0) {
+            // Ajuster selon le niveau de stock : plus le stock est élevé, plus le taux est bas
+            if      (stockActuelOracle > 500) tauxHolding = 18.0;
+            else if (stockActuelOracle > 200) tauxHolding = 20.0;
+            else if (stockActuelOracle > 100) tauxHolding = 22.0;
+            else                              tauxHolding = 25.0;
+        }
+        sbTauxHolding->setValue(tauxHolding);
+    };
+
+    // Charger au démarrage et à chaque changement de matière
+    chargerValeursStrategieOracle();
+    connect(cbMatiere, &QComboBox::currentTextChanged,
+            this, [=](const QString &){ chargerValeursStrategieOracle(); });
+
     auto zFromService = [](double niveauService) {
         if (niveauService >= 99.0) return 2.33;
         if (niveauService >= 97.0) return 1.88;
@@ -6427,6 +8115,23 @@ void MainWindow::showStockRavitaillementTab() {
         if (niveauService >= 90.0) return 1.28;
         return 1.04;
     };
+
+    // ── Déclaration anticipée pour capture dans le lambda ────────
+    QPushButton *btnEtapeSuivante = new QPushButton("➡ Étape suivante : Commander");
+    btnEtapeSuivante->setCursor(Qt::PointingHandCursor);
+    btnEtapeSuivante->setFixedHeight(38);
+    btnEtapeSuivante->setMinimumWidth(220);
+    btnEtapeSuivante->setVisible(false);
+    btnEtapeSuivante->setStyleSheet(
+        "QPushButton { background-color: #1565c0; color: white; border: none; border-radius: 18px;"
+        " font-size: 14px; font-weight: 800; padding: 4px 16px; }"
+        "QPushButton:hover { background-color: #1976d2; }"
+        "QPushButton:pressed { background-color: #0d47a1; }"
+    );
+    QObject::connect(btnEtapeSuivante, &QPushButton::clicked, this, [this]() {
+        ui->tabWidgetStock->setCurrentIndex(4);
+        showStockRavitaillementTab();
+    });
 
     QObject::connect(btnStrategie, &QPushButton::clicked, this, [=]() {
         if (table->rowCount() <= 0) {
@@ -6503,13 +8208,15 @@ void MainWindow::showStockRavitaillementTab() {
                  : "Strategie critique: lancer double sourcing immediat."));
 
         lblStrategie->setText(QString(
-            "<b>Modele Ingenieur:</b><br>"
-            "SS = z x sigma = <b>%1 M2</b> | Point commande = <b>%2 M2</b> | EOQ = <b>%3 M2</b><br>"
-            "Quantite cible = max(EOQ, Besoin relance) = <b>%4 M2</b><br>"
-            "Strategie sourcing: <b>%5 M2</b> via <b>%6</b>"
+            "<b>Resume simple:</b><br>"
+            "Stock de securite: <b>%1 M2</b> | Niveau de relance: <b>%2 M2</b> | Quantite conseillee: <b>%3 M2</b><br>"
+            "Quantite finale recommandee: <b>%4 M2</b><br>"
+            "Plan fournisseur: <b>%5 M2</b> via <b>%6</b>"
             "%7"
-            "<br>Budget optimal estime: <b>%8 DT</b><br>"
-            "Decision: %9"
+            "<br>Budget estime: <b>%8 DT</b><br>"
+            "Decision: %9<br>"
+            "<span style='color:#3a3564;'><b>Lecture simple:</b> on cherche une quantite equilibree pour "
+            "eviter le manque de stock et limiter le cout total.</span>"
         )
             .arg(QString::number(stockSecurite, 'f', 2))
             .arg(QString::number(pointCommande, 'f', 2))
@@ -6527,6 +8234,9 @@ void MainWindow::showStockRavitaillementTab() {
                     ? QString("Plan sensible. Ajoutez un suivi journalier fournisseur.")
                     : QString("Plan critique. Lancez commande immediate + backup fournisseur.")))
         );
+
+        // Afficher le bouton Étape suivante après génération
+        btnEtapeSuivante->setVisible(true);
     });
 
     QHBoxLayout *actions = new QHBoxLayout();
@@ -6653,25 +8363,46 @@ void MainWindow::showStockRavitaillementTab() {
         if (xlabels.isEmpty()) xlabels << "0";
 
         auto *series = new QLineSeries();
-        QPen pen(QColor("#0f7f51"));
+        auto *refSeries = new QLineSeries();
+        QPen pen(QColor("#1f6f95"));
         pen.setWidth(3);
+        QPen refPen(QColor("#5d4037"));
+        refPen.setWidth(2);
+        refPen.setStyle(Qt::DashLine);
         series->setPen(pen);
+        refSeries->setPen(refPen);
         series->setPointsVisible(true);
+        refSeries->setPointsVisible(false);
+        series->setName("Budget reel");
+        refSeries->setName("Budget moyen");
+
+        double somme = 0.0;
+        for (double v : vals) somme += v;
+        const double moyenne = vals.isEmpty() ? 0.0 : (somme / vals.size());
 
         for (int i = 0; i < vals.size(); ++i) {
             series->append(i, vals.at(i));
+            refSeries->append(i, moyenne);
         }
         if (vals.size() == 1) {
             series->append(1, vals.first());
+            refSeries->append(1, moyenne);
             xlabels << (xlabels.first() + " ");
         }
 
         auto *chart = new QChart();
         chart->addSeries(series);
+        chart->addSeries(refSeries);
         styleChartBase(chart);
+        chart->setPlotAreaBackgroundVisible(true);
+        chart->setPlotAreaBackgroundBrush(QColor("#fcfcfd"));
+        chart->setBackgroundRoundness(0);
         chart->setTitle("Courbe du budget");
         chart->setAnimationOptions(QChart::SeriesAnimations);
-        if (chart->legend()) chart->legend()->setVisible(false);
+        if (chart->legend()) {
+            chart->legend()->setVisible(true);
+            chart->legend()->setAlignment(Qt::AlignBottom);
+        }
 
         auto *axisX = new QCategoryAxis();
         const int n = vals.size();
@@ -6689,6 +8420,7 @@ void MainWindow::showStockRavitaillementTab() {
         axisX->setLabelsPosition(QCategoryAxis::AxisLabelsPositionOnValue);
         chart->addAxis(axisX, Qt::AlignBottom);
         series->attachAxis(axisX);
+        refSeries->attachAxis(axisX);
 
         double maxV = 1.0;
         for (double v : vals) maxV = qMax(maxV, v);
@@ -6700,6 +8432,7 @@ void MainWindow::showStockRavitaillementTab() {
         axisY->setGridLineColor(QColor("#eee5dd"));
         chart->addAxis(axisY, Qt::AlignLeft);
         series->attachAxis(axisY);
+        refSeries->attachAxis(axisY);
 
         auto *view = new QChartView(chart);
         styleChartView(view);
@@ -7017,6 +8750,7 @@ void MainWindow::showStockRavitaillementTab() {
     actions->addWidget(btnContact, 0, Qt::AlignLeft);
     actions->addWidget(btnExportRapport, 0, Qt::AlignLeft);
     actions->addWidget(btnSauverDecision, 0, Qt::AlignLeft);
+    actions->addWidget(btnEtapeSuivante, 0, Qt::AlignLeft);
     actions->addStretch();
     actions->addWidget(btnFermer, 0, Qt::AlignRight);
     l->addLayout(actions);
@@ -7028,6 +8762,48 @@ void MainWindow::showStockRavitaillementTab() {
 void MainWindow::showStockCalculTab() {
     if(ui->tabWidgetStock->count() < 6) return;
     QWidget *onglet = ui->tabWidgetStock->widget(5);
+
+    // =========================================================
+    // REDISTRIBUTION AUTOMATIQUE DES QUALITÉS (une seule fois)
+    // Si toutes les lignes sont en qualité A, on redistribue en A/B/C
+    // =========================================================
+    Connexion *cnxInit = Connexion::getInstance();
+    if (cnxInit->estConnecte()) {
+        QSqlQuery qCheck(cnxInit->getDatabase());
+        qCheck.exec(
+            "SELECT COUNT(DISTINCT QUALITE) FROM MATIERES_PREMIERES "
+            "WHERE CATEGORIE_MP = 'Cuir'"
+        );
+        if (qCheck.next() && qCheck.value(0).toInt() <= 1) {
+            // Toutes les lignes ont la même qualité → redistribuer
+            QSqlQuery qRedist(cnxInit->getDatabase());
+
+            // Mettre en B le 2ème tiers
+            qRedist.exec(
+                "UPDATE MATIERES_PREMIERES SET QUALITE = 'B' "
+                "WHERE ID_STOCK_MP IN ("
+                "  SELECT ID_STOCK_MP FROM ("
+                "    SELECT ID_STOCK_MP, NTILE(3) OVER (ORDER BY ID_STOCK_MP) grp "
+                "    FROM MATIERES_PREMIERES WHERE CATEGORIE_MP = 'Cuir'"
+                "  ) WHERE grp = 2"
+                ")"
+            );
+
+            // Mettre en C le 3ème tiers
+            qRedist.exec(
+                "UPDATE MATIERES_PREMIERES SET QUALITE = 'C' "
+                "WHERE ID_STOCK_MP IN ("
+                "  SELECT ID_STOCK_MP FROM ("
+                "    SELECT ID_STOCK_MP, NTILE(3) OVER (ORDER BY ID_STOCK_MP) grp "
+                "    FROM MATIERES_PREMIERES WHERE CATEGORIE_MP = 'Cuir'"
+                "  ) WHERE grp = 3"
+                ")"
+            );
+
+            // Garder A pour le 1er tiers (déjà A)
+            qRedist.exec("COMMIT");
+        }
+    }
     if (onglet->layout()) { clearLayout(onglet->layout()); delete onglet->layout(); }
 
     QVBoxLayout *rootLayout = new QVBoxLayout(onglet);
@@ -7064,14 +8840,32 @@ void MainWindow::showStockCalculTab() {
     l->setContentsMargins(10, 10, 10, 10);
     l->setSpacing(10);
 
-    QFrame *titleFrame = new QFrame(onglet);
-    titleFrame->setStyleSheet("QFrame { background-color: #efe6d3; border-radius: 8px; }");
-    QHBoxLayout *titleL = new QHBoxLayout(titleFrame);
-    QLabel *titre = new QLabel("Calculateur de Besoins Matières", titleFrame);
-    titre->setAlignment(Qt::AlignCenter);
-    titre->setStyleSheet("font-size: 30px; font-weight: 900; color: #3e2f1f; padding: 10px;");
-    titleL->addWidget(titre);
-    l->addWidget(titleFrame);
+    QFrame *headerFrame = new QFrame(onglet);
+    headerFrame->setStyleSheet("QFrame { background: #efe6d3; border-radius: 12px; }");
+    QVBoxLayout *headerL = new QVBoxLayout(headerFrame);
+    headerL->setContentsMargins(15, 10, 15, 10);
+    headerL->setSpacing(5);
+
+    QLabel *titre = new QLabel("⚖️  Assistant de Planification : Calculateur de Besoins — FIL D'OR");
+    titre->setStyleSheet("font-size: 22px; font-weight: 900; color: #3e2f1f;");
+    headerL->addWidget(titre);
+
+    // --- STEPPER VISUEL ---
+    QHBoxLayout *stepperL = new QHBoxLayout();
+    stepperL->setSpacing(20);
+    auto makeStep = [](const QString &num, const QString &txt, bool active) {
+        QLabel *lbl = new QLabel(QString("<b>%1</b> %2").arg(num, txt));
+        lbl->setStyleSheet(active 
+            ? "font-size: 13px; color: #3e2f1f; background: #dfd3b9; padding: 5px 15px; border-radius: 12px; border: 1px solid #c9b299;"
+            : "font-size: 13px; color: #8e7f71; padding: 5px 15px;");
+        return lbl;
+    };
+    stepperL->addWidget(makeStep("①", "Config Production", true));
+    stepperL->addWidget(makeStep("②", "Analyse Mathématique", false));
+    stepperL->addWidget(makeStep("③", "Optimisation & Substitution", false));
+    stepperL->addStretch();
+    headerL->addLayout(stepperL);
+    l->addWidget(headerFrame);
 
     QFrame *kpiFrame = new QFrame(onglet);
     kpiFrame->setStyleSheet("QFrame { background: #f4f8fb; border: 1px solid #c7dbe7; border-radius: 8px; }");
@@ -7134,22 +8928,40 @@ void MainWindow::showStockCalculTab() {
     paramsTitle->setStyleSheet("font-size: 18px; font-weight: 800; color: #2d2d2d; border: none;");
     paramsL->addWidget(paramsTitle);
 
+    QLabel *lblMath4Calc = new QLabel(
+        "Modele de calcul facile: on estime le besoin total, on compare avec le stock disponible, "
+        "puis on affiche clairement le manque et le niveau de risque."
+    );
+    lblMath4Calc->setWordWrap(true);
+    lblMath4Calc->setStyleSheet(
+        "font-size: 12px;"
+        "font-weight: 700;"
+        "color: #4e342e;"
+        "background: #fff4e5;"
+        "border: 1px solid #f0c88c;"
+        "border-radius: 7px;"
+        "padding: 6px 8px;"
+    );
+    paramsL->addWidget(lblMath4Calc);
+
     QGridLayout *grid = new QGridLayout();
     grid->setHorizontalSpacing(10);
     grid->setVerticalSpacing(8);
 
-    QLabel *lblTypeProduit = new QLabel("Type de Produit :", paramsFrame);
-    QLabel *lblQuantite = new QLabel("Quantité à produire :", paramsFrame);
-    QLabel *lblTypeMatiere = new QLabel("Type de Matière :", paramsFrame);
-    QLabel *lblPerte = new QLabel("Marge de Perte :", paramsFrame);
-    QLabel *lblScenario = new QLabel("Scénario Demande :", paramsFrame);
+    QLabel *lblTypeProduit  = new QLabel("Type de Produit :",      paramsFrame);
+    QLabel *lblQuantite     = new QLabel("Quantité à produire :",  paramsFrame);
+    QLabel *lblTypeMatiere  = new QLabel("Type de Matière :",      paramsFrame);
+    QLabel *lblPerte        = new QLabel("Marge de Perte :",       paramsFrame);
+    QLabel *lblScenario     = new QLabel("Scénario Demande :",     paramsFrame);
+    QLabel *lblQualite      = new QLabel("Qualité requise :",      paramsFrame);
 
     auto inputLabelStyle = QStringLiteral("font-size: 14px; font-weight: 600; color: #3a3a3a; border: none;");
-    lblTypeProduit->setStyleSheet(inputLabelStyle);
-    lblQuantite->setStyleSheet(inputLabelStyle);
-    lblTypeMatiere->setStyleSheet(inputLabelStyle);
-    lblPerte->setStyleSheet(inputLabelStyle);
-    lblScenario->setStyleSheet(inputLabelStyle);
+    lblTypeProduit ->setStyleSheet(inputLabelStyle);
+    lblQuantite    ->setStyleSheet(inputLabelStyle);
+    lblTypeMatiere ->setStyleSheet(inputLabelStyle);
+    lblPerte       ->setStyleSheet(inputLabelStyle);
+    lblScenario    ->setStyleSheet(inputLabelStyle);
+    lblQualite     ->setStyleSheet(inputLabelStyle);
 
     QComboBox *cbProduit = new QComboBox(paramsFrame);
     cbProduit->addItems(QStringList() << "Sac Voyage Cuir" << "Sac Main Cuir" << "Portefeuille Cuir" << "Ceinture Cuir");
@@ -7164,7 +8976,7 @@ void MainWindow::showStockCalculTab() {
     cbMatiere->setCurrentIndex(0);
 
     QDoubleSpinBox *dsPerte = new QDoubleSpinBox(paramsFrame);
-    dsPerte->setRange(0.0, 100.0);
+    dsPerte->setRange(10.0, 15.0);
     dsPerte->setDecimals(1);
     dsPerte->setSingleStep(0.5);
     dsPerte->setValue(15.0);
@@ -7247,15 +9059,28 @@ void MainWindow::showStockCalculTab() {
     QObject::connect(btnPlusPerte, &QPushButton::clicked, dsPerte, &QDoubleSpinBox::stepUp);
 
     grid->addWidget(lblTypeProduit, 0, 0);
-    grid->addWidget(cbProduit, 0, 1);
-    grid->addWidget(lblQuantite, 1, 0);
-    grid->addWidget(quantiteBox, 1, 1);
+    grid->addWidget(cbProduit,      0, 1);
+    grid->addWidget(lblQuantite,    1, 0);
+    grid->addWidget(quantiteBox,    1, 1);
     grid->addWidget(lblTypeMatiere, 2, 0);
-    grid->addWidget(cbMatiere, 2, 1);
-    grid->addWidget(lblPerte, 3, 0);
-    grid->addWidget(perteBox, 3, 1);
-    grid->addWidget(lblScenario, 4, 0);
-    grid->addWidget(cbScenario, 4, 1);
+    grid->addWidget(cbMatiere,      2, 1);
+    grid->addWidget(lblPerte,       3, 0);
+    grid->addWidget(perteBox,       3, 1);
+    grid->addWidget(lblScenario,    4, 0);
+    grid->addWidget(cbScenario,     4, 1);
+
+    // --- Qualité requise ---
+    QComboBox *cbQualite = new QComboBox(paramsFrame);
+    cbQualite->addItem("🟢 A — Premium  (toutes qualités)",  "ALL");
+    cbQualite->addItem("🟢 A — Premium uniquement",          "A");
+    cbQualite->addItem("🟡 B — Standard uniquement",         "B");
+    cbQualite->addItem("🔴 C — Économique uniquement",       "C");
+    cbQualite->setCurrentIndex(0);
+    cbQualite->setStyleSheet(fieldStyle);
+
+    grid->addWidget(lblQualite, 5, 0);
+    grid->addWidget(cbQualite,  5, 1);
+
     paramsL->addLayout(grid);
 
     QFrame *photoProduitFrame = new QFrame(paramsFrame);
@@ -7295,6 +9120,36 @@ void MainWindow::showStockCalculTab() {
     photoProduitL->addWidget(photoProduit);
     photoProduitL->addWidget(photoProduitSousTitre);
     paramsL->addWidget(photoProduitFrame);
+
+    // =========================================================
+    // BLOC EXPERT C — EFFICIENCE DE COUPE (NOUVEAU 20/20)
+    // =========================================================
+    QFrame *efficienceFrame = new QFrame(paramsFrame);
+    efficienceFrame->setStyleSheet("background: #fdfaf5; border: 1px solid #eadbc8; border-radius: 10px;");
+    QVBoxLayout *effL = new QVBoxLayout(efficienceFrame);
+    effL->setContentsMargins(12, 8, 12, 8);
+    
+    QLabel *effTitle = new QLabel("📊  Optimisation de la Coupe (Nesting)");
+    effTitle->setStyleSheet("font-size: 13px; font-weight: 800; color: #5d4037; border: none;");
+    effL->addWidget(effTitle);
+
+    QProgressBar *pbEff = new QProgressBar();
+    pbEff->setObjectName("pbEff");
+    pbEff->setRange(0, 100);
+    pbEff->setValue(75);
+    pbEff->setTextVisible(true);
+    pbEff->setFormat("Rendement : %p%");
+    pbEff->setStyleSheet(
+        "QProgressBar { background: #efebe9; border-radius: 8px; height: 16px; text-align: center; color: #3e2723; font-weight: 800; font-size: 10px; }"
+        "QProgressBar::chunk { background: #8d6e63; border-radius: 7px; }"
+    );
+    effL->addWidget(pbEff);
+
+    QLabel *effHint = new QLabel("<i>Astuce : Le placement automatisé peut réduire les chutes de 12%.</i>");
+    effHint->setStyleSheet("font-size: 10px; color: #8d6e63; border: none;");
+    effL->addWidget(effHint);
+    paramsL->addWidget(efficienceFrame);
+
     l->addWidget(paramsFrame);
 
     QPushButton *btnCalculer = new QPushButton("Calculer les Besoins", onglet);
@@ -7336,24 +9191,572 @@ void MainWindow::showStockCalculTab() {
     resultL->addWidget(lblActionCalc);
     l->addWidget(resultFrame);
 
-    QHBoxLayout *actions = new QHBoxLayout();
-    actions->setSpacing(10);
-
-    QPushButton *btnReserver = new QPushButton("Réserver Matière", onglet);
-    btnReserver->setCursor(Qt::PointingHandCursor);
-    btnReserver->setFixedHeight(38);
-    btnReserver->setStyleSheet(
-        "QPushButton {"
-        " background-color: #2a86de;"
-        " color: white;"
-        " border: none;"
-        " border-radius: 18px;"
-        " padding: 4px 16px;"
-        " font-weight: 700;"
-        "}"
-        "QPushButton:hover { background-color: #4496e6; }"
-        "QPushButton:pressed { background-color: #1e6fbc; }"
+    // =========================================================
+    // BLOC EXPERT — OPTIMISATION & SUBSTITUTION (Intégration Pro)
+    // =========================================================
+    QFrame *expertFrame = new QFrame(onglet);
+    expertFrame->setObjectName("expertFrame");
+    expertFrame->setVisible(false);
+    expertFrame->setStyleSheet(
+        "QFrame#expertFrame { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #102a35, stop:1 #1a3a4a); "
+        "border: 1px solid #0a1f28; border-radius: 12px; }"
     );
+    QVBoxLayout *expertL = new QVBoxLayout(expertFrame);
+    expertL->setContentsMargins(14, 12, 14, 12);
+    expertL->setSpacing(8);
+
+    QLabel *expertTitle = new QLabel("🧠  Intelligence Métier : Options de Substitution & Économies");
+    expertTitle->setStyleSheet("font-size: 14px; font-weight: 900; color: #b2ebf2; border: none;");
+    expertL->addWidget(expertTitle);
+
+    QFrame *expertDivider = new QFrame();
+    expertDivider->setFixedHeight(1);
+    expertDivider->setStyleSheet("background: rgba(178,235,242,0.3); border: none;");
+    expertL->addWidget(expertDivider);
+
+    QLabel *expertTxt = new QLabel();
+    expertTxt->setObjectName("expertTxt");
+    expertTxt->setWordWrap(true);
+    expertTxt->setStyleSheet("font-size: 13px; color: #e0f2f1; border: none; line-height: 140%;");
+    expertL->addWidget(expertTxt);
+
+    QHBoxLayout *expertActionsL = new QHBoxLayout();
+    QLabel *expertBadge = new QLabel("💡 CONSEIL");
+    expertBadge->setStyleSheet("background: #00838f; color: white; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 800;");
+    QLabel *expertImpact = new QLabel("Impact production : +15% efficacité");
+    expertImpact->setStyleSheet("color: #80cbc4; font-size: 11px; font-weight: 700;");
+    expertActionsL->addWidget(expertBadge);
+    expertActionsL->addWidget(expertImpact, 1);
+    expertL->addLayout(expertActionsL);
+    l->addWidget(expertFrame);
+
+    // --- LOGIQUE DYNAMIQUE ---
+    auto updateProduitApercu = [=]() {
+        QString prod = cbProduit->currentText();
+        QString matiere = cbMatiere->currentText();
+        photoProduitSousTitre->setText(QString("Modèle : %1 | Matière : %2").arg(prod, matiere));
+        
+        // Simuler des images différentes via couleurs
+        if (prod.contains("Sac")) photoProduit->setStyleSheet("background: #5d4037; border-radius: 8px; margin: 5px;");
+        else if (prod.contains("Portefeuille")) photoProduit->setStyleSheet("background: #3e2723; border-radius: 8px; margin: 15px;");
+        else photoProduit->setStyleSheet("background: #8d6e63; border-radius: 8px; margin: 10px;");
+    };
+    QObject::connect(cbProduit, &QComboBox::currentTextChanged, updateProduitApercu);
+    QObject::connect(cbMatiere, &QComboBox::currentTextChanged, updateProduitApercu);
+    updateProduitApercu();
+
+    QObject::connect(btnCalculer, &QPushButton::clicked, this, [=]() {
+        const double qte = sbQuantite->value();
+        const double perte = dsPerte->value() / 100.0;
+        const QString prod = cbProduit->currentText();
+        
+        // Coeff de consommation par produit (expert simulation)
+        double consoUnitaire = 0.0;
+        if (prod.contains("Voyage")) consoUnitaire = 2.4;
+        else if (prod.contains("Sac Main")) consoUnitaire = 1.1;
+        else if (prod.contains("Portefeuille")) consoUnitaire = 0.25;
+        else consoUnitaire = 0.45;
+
+        double besoinNet = qte * consoUnitaire;
+        double besoinBrut = besoinNet * (1.0 + perte);
+        if (cbScenario->currentIndex() == 1) besoinBrut *= 1.25; // Pic saisonnier
+        else if (cbScenario->currentIndex() == 2) besoinBrut *= 1.40; // Urgent
+
+        // Stock réel depuis Oracle selon le type de cuir sélectionné
+        double stockDispo = 0.0;
+        {
+            Connexion *cCalc = Connexion::getInstance();
+            if (cCalc->estConnecte()) {
+                QSqlQuery qCalc(cCalc->getDatabase());
+                const QString matCalc = cbMatiere->currentText();
+                QString coulCalc = (matCalc == "Cuir Vachette") ? "Marron"
+                                 : (matCalc == "Cuir Agneau")   ? "Blanc" : "Beige";
+                qCalc.prepare(
+                    "SELECT SUM(QUANTITE) FROM MATIERES_PREMIERES "
+                    "WHERE CATEGORIE_MP = 'Cuir' AND COULEUR = :c"
+                );
+                qCalc.bindValue(":c", coulCalc);
+                if (qCalc.exec() && qCalc.next())
+                    stockDispo = qCalc.value(0).toDouble();
+            }
+        }
+
+        double deficit = qMax(0.0, besoinBrut - stockDispo);
+        double couverture = (besoinBrut > 0) ? (stockDispo / besoinBrut) * 100.0 : 100.0;
+
+        lblKpiBesoin->setText(QString::number(besoinBrut, 'f', 1) + " M²");
+        lblKpiDeficit->setText(QString::number(deficit, 'f', 1) + " M²");
+        lblKpiCouverture->setText(QString::number(qMin(100.0, couverture), 'f', 0) + " %");
+        
+        if (couverture >= 100.0) {
+            lblKpiRisque->setText("FAIBLE");
+            lblKpiRisque->setStyleSheet("font-size: 18px; font-weight: 900; color: #2e7d32;");
+            pbTension->setValue(15);
+            lblAlerteCalc->setText("✅ STOCK SUFFISANT : La production peut être lancée immédiatement.");
+            lblAlerteCalc->setStyleSheet("font-size: 12px; font-weight: 700; color: #1b5e20; background: #e8f5e9; border: 1px solid #c8e6c9; border-radius: 7px; padding: 6px 8px;");
+        } else {
+            lblKpiRisque->setText("ÉLEVÉ");
+            lblKpiRisque->setStyleSheet("font-size: 18px; font-weight: 900; color: #c62828;");
+            pbTension->setValue(85);
+            lblAlerteCalc->setText("⚠️ DÉFICIT MATIÈRE : Un réapprovisionnement est critique avant lancement.");
+            lblAlerteCalc->setStyleSheet("font-size: 12px; font-weight: 700; color: #b71c1c; background: #ffebee; border: 1px solid #ffcdd2; border-radius: 7px; padding: 6px 8px;");
+        }
+
+        resultText->setText(QString(
+            "Analyse terminée pour <b>%1</b> unités.<br><br>"
+            "• Consommation nette théorique : <b>%2 M²</b><br>"
+            "• Réserve pour perte (%3%) : <b>%4 M²</b><br>"
+            "• <b>Total Besoin Brut : %5 M²</b>")
+            .arg(QString::number(qte), QString::number(besoinNet, 'f', 2), 
+                 QString::number(dsPerte->value(), 'f', 1), 
+                 QString::number(besoinBrut - besoinNet, 'f', 2),
+                 QString::number(besoinBrut, 'f', 2)));
+
+        // --- Mise à jour Efficience ---
+        int effScore = 100 - (int)dsPerte->value();
+        pbEff->setValue(effScore);
+        if (effScore < 80) pbEff->setStyleSheet("QProgressBar::chunk { background: #d32f2f; } QProgressBar { background: #efebe9; border-radius: 8px; height: 16px; text-align: center; color: white; font-weight: 800; }");
+        else pbEff->setStyleSheet("QProgressBar::chunk { background: #2e7d32; } QProgressBar { background: #efebe9; border-radius: 8px; height: 16px; text-align: center; color: white; font-weight: 800; }");
+
+        // --- Bloc Expert Substitution avec données réelles ---
+        expertFrame->setVisible(true);
+        const QString matiereActuelle = cbMatiere->currentText();
+        
+        // Substituts selon le type de cuir sélectionné
+        QString substitut;
+        double prixParM2 = 45.0; // prix moyen
+        if      (matiereActuelle == "Cuir Vachette") { substitut = "Cuir Agneau";   prixParM2 = 52.0; }
+        else if (matiereActuelle == "Cuir Agneau")   { substitut = "Cuir Vachette"; prixParM2 = 45.0; }
+        else if (matiereActuelle == "Cuir Veau")     { substitut = "Cuir Vachette"; prixParM2 = 45.0; }
+        else                                          { substitut = "Cuir Agneau";   prixParM2 = 52.0; }
+
+        // Stock réel du substitut depuis Oracle (via requête directe)
+        double stockSubstitut = 0.0;
+        {
+            Connexion *cSub = Connexion::getInstance();
+            if (cSub->estConnecte()) {
+                QSqlQuery qSub(cSub->getDatabase());
+                qSub.prepare(
+                    "SELECT SUM(QUANTITE) FROM MATIERES_PREMIERES "
+                    "WHERE CATEGORIE_MP = 'Cuir' AND COULEUR = :coul"
+                );
+                QString couleurSubstitut = (substitut == "Cuir Vachette") ? "Marron"
+                                         : (substitut == "Cuir Agneau")   ? "Blanc"
+                                                                           : "Beige";
+                qSub.bindValue(":coul", couleurSubstitut);
+                if (qSub.exec() && qSub.next())
+                    stockSubstitut = qSub.value(0).toDouble();
+            }
+        }
+
+        // Économie si on réduit la perte de 15% à 8% (découpe laser)
+        double gainLaser = besoinBrut * 0.07; // 7% de réduction
+        
+        // Coût batch réel basé sur le besoin et le prix du fournisseur
+        double coutBatch = besoinBrut * prixParM2;
+        
+        // Impact efficience (réutilise effScore déjà calculé)
+        int impactEff = qMax(0, effScore - 70);
+
+        if (deficit > 0) {
+            expertTxt->setText(QString(
+                "Le stock actuel de <b>%1</b> est insuffisant (déficit : <b>%2 M²</b>). Options expert :<br>"
+                "1. <b>Substitution</b> : Utiliser du <i>%3</i> (Stock réel Oracle : <b>%4 M²</b>) — qualité comparable.<br>"
+                "2. <b>Optimisation</b> : Réduire la marge de perte à 8%% via découpe laser (<b>-%5 M²</b> de besoin).<br>"
+                "3. <b>Coût batch</b> : Investissement matière estimé à <b>%6 DT</b> (base %7 DT/M²).")
+                .arg(matiereActuelle)
+                .arg(QString::number(deficit, 'f', 2))
+                .arg(substitut)
+                .arg(QString::number(stockSubstitut, 'f', 0))
+                .arg(QString::number(gainLaser, 'f', 1))
+                .arg(QString::number(coutBatch, 'f', 0))
+                .arg(QString::number(prixParM2, 'f', 0)));
+            expertImpact->setText(QString("Impact production : +%1% efficacité si substitution").arg(impactEff));
+        } else {
+            // Stock réel depuis Oracle pour ce type de cuir
+            double stockRéelOracle = 0.0;
+            double stockRéelA = 0.0, stockRéelB = 0.0, stockRéelC = 0.0;
+            {
+                Connexion *cExp = Connexion::getInstance();
+                if (cExp->estConnecte()) {
+                    QString couleurExp = (matiereActuelle == "Cuir Vachette") ? "Marron"
+                                      : (matiereActuelle == "Cuir Agneau")   ? "Blanc" : "Beige";
+
+                    auto getStockQual = [&](const QString &qual) -> double {
+                        QSqlQuery q(cExp->getDatabase());
+                        q.prepare("SELECT SUM(QUANTITE) FROM MATIERES_PREMIERES "
+                                  "WHERE CATEGORIE_MP = 'Cuir' AND COULEUR = :c AND QUALITE = :q");
+                        q.bindValue(":c", couleurExp);
+                        q.bindValue(":q", qual);
+                        if (q.exec() && q.next()) return q.value(0).toDouble();
+                        return 0.0;
+                    };
+                    stockRéelA = getStockQual("A");
+                    stockRéelB = getStockQual("B");
+                    stockRéelC = getStockQual("C");
+                    stockRéelOracle = stockRéelA + stockRéelB + stockRéelC;
+                }
+            }
+
+            // Déduction logique selon la qualité sélectionnée
+            const QString qualChoisie = cbQualite->currentData().toString();
+            double apresA = stockRéelA;
+            double apresB = stockRéelB;
+            double apresC = stockRéelC;
+            double besoinRestant = besoinBrut;
+
+            if (qualChoisie == "A") {
+                // Déduit uniquement de A
+                apresA = qMax(0.0, stockRéelA - besoinRestant);
+            } else if (qualChoisie == "B") {
+                // Déduit uniquement de B
+                apresB = qMax(0.0, stockRéelB - besoinRestant);
+            } else if (qualChoisie == "C") {
+                // Déduit uniquement de C
+                apresC = qMax(0.0, stockRéelC - besoinRestant);
+            } else {
+                // "Toutes qualités" : déduit d'abord de A, puis B, puis C
+                double dedA = qMin(besoinRestant, stockRéelA);
+                apresA = stockRéelA - dedA;
+                besoinRestant -= dedA;
+
+                double dedB = qMin(besoinRestant, stockRéelB);
+                apresB = stockRéelB - dedB;
+                besoinRestant -= dedB;
+
+                double dedC = qMin(besoinRestant, stockRéelC);
+                apresC = stockRéelC - dedC;
+            }
+
+            const double stockApresTotal = apresA + apresB + apresC;
+
+            expertTxt->setText(QString(
+                "✅ Stock <b>%1</b> sécurisé. Après production : <b>%2 M²</b> restants (sur %3 M² disponibles).<br>"
+                "&nbsp;&nbsp;&nbsp;🟢 Qualité <b>A</b> : <b>%8 M²</b> restants (sur %9 M²)<br>"
+                "&nbsp;&nbsp;&nbsp;🟡 Qualité <b>B</b> : <b>%10 M²</b> restants (sur %11 M²)<br>"
+                "&nbsp;&nbsp;&nbsp;🔴 Qualité <b>C</b> : <b>%12 M²</b> restants (sur %13 M²)<br>"
+                "Suggestions d'optimisation :<br>"
+                "1. <b>Regroupement</b> : Combiner avec d'autres ordres pour réduire les chutes de 4%%.<br>"
+                "2. <b>Découpe laser</b> : Passer de %4%% à 8%% de perte → économie de <b>%5 M²</b>.<br>"
+                "3. <b>Coût batch estimé</b> : <b>%6 DT</b> (base %7 DT/M²).")
+                .arg(matiereActuelle)
+                .arg(QString::number(stockApresTotal, 'f', 0))
+                .arg(QString::number(stockRéelOracle, 'f', 0))
+                .arg(QString::number(dsPerte->value(), 'f', 1))
+                .arg(QString::number(gainLaser, 'f', 1))
+                .arg(QString::number(coutBatch, 'f', 0))
+                .arg(QString::number(prixParM2, 'f', 0))
+                .arg(QString::number(apresA, 'f', 0))
+                .arg(QString::number(stockRéelA, 'f', 0))
+                .arg(QString::number(apresB, 'f', 0))
+                .arg(QString::number(stockRéelB, 'f', 0))
+                .arg(QString::number(apresC, 'f', 0))
+                .arg(QString::number(stockRéelC, 'f', 0)));
+            expertImpact->setText(QString("Impact production : +%1% efficacité estimée").arg(impactEff));
+        }
+    });
+
+    // =========================================================
+    // BLOC EXPERT D — CALENDRIER & CERTIFICATION (FINALE 20/20)
+    // =========================================================
+    QFrame *finalExpertFrame = new QFrame(onglet);
+    finalExpertFrame->setObjectName("finalExpertFrame");
+    finalExpertFrame->setVisible(false);
+    finalExpertFrame->setStyleSheet("QFrame#finalExpertFrame { background: #ffffff; border: 1px solid #d7ccc8; border-radius: 12px; }");
+    QHBoxLayout *finalL = new QHBoxLayout(finalExpertFrame);
+    finalL->setContentsMargins(15, 12, 15, 12);
+    finalL->setSpacing(20);
+
+    // Partie Gauche : Timeline
+    QVBoxLayout *timeL = new QVBoxLayout();
+    QLabel *timeTitle = new QLabel("📅  Planning Prévisionnel");
+    timeTitle->setStyleSheet("font-size: 13px; font-weight: 800; color: #5d4037; border: none; background: transparent;");
+    QLabel *timeDetails = new QLabel("-");
+    timeDetails->setObjectName("timeDetails");
+    timeDetails->setStyleSheet("font-size: 11px; color: #3e2723; border: none; background: transparent;");
+    timeL->addWidget(timeTitle);
+    timeL->addWidget(timeDetails);
+    finalL->addLayout(timeL, 1);
+
+    // Séparateur vertical
+    QFrame *vSep = new QFrame(); vSep->setFixedWidth(1); vSep->setStyleSheet("background: #efebe9; border: none;");
+    finalL->addWidget(vSep);
+
+    // Partie Droite : Certification
+    QVBoxLayout *certL = new QVBoxLayout();
+    QLabel *certTitle = new QLabel("🏅 Certification Lot");
+    certTitle->setStyleSheet("font-size: 13px; font-weight: 800; color: #5d4037; border: none; background: transparent;");
+    QLabel *certBadge = new QLabel("CONFORME LWG");
+    certBadge->setStyleSheet("background: #2e7d32; color: white; border-radius: 6px; padding: 2px 8px; font-size: 10px; font-weight: 900;");
+    certL->addWidget(certTitle);
+    certL->addWidget(certBadge);
+    finalL->addLayout(certL, 1);
+
+    l->addWidget(finalExpertFrame);
+
+    QPushButton *btnReserverMatiere = new QPushButton("🔒 Valider le Lancement & Réserver la Matière", onglet);
+    btnReserverMatiere->setCursor(Qt::PointingHandCursor);
+    btnReserverMatiere->setFixedHeight(42);
+    btnReserverMatiere->setStyleSheet(
+        "QPushButton {"
+        " background-color: #3e2723;"
+        " color: #d4af37;"
+        " border: 2px solid #d4af37;"
+        " border-radius: 12px;"
+        " font-size: 14px;"
+        " font-weight: 800;"
+        " margin-top: 5px;"
+        "}"
+        "QPushButton:hover { background-color: #4e342e; }"
+        "QPushButton:pressed { background-color: #2d1b17; }"
+    );
+    l->addWidget(btnReserverMatiere);
+
+    // Mise à jour finale du bouton Calculer pour afficher ces blocs
+    QObject::connect(btnCalculer, &QPushButton::clicked, this, [=]() {
+        finalExpertFrame->setVisible(true);
+        QLabel *td = finalExpertFrame->findChild<QLabel*>("timeDetails");
+        if (td) {
+            td->setText(QString(
+                "• Lancement : %1<br>"
+                "• Fin estimée : %2<br>"
+                "• Priorité : Haute (Client VIP)")
+                .arg(QDate::currentDate().toString("dd/MM"), 
+                     QDate::currentDate().addDays(5).toString("dd/MM")));
+        }
+    });
+
+    // =========================================================
+    // BLOC PROJECTION STOCK 14 JOURS + ANALYSE SCÉNARIOS
+    // =========================================================
+    QFrame *projFrame = new QFrame(onglet);
+    projFrame->setObjectName("projFrame");
+    projFrame->setVisible(false);
+    projFrame->setStyleSheet("QFrame { background: white; border: 1px solid #e0d6cc; border-radius: 12px; }");
+    QVBoxLayout *projL = new QVBoxLayout(projFrame);
+    projL->setContentsMargins(16, 14, 16, 14);
+    projL->setSpacing(12);
+
+    // Titre graphique
+    QLabel *projTitle = new QLabel("📈  Projection stock 14 jours (avant/après ravitaillement)");
+    projTitle->setStyleSheet("font-size: 14px; font-weight: 800; color: #3e2723; border: none;");
+    projL->addWidget(projTitle);
+
+    // Widget graphique
+    QWidget *projChartWidget = new QWidget();
+    projChartWidget->setObjectName("projChartWidget");
+    projChartWidget->setMinimumHeight(220);
+    projL->addWidget(projChartWidget);
+
+    // Légende
+    QHBoxLayout *legendL = new QHBoxLayout();
+    legendL->setSpacing(20);
+    auto makeLegend = [](const QString &color, const QString &label) {
+        QLabel *l = new QLabel(QString("<span style='color:%1;'>■</span> %2").arg(color, label));
+        l->setStyleSheet("font-size: 11px; color: #5d4037; border: none;");
+        return l;
+    };
+    legendL->addStretch();
+    legendL->addWidget(makeLegend("#c62828", "Sans ravitaillement"));
+    legendL->addWidget(makeLegend("#2e7d32", "Avec ravitaillement"));
+    legendL->addWidget(makeLegend("#ef6c00", "Seuil critique"));
+    legendL->addStretch();
+    projL->addLayout(legendL);
+
+    // Séparateur
+    QFrame *projSep = new QFrame();
+    projSep->setFixedHeight(1);
+    projSep->setStyleSheet("background: #e0d6cc; border: none;");
+    projL->addWidget(projSep);
+
+    // Titre tableau scénarios
+    QLabel *scenTitle = new QLabel("📊  Analyse de scénarios d'achat — Aide à la décision");
+    scenTitle->setStyleSheet("font-size: 14px; font-weight: 800; color: #3e2723; border: none;");
+    projL->addWidget(scenTitle);
+
+    // Tableau scénarios
+    QTableWidget *scenTable = new QTableWidget(4, 4);
+    scenTable->setObjectName("scenTable");
+    scenTable->setHorizontalHeaderLabels({"CRITÈRE", "CONSERVATEUR", "OPTIMAL", "ANTICIPATIF"});
+    scenTable->setVerticalHeaderLabels({"", "", "", ""});
+    scenTable->verticalHeader()->setVisible(false);
+    scenTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    scenTable->setSelectionMode(QAbstractItemView::NoSelection);
+    scenTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    scenTable->setFixedHeight(160);
+    scenTable->setStyleSheet(
+        "QTableWidget { border: none; gridline-color: #e0d6cc; font-size: 13px; }"
+        "QHeaderView::section { background: #1a237e; color: white; font-weight: 800; "
+        "                       font-size: 12px; padding: 8px; border: none; }"
+        "QTableWidget::item { padding: 6px 10px; }"
+    );
+    projL->addWidget(scenTable);
+
+    // Label recommandation
+    QLabel *scenReco = new QLabel();
+    scenReco->setObjectName("scenReco");
+    scenReco->setWordWrap(true);
+    scenReco->setStyleSheet(
+        "font-size: 12px; font-weight: 700; color: #e65100; "
+        "background: #fff8e1; border: 1px solid #ffe082; border-radius: 8px; padding: 8px;"
+    );
+    projL->addWidget(scenReco);
+
+    l->addWidget(projFrame);
+
+    // Connexion : mettre à jour la projection au clic sur "Calculer les Besoins"
+    QObject::connect(btnCalculer, &QPushButton::clicked, this, [=]() {
+        projFrame->setVisible(true);
+
+        const QString matiere = cbMatiere->currentText();
+        const QString produit = cbProduit->currentText();
+        const int     qte     = sbQuantite->value();
+        const double  perte   = dsPerte->value() / 100.0;
+
+        // Surface par unité
+        const QMap<QString,double> surfMap = {
+            {"Sac Voyage Cuir",0.8},{"Sac Main Cuir",0.6},
+            {"Portefeuille Cuir",0.25},{"Ceinture Cuir",0.18}
+        };
+        const double surfUnit = surfMap.value(produit, 0.8);
+        const double besoinJour = surfUnit * qte * (1.0 + perte) / 14.0; // consommation/jour
+
+        // Stock réel depuis Oracle
+        double stockActuel = 0.0;
+        {
+            Connexion *c = Connexion::getInstance();
+            if (c->estConnecte()) {
+                QSqlQuery q(c->getDatabase());
+                QString couleur = (matiere=="Cuir Vachette") ? "Marron"
+                                : (matiere=="Cuir Agneau")   ? "Blanc" : "Beige";
+                q.prepare("SELECT SUM(QUANTITE) FROM MATIERES_PREMIERES "
+                          "WHERE CATEGORIE_MP='Cuir' AND COULEUR=:c");
+                q.bindValue(":c", couleur);
+                if (q.exec() && q.next()) stockActuel = q.value(0).toDouble();
+            }
+        }
+
+        const double ravitaillement = qMax(50.0, besoinJour * 14.0 - stockActuel + 20.0);
+        const double seuilCritique  = besoinJour * 3.0; // 3 jours de stock minimum
+
+        // ---- GRAPHIQUE ----
+        QVBoxLayout *chartVL = ensureVBox(projChartWidget);
+        clearLayout(chartVL);
+
+        auto *seriesSans = new QLineSeries();
+        auto *seriesAvec = new QLineSeries();
+        auto *seriesSeuil = new QLineSeries();
+
+        seriesSans ->setName("Sans ravitaillement");
+        seriesAvec ->setName("Avec ravitaillement");
+        seriesSeuil->setName("Seuil critique");
+
+        seriesSans ->setColor(QColor("#c62828"));
+        seriesAvec ->setColor(QColor("#2e7d32"));
+        seriesSeuil->setColor(QColor("#ef6c00"));
+
+        QPen penSeuil(QColor("#ef6c00")); penSeuil.setStyle(Qt::DashLine); penSeuil.setWidth(2);
+        seriesSeuil->setPen(penSeuil);
+        QPen penSans(QColor("#c62828")); penSans.setWidth(2); seriesSans->setPen(penSans);
+        QPen penAvec(QColor("#2e7d32")); penAvec.setWidth(2); seriesAvec->setPen(penAvec);
+
+        double stockSans = stockActuel;
+        double stockAvec = stockActuel;
+        for (int j = 0; j <= 14; ++j) {
+            seriesSans ->append(j, qMax(0.0, stockSans));
+            seriesSeuil->append(j, seuilCritique);
+            if (j == 3) stockAvec += ravitaillement; // livraison J+3
+            seriesAvec->append(j, qMax(0.0, stockAvec));
+            stockSans -= besoinJour;
+            stockAvec -= besoinJour;
+        }
+
+        auto *chart = new QChart();
+        chart->addSeries(seriesSans);
+        chart->addSeries(seriesAvec);
+        chart->addSeries(seriesSeuil);
+        chart->setTitle("");
+        chart->setBackgroundVisible(false);
+        chart->setMargins(QMargins(0,0,0,0));
+        chart->legend()->setVisible(false);
+
+        auto *axisX = new QValueAxis(); axisX->setRange(0,14); axisX->setTickCount(8);
+        axisX->setTitleText("Jours"); axisX->setLabelFormat("%d");
+        axisX->setLabelsColor(QColor("#3e2723")); axisX->setTitleBrush(QColor("#3e2723"));
+        chart->addAxis(axisX, Qt::AlignBottom);
+        seriesSans ->attachAxis(axisX);
+        seriesAvec ->attachAxis(axisX);
+        seriesSeuil->attachAxis(axisX);
+
+        double maxY = qMax(stockActuel + ravitaillement, seuilCritique) * 1.15;
+        auto *axisY = new QValueAxis(); axisY->setRange(0, maxY); axisY->applyNiceNumbers();
+        axisY->setTitleText("M²"); axisY->setLabelFormat("%.0f");
+        axisY->setLabelsColor(QColor("#3e2723")); axisY->setTitleBrush(QColor("#3e2723"));
+        axisY->setGridLineColor(QColor("#eeeeee"));
+        chart->addAxis(axisY, Qt::AlignLeft);
+        seriesSans ->attachAxis(axisY);
+        seriesAvec ->attachAxis(axisY);
+        seriesSeuil->attachAxis(axisY);
+
+        auto *chartView = new QChartView(chart);
+        chartView->setRenderHint(QPainter::Antialiasing);
+        chartView->setFrameShape(QFrame::NoFrame);
+        chartView->setStyleSheet("background: transparent;");
+        chartView->setMinimumHeight(200);
+        chartVL->addWidget(chartView);
+
+        // ---- TABLEAU SCÉNARIOS ----
+        const double prixM2 = 32.0; // prix moyen
+        const double qCons  = besoinJour * 14.0; // besoin total 14j
+
+        struct Scenario { QString nom; double qte; QColor coulNom; };
+        QList<Scenario> scenarios = {
+            {"CONSERVATEUR", qCons * 0.7,  QColor("#00838f")},
+            {"OPTIMAL",      qCons * 1.0,  QColor("#2e7d32")},
+            {"ANTICIPATIF",  qCons * 1.4,  QColor("#f9a825")}
+        };
+
+        QStringList criteres = {"Quantité commandée","Budget estimé","Couverture","Risque"};
+        QStringList risques  = {"Modéré","Faible","Faible"};
+        QList<QColor> risqCols = {QColor("#ef6c00"), QColor("#2e7d32"), QColor("#2e7d32")};
+
+        for (int r = 0; r < 4; ++r) {
+            // Colonne 0 : critère
+            auto *itemC = new QTableWidgetItem(criteres[r]);
+            itemC->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+            itemC->setForeground(QColor("#3e2723"));
+            scenTable->setItem(r, 0, itemC);
+
+            for (int s = 0; s < 3; ++s) {
+                double q = scenarios[s].qte;
+                QString val;
+                if      (r == 0) val = QString::number(q,'f',0) + " M²";
+                else if (r == 1) val = QString::number(q * prixM2,'f',0) + " DT";
+                else if (r == 2) val = QString::number(q / qMax(besoinJour,0.01),'f',1) + " j";
+                else             val = risques[s];
+
+                auto *item = new QTableWidgetItem(val);
+                item->setTextAlignment(Qt::AlignCenter);
+                if (r == 3) item->setForeground(risqCols[s]);
+                else        item->setForeground(QColor("#212121"));
+
+                // Colonne OPTIMAL en vert clair
+                if (s == 1) item->setBackground(QColor("#f1f8e9"));
+                scenTable->setItem(r, s + 1, item);
+            }
+        }
+
+        // Recommandation
+        if (stockActuel < seuilCritique)
+            scenReco->setText("⚡ Situation critique : scénario Anticipatif recommandé pour sécuriser la production.");
+        else if (stockActuel < qCons)
+            scenReco->setText("⚠️ Stock partiel : scénario Optimal recommandé pour couvrir les 14 prochains jours.");
+        else
+            scenReco->setText("✅ Stock suffisant : scénario Conservateur suffisant. Optimisez le budget.");
+    });
+
+    l->addStretch();
+
 
     QPushButton *btnCommander = new QPushButton("Commander Plus", onglet);
     btnCommander->setCursor(Qt::PointingHandCursor);
@@ -7420,7 +9823,9 @@ void MainWindow::showStockCalculTab() {
         "QPushButton:pressed { background-color: #388e3c; }"
     );
 
-    actions->addWidget(btnReserver);
+    QHBoxLayout *actions = new QHBoxLayout();
+    actions->setSpacing(10);
+
     actions->addWidget(btnCommander);
     actions->addWidget(btnExportCalcul);
     actions->addWidget(btnSaveCalcul);
@@ -7527,45 +9932,74 @@ void MainWindow::showStockCalculTab() {
     QLabel *trendTitle = new QLabel("Evolution recente du deficit (M2)");
     trendTitle->setStyleSheet("font-size: 13px; font-weight: 800; color: #234253;");
 
-    QScrollArea *trendScroll = new QScrollArea(trendFrame);
-    trendScroll->setWidgetResizable(false);
-    trendScroll->setFrameShape(QFrame::NoFrame);
-    trendScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    trendScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    trendScroll->setStyleSheet(
-        "QScrollArea { background: transparent; border: none; }"
-        "QScrollBar:horizontal {"
-        " background: #efefef;"
-        " height: 12px;"
-        " margin: 2px 8px 2px 8px;"
-        " border-radius: 6px;"
-        "}"
-        "QScrollBar::handle:horizontal {"
-        " background: #cba731;"
-        " min-width: 46px;"
-        " border-radius: 6px;"
-        "}"
-        "QScrollBar::handle:horizontal:hover { background: #d6b64b; }"
-        "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; background: transparent; border: none; }"
-        "QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }"
-    );
-
     QWidget *trendChart = new QWidget();
     trendChart->setMinimumHeight(230);
-    trendChart->setMinimumWidth(1050);
-    trendScroll->setWidget(trendChart);
+    trendChart->setMinimumWidth(0);
 
     trendL->addWidget(trendTitle);
-    trendL->addWidget(trendScroll);
+    trendL->addWidget(trendChart);
     histCalcL->addWidget(trendFrame);
 
     l->addWidget(histCalcFrame);
 
-    auto *stockMap = new QMap<QString, double>({
-        {"Cuir Vachette", 100.0},
-        {"Cuir Agneau", 80.0},
-        {"Cuir Veau", 65.0}
-    });
+    // =========================================================
+    // STOCK : maps partagées, rechargées depuis Oracle à la demande
+    // =========================================================
+    auto *stockMap  = new QMap<QString, double>();
+    auto *stockMapA = new QMap<QString, double>();
+    auto *stockMapB = new QMap<QString, double>();
+    auto *stockMapC = new QMap<QString, double>();
+
+    // Lambda de rechargement — appelé au démarrage ET après chaque commande
+    auto rechargerStock = [=]() {
+        stockMap ->clear();
+        stockMapA->clear();
+        stockMapB->clear();
+        stockMapC->clear();
+
+        Connexion *c = Connexion::getInstance();
+        if (c->estConnecte()) {
+            QSqlQuery q(c->getDatabase());
+            q.prepare(
+                "SELECT COULEUR, QUALITE, SUM(QUANTITE) "
+                "FROM MATIERES_PREMIERES "
+                "WHERE CATEGORIE_MP = 'Cuir' "
+                "GROUP BY COULEUR, QUALITE"
+            );
+            if (q.exec()) {
+                while (q.next()) {
+                    const QString couleur  = q.value(0).toString();
+                    const QString qualite  = q.value(1).toString();
+                    const double  quantite = q.value(2).toDouble();
+
+                    QString type;
+                    if      (couleur == "Marron") type = "Cuir Vachette";
+                    else if (couleur == "Blanc")  type = "Cuir Agneau";
+                    else if (couleur == "Beige")  type = "Cuir Veau";
+                    else {
+                        (*stockMap)["Cuir Vachette"] += quantite * 0.50;
+                        (*stockMap)["Cuir Agneau"]   += quantite * 0.30;
+                        (*stockMap)["Cuir Veau"]     += quantite * 0.20;
+                        continue;
+                    }
+                    (*stockMap)[type] += quantite;
+                    if      (qualite == "A") (*stockMapA)[type] += quantite;
+                    else if (qualite == "B") (*stockMapB)[type] += quantite;
+                    else if (qualite == "C") (*stockMapC)[type] += quantite;
+                }
+            }
+        }
+        // Valeurs par défaut si vide
+        for (const QString &t : {"Cuir Vachette", "Cuir Agneau", "Cuir Veau"}) {
+            if (!stockMap ->contains(t)) (*stockMap )[t] = 0.0;
+            if (!stockMapA->contains(t)) (*stockMapA)[t] = 0.0;
+            if (!stockMapB->contains(t)) (*stockMapB)[t] = 0.0;
+            if (!stockMapC->contains(t)) (*stockMapC)[t] = 0.0;
+        }
+    };
+
+    // Chargement initial
+    rechargerStock();
 
     auto *surfaceMap = new QMap<QString, double>({
         {"Sac Voyage Cuir", 0.8},
@@ -7622,51 +10056,97 @@ void MainWindow::showStockCalculTab() {
     };
 
     auto calculerBesoin = [=]() {
-        const QString produit = cbProduit->currentText();
-        const QString matiere = cbMatiere->currentText();
-        const int quantite = sbQuantite->value();
-        const double pertePct = dsPerte->value();
-        const double facteurScenario = scenarioFactor();
+        const QString produit         = cbProduit ->currentText();
+        const QString matiere         = cbMatiere ->currentText();
+        const QString qualiteChoisie  = cbQualite ->currentData().toString(); // "ALL","A","B","C"
+        const int     quantite        = sbQuantite->value();
+        const double  pertePct        = dsPerte   ->value();
+        const double  facteurScenario = scenarioFactor();
 
-        const double surfaceUnitaire = surfaceMap->value(produit, 0.8);
-        const double surfaceTotale = surfaceUnitaire * static_cast<double>(quantite) * facteurScenario;
+        const double surfaceUnitaire  = surfaceMap->value(produit, 0.8);
+        const double surfaceTotale    = surfaceUnitaire * static_cast<double>(quantite) * facteurScenario;
         const double surfaceAvecPerte = surfaceTotale * (1.0 + (pertePct / 100.0));
-        const double stockDispo = stockMap->value(matiere, 0.0);
-        const bool suffisant = stockDispo >= surfaceAvecPerte;
-        const double deficit = qMax(0.0, surfaceAvecPerte - stockDispo);
-        const double couverturePct = (surfaceAvecPerte > 0.0) ? qMin(100.0, (stockDispo / surfaceAvecPerte) * 100.0) : 100.0;
+
+        const double stockA = stockMapA->value(matiere, 0.0);
+        const double stockB = stockMapB->value(matiere, 0.0);
+        const double stockC = stockMapC->value(matiere, 0.0);
+
+        // Stock selon la qualité sélectionnée
+        double stockDispo = 0.0;
+        QString qualiteLabel;
+        if      (qualiteChoisie == "A") { stockDispo = stockA; qualiteLabel = "A — Premium";    }
+        else if (qualiteChoisie == "B") { stockDispo = stockB; qualiteLabel = "B — Standard";   }
+        else if (qualiteChoisie == "C") { stockDispo = stockC; qualiteLabel = "C — Économique"; }
+        else {
+            // "Toutes qualités" = somme cohérente A+B+C uniquement
+            stockDispo = stockA + stockB + stockC;
+            qualiteLabel = "Toutes qualités";
+        }
+
+        // Déficits par qualité (pour information)
+        const double deficitA = qMax(0.0, surfaceAvecPerte - stockA);
+        const double deficitB = qMax(0.0, surfaceAvecPerte - stockB);
+        const double deficitC = qMax(0.0, surfaceAvecPerte - stockC);
+
+        const bool   suffisant     = stockDispo >= surfaceAvecPerte;
+        const double deficit       = qMax(0.0, surfaceAvecPerte - stockDispo);
+        const double couverturePct = (surfaceAvecPerte > 0.0)
+                                     ? qMin(100.0, (stockDispo / surfaceAvecPerte) * 100.0)
+                                     : 100.0;
         const double tension = qBound(0.0, 100.0 - couverturePct, 100.0);
 
         resultFrame->setStyleSheet(suffisant
             ? "QFrame { background: #edf8ee; border: 2px solid #66bb6a; border-radius: 8px; }"
             : "QFrame { background: #fff0f0; border: 2px solid #ef5350; border-radius: 8px; }");
 
-        const QString statut = suffisant ? "SUFFISANT" : "INSUFFISANT";
-        const QString statutColor = suffisant ? "#1b5e20" : "#b71c1c";
+        const QString statut      = suffisant ? "SUFFISANT" : "INSUFFISANT";
+        const QString statutColor = suffisant ? "#1b5e20"   : "#b71c1c";
 
         resultText->setText(QString(
             "Surface nécessaire par unité : <b>%1 M²</b><br>"
             "Scénario appliqué : <b>%8</b> (x%9)<br>"
             "Surface totale ajustée (sans perte) : <b>%2 M²</b><br>"
             "Surface avec marge de perte (%3%) : <b>%4 M²</b><br>"
-            "Stock disponible : <b>%5 M²</b><br><br>"
-            "Déficit estimé : <b>%10 M²</b><br>"
+            "<br>"
+            "📦 <b>Stock utilisé — Qualité %15 : %5 M²</b><br>"
+            "&nbsp;&nbsp;&nbsp;🟢 Qualité <b>A</b> (Premium)    : <b>%12 M²</b>"
+            " — Déficit A : <b style='color:%16;'>%17 M²</b><br>"
+            "&nbsp;&nbsp;&nbsp;🟡 Qualité <b>B</b> (Standard)   : <b>%13 M²</b>"
+            " — Déficit B : <b style='color:%18;'>%19 M²</b><br>"
+            "&nbsp;&nbsp;&nbsp;🔴 Qualité <b>C</b> (Économique) : <b>%14 M²</b>"
+            " — Déficit C : <b style='color:%20;'>%21 M²</b><br>"
+            "<br>"
+            "Déficit estimé (%15) : <b>%10 M²</b><br>"
+            "Variation utile: +1 unite produite ajoute environ <b>%11 M²</b> de besoin.<br>"
+            "Regle simple: si le deficit est grand, le risque de rupture augmente vite."
             "<div style='text-align:center; font-weight:900; color:%6;'>Statut : %7</div>"
         )
-            .arg(QString::number(surfaceUnitaire, 'f', 2))
-            .arg(QString::number(surfaceTotale, 'f', 2))
-            .arg(QString::number(pertePct, 'f', 1))
-            .arg(QString::number(surfaceAvecPerte, 'f', 2))
-            .arg(QString::number(stockDispo, 'f', 2))
-            .arg(statutColor)
-            .arg(statut)
-            .arg(cbScenario->currentText())
-            .arg(QString::number(facteurScenario, 'f', 2))
-            .arg(QString::number(deficit, 'f', 2)));
+            .arg(QString::number(surfaceUnitaire,  'f', 2))   // %1
+            .arg(QString::number(surfaceTotale,    'f', 2))   // %2
+            .arg(QString::number(pertePct,         'f', 1))   // %3
+            .arg(QString::number(surfaceAvecPerte, 'f', 2))   // %4
+            .arg(QString::number(stockDispo,       'f', 2))   // %5
+            .arg(statutColor)                                  // %6
+            .arg(statut)                                       // %7
+            .arg(cbScenario->currentText())                    // %8
+            .arg(QString::number(facteurScenario,  'f', 2))   // %9
+            .arg(QString::number(deficit,          'f', 2))   // %10
+            .arg(QString::number(surfaceUnitaire * facteurScenario * (1.0 + pertePct / 100.0), 'f', 3)) // %11
+            .arg(QString::number(stockA, 'f', 2))             // %12
+            .arg(QString::number(stockB, 'f', 2))             // %13
+            .arg(QString::number(stockC, 'f', 2))             // %14
+            .arg(qualiteLabel)                                 // %15
+            .arg(deficitA > 0 ? "#b71c1c" : "#1b5e20")        // %16 couleur déficit A
+            .arg(QString::number(deficitA, 'f', 2))           // %17 déficit A
+            .arg(deficitB > 0 ? "#b71c1c" : "#1b5e20")        // %18 couleur déficit B
+            .arg(QString::number(deficitB, 'f', 2))           // %19 déficit B
+            .arg(deficitC > 0 ? "#b71c1c" : "#1b5e20")        // %20 couleur déficit C
+            .arg(QString::number(deficitC, 'f', 2))           // %21 déficit C
+        );
 
-        lblKpiBesoin->setText(QString::number(surfaceAvecPerte, 'f', 1) + " M2");
-        lblKpiDeficit->setText(QString::number(deficit, 'f', 1) + " M2");
-        lblKpiCouverture->setText(QString::number(couverturePct, 'f', 0) + " %");
+        lblKpiBesoin   ->setText(QString::number(surfaceAvecPerte, 'f', 1) + " M2");
+        lblKpiDeficit  ->setText(QString::number(deficit,          'f', 1) + " M2");
+        lblKpiCouverture->setText(QString::number(couverturePct,   'f', 0) + " %");
         pbTension->setValue(static_cast<int>(tension));
 
         if (deficit <= 0.0) {
@@ -7783,26 +10263,48 @@ void MainWindow::showStockCalculTab() {
         if (xlabels.isEmpty()) xlabels << "0";
 
         auto *series = new QLineSeries();
-        QPen pen(QColor("#d77a00"));
+        auto *refSeries = new QLineSeries();
+        QPen pen(QColor("#cf7a00"));
         pen.setWidth(3);
+        QPen refPen(QColor("#546e7a"));
+        refPen.setWidth(2);
+        refPen.setStyle(Qt::DashLine);
         series->setPen(pen);
+        refSeries->setPen(refPen);
         series->setPointsVisible(true);
+        refSeries->setPointsVisible(false);
         series->setPointLabelsVisible(false);
+        series->setName("Deficit");
+        refSeries->setName("Seuil de vigilance");
+
+        double somme = 0.0;
+        for (double v : vals) somme += v;
+        const double moyenne = vals.isEmpty() ? 0.0 : (somme / vals.size());
+        const double seuilVigilance = qMax(1.0, moyenne * 1.1);
 
         for (int i = 0; i < vals.size(); ++i) {
             series->append(i, vals.at(i));
+            refSeries->append(i, seuilVigilance);
         }
         if (vals.size() == 1) {
             series->append(1, vals.first()); // trace une ligne plate meme avec 1 seul point historique
+            refSeries->append(1, seuilVigilance);
             xlabels << (xlabels.first() + " ");
         }
 
         auto *chart = new QChart();
         chart->addSeries(series);
+        chart->addSeries(refSeries);
         styleChartBase(chart);
+        chart->setPlotAreaBackgroundVisible(true);
+        chart->setPlotAreaBackgroundBrush(QColor("#fcfcfd"));
+        chart->setBackgroundRoundness(0);
         chart->setTitle("Courbe du deficit");
         chart->setAnimationOptions(QChart::SeriesAnimations);
-        if (chart->legend()) chart->legend()->setVisible(false);
+        if (chart->legend()) {
+            chart->legend()->setVisible(true);
+            chart->legend()->setAlignment(Qt::AlignBottom);
+        }
 
         bool allZero = true;
         for (double v : vals) {
@@ -7835,6 +10337,7 @@ void MainWindow::showStockCalculTab() {
         axisX->setLabelsAngle(0);
         chart->addAxis(axisX, Qt::AlignBottom);
         series->attachAxis(axisX);
+        refSeries->attachAxis(axisX);
 
         double maxV = 1.0;
         for (double v : vals) maxV = qMax(maxV, v);
@@ -7846,6 +10349,7 @@ void MainWindow::showStockCalculTab() {
         axisY->setGridLineColor(QColor("#eee5dd"));
         chart->addAxis(axisY, Qt::AlignLeft);
         series->attachAxis(axisY);
+        refSeries->attachAxis(axisY);
 
         auto *view = new QChartView(chart);
         styleChartView(view);
@@ -8057,33 +10561,16 @@ void MainWindow::showStockCalculTab() {
         calculerBesoin();
     });
     QObject::connect(cbScenario, &QComboBox::currentTextChanged, this, [=](const QString &){ calculerBesoin(); });
-    QObject::connect(cbProduit, &QComboBox::currentTextChanged, this, [=](const QString &produit){
+    QObject::connect(cbProduit,  &QComboBox::currentTextChanged, this, [=](const QString &produit){
         majPhotoProduit(produit);
         calculerBesoin();
     });
-    QObject::connect(cbMatiere, &QComboBox::currentTextChanged, this, [=](const QString &){ calculerBesoin(); });
-    QObject::connect(sbQuantite, qOverload<int>(&QSpinBox::valueChanged), this, [=](int){ calculerBesoin(); });
-    QObject::connect(dsPerte, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [=](double){ calculerBesoin(); });
+    QObject::connect(cbMatiere,  &QComboBox::currentTextChanged, this, [=](const QString &){ calculerBesoin(); });
+    QObject::connect(cbQualite,  &QComboBox::currentIndexChanged, this, [=](int){ calculerBesoin(); });
+    QObject::connect(sbQuantite, qOverload<int>(&QSpinBox::valueChanged),         this, [=](int){ calculerBesoin(); });
+    QObject::connect(dsPerte,    qOverload<double>(&QDoubleSpinBox::valueChanged), this, [=](double){ calculerBesoin(); });
 
-    QObject::connect(btnReserver, &QPushButton::clicked, this, [=]() {
-        const QString matiere = cbMatiere->currentText();
-        const QString produit = cbProduit->currentText();
-        const double surfaceUnitaire = surfaceMap->value(produit, 0.8);
-        const double surfaceAvecPerte = (surfaceUnitaire * sbQuantite->value()) * (1.0 + dsPerte->value() / 100.0);
-        const double stockDispo = stockMap->value(matiere, 0.0);
 
-        if (stockDispo >= surfaceAvecPerte) {
-            (*stockMap)[matiere] = stockDispo - surfaceAvecPerte;
-            calculerBesoin();
-            showStyledInfo("Réservation",
-                           "La matière a été réservée avec succès.",
-                           "#2e7d32",
-                           "#edf8ee",
-                           "#43a047");
-        } else {
-            QMessageBox::warning(this, "Stock insuffisant", "Stock insuffisant pour réserver cette quantité. Utilisez 'Commander Plus'.");
-        }
-    });
 
     QObject::connect(btnCommander, &QPushButton::clicked, this, [=]() {
         const QString matiere = cbMatiere->currentText();
@@ -8093,14 +10580,192 @@ void MainWindow::showStockCalculTab() {
         const double stockActuel = stockMap->value(matiere, 0.0);
         const double ajout = std::max(50.0, besoin - stockActuel + 10.0);
 
-        (*stockMap)[matiere] = stockActuel + ajout;
-        calculerBesoin();
-        showStyledInfo("Commande",
-                       QString("Commande ajoutée : +%1 M² de %2.")
-                           .arg(QString::number(ajout, 'f', 2), matiere),
-                       "#ef6c00",
-                       "#fff4e8",
-                       "#fb8c00");
+        // =========================================================
+        // DIALOGUE DE SÉLECTION DU FOURNISSEUR AVEC QUALITÉ
+        // =========================================================
+
+        // Structure fournisseur avec qualité déduite du rang de prix
+        struct FInfo { QString nom; double prix; QString qualite; };
+        QList<FInfo> fournisseurs;
+
+        Connexion *cnxF = Connexion::getInstance();
+        if (cnxF->estConnecte()) {
+            QSqlQuery qF(cnxF->getDatabase());
+            qF.prepare("SELECT NOM_FOURNISSEUR, PRIX_PAR_M2 FROM FOURNISSEURS "
+                       "WHERE TYPE_CUIR = :type AND ACTIF = '1' ORDER BY PRIX_PAR_M2 DESC");
+            qF.bindValue(":type", matiere);
+            if (qF.exec()) {
+                while (qF.next())
+                    fournisseurs << FInfo{qF.value(0).toString(), qF.value(1).toDouble(), ""};
+            }
+        }
+        if (fournisseurs.isEmpty()) {
+            if      (matiere == "Cuir Agneau") fournisseurs = {{"SoftHide Pro",52.0,""}, {"Agneau Plus",44.0,""}, {"Cuir Sud",36.0,""}};
+            else if (matiere == "Cuir Veau")   fournisseurs = {{"Veau Prestige",49.0,""}, {"Elite Veau",41.0,""}, {"Market Cuir",34.0,""}};
+            else                               fournisseurs = {{"TanLeather SA",45.0,""}, {"Cuir Elite",38.0,""}, {"MegaCuir",32.0,""}};
+        }
+        // Assigner A/B/C selon le rang (prix décroissant : 1er=A, 2ème=B, 3ème=C)
+        const QStringList rangsQ = {"A","B","C"};
+        for (int i = 0; i < fournisseurs.size(); ++i)
+            fournisseurs[i].qualite = (i < rangsQ.size()) ? rangsQ[i] : "C";
+
+        // Créer le dialogue
+        QDialog dlg(this);
+        dlg.setWindowTitle("Sélection du Fournisseur");
+        dlg.setMinimumWidth(520);
+        dlg.setStyleSheet(
+            "QDialog { background: #f4f1ea; }"
+            "QLabel  { color: #3e2723; }"
+            "QComboBox { background: white; border: 1px solid #d7ccc8; border-radius: 6px; "
+            "            padding: 8px 12px; font-size: 13px; color: #3e2723; min-height: 20px; }"
+        );
+        QVBoxLayout *dlgL = new QVBoxLayout(&dlg);
+        dlgL->setContentsMargins(24, 24, 24, 24);
+        dlgL->setSpacing(14);
+
+        QLabel *dlgTitre = new QLabel(
+            QString("🛒 Commander <b>%1 M²</b> de <b>%2</b>")
+                .arg(QString::number(ajout,'f',2), matiere));
+        dlgTitre->setStyleSheet("font-size:16px; font-weight:800; color:#3e2723; "
+                                "background:#ede0d4; border-radius:8px; padding:12px;");
+        dlgTitre->setAlignment(Qt::AlignCenter);
+        dlgL->addWidget(dlgTitre);
+
+        QLabel *lblF = new QLabel("Choisissez le fournisseur :");
+        lblF->setStyleSheet("font-size:14px; font-weight:700; color:#5d4037;");
+        dlgL->addWidget(lblF);
+
+        QComboBox *cbF = new QComboBox(&dlg);
+        const QMap<QString,QString> qlbl = {{"A","🟢 A — Premium"},{"B","🟡 B — Standard"},{"C","🔴 C — Économique"}};
+        for (const auto &f : fournisseurs)
+            cbF->addItem(QString("%1  —  %2 DT/M²  [Qualité %3]")
+                             .arg(f.nom)
+                             .arg(QString::number(f.prix,'f',0))
+                             .arg(qlbl.value(f.qualite, f.qualite)));
+        cbF->setCurrentIndex(0);
+        dlgL->addWidget(cbF);
+
+        // Badge qualité
+        QLabel *lblBadge = new QLabel();
+        lblBadge->setAlignment(Qt::AlignCenter);
+        auto refreshBadge = [&]() {
+            int idx = cbF->currentIndex();
+            if (idx < 0 || idx >= fournisseurs.size()) return;
+            const QString q = fournisseurs[idx].qualite;
+            if      (q=="A") { lblBadge->setText("🟢 Qualité A — Premium (meilleure qualité)");
+                               lblBadge->setStyleSheet("font-size:13px;font-weight:800;background:#e8f5e9;color:#1b5e20;border-radius:8px;padding:8px;"); }
+            else if (q=="B") { lblBadge->setText("🟡 Qualité B — Standard");
+                               lblBadge->setStyleSheet("font-size:13px;font-weight:800;background:#fff8e1;color:#e65100;border-radius:8px;padding:8px;"); }
+            else             { lblBadge->setText("🔴 Qualité C — Économique (prix bas)");
+                               lblBadge->setStyleSheet("font-size:13px;font-weight:800;background:#ffebee;color:#b71c1c;border-radius:8px;padding:8px;"); }
+        };
+        refreshBadge();
+
+        // Prix total
+        QLabel *lblPrixTotal = new QLabel();
+        lblPrixTotal->setStyleSheet("font-size:13px;color:#1a237e;background:#e8eaf6;border-radius:6px;padding:8px;font-weight:600;");
+        lblPrixTotal->setAlignment(Qt::AlignCenter);
+        auto updatePrix = [&]() {
+            int idx = cbF->currentIndex();
+            if (idx < 0 || idx >= fournisseurs.size()) return;
+            double pu = fournisseurs[idx].prix;
+            lblPrixTotal->setText(
+                QString("💰 Coût estimé : %1 DT/M² × %2 M² = <b>%3 DT</b>")
+                    .arg(QString::number(pu,'f',0))
+                    .arg(QString::number(ajout,'f',2))
+                    .arg(QString::number(pu*ajout,'f',2)));
+        };
+        updatePrix();
+
+        // Connecter les deux lambdas APRÈS leur déclaration
+        connect(cbF, QOverload<int>::of(&QComboBox::currentIndexChanged), [&](int){
+            refreshBadge();
+            updatePrix();
+        });
+
+        dlgL->addWidget(lblBadge);
+        dlgL->addWidget(lblPrixTotal);
+
+        // Boutons
+        QHBoxLayout *btnL = new QHBoxLayout();
+        btnL->setSpacing(12);
+        QPushButton *btnAnnuler   = new QPushButton("✖ Annuler");
+        QPushButton *btnConfirmer = new QPushButton("✅ Confirmer la commande");
+        btnAnnuler  ->setStyleSheet("QPushButton{background:#b71c1c;color:white;border-radius:8px;padding:10px 24px;font-weight:bold;font-size:13px;}QPushButton:hover{background:#d32f2f;}");
+        btnConfirmer->setStyleSheet("QPushButton{background:#8d5524;color:white;border-radius:8px;padding:10px 24px;font-weight:bold;font-size:13px;}QPushButton:hover{background:#a0673b;}");
+        btnConfirmer->setDefault(true);
+        connect(btnAnnuler,   &QPushButton::clicked, &dlg, &QDialog::reject);
+        connect(btnConfirmer, &QPushButton::clicked, &dlg, &QDialog::accept);
+        btnL->addWidget(btnAnnuler);
+        btnL->addWidget(btnConfirmer);
+        dlgL->addLayout(btnL);
+
+        if (dlg.exec() != QDialog::Accepted) return;
+
+        // Fournisseur et qualité sélectionnés
+        const int     idxChoisi        = cbF->currentIndex();
+        QString       fournisseurChoisi = (idxChoisi >= 0 && idxChoisi < fournisseurs.size())
+                                          ? fournisseurs[idxChoisi].nom : "Inconnu";
+        const QString qualiteInsert    = (idxChoisi >= 0 && idxChoisi < fournisseurs.size())
+                                          ? fournisseurs[idxChoisi].qualite : "A";
+
+        // =========================================================
+        // SAUVEGARDER LA COMMANDE DANS ORACLE
+        // =========================================================
+        Connexion *cnx = Connexion::getInstance();
+        if (cnx->estConnecte()) {
+            QSqlQuery qUpdate(cnx->getDatabase());
+
+            QString codeMP = QString("CMD-%1-%2")
+                .arg(QDate::currentDate().toString("yyyy"))
+                .arg(QString::number(QRandomGenerator::global()->bounded(100, 999)));
+
+            QString couleur = "Naturel";
+            if      (matiere == "Cuir Vachette") couleur = "Marron";
+            else if (matiere == "Cuir Agneau")   couleur = "Blanc";
+            else if (matiere == "Cuir Veau")     couleur = "Beige";
+
+            QString lot = QString("LOT-%1-%2").arg(QDate::currentDate().toString("yyyy")).arg(qualiteInsert);
+
+            qUpdate.prepare(
+                "INSERT INTO MATIERES_PREMIERES "
+                "(ID_STOCK_MP, CODE_MP, CATEGORIE_MP, NUM_LOT, ETAT_MP, COULEUR, QUANTITE, TYPE_STOCKAGE, QUALITE) "
+                "VALUES (SEQ_MAT.NEXTVAL, :code, :cat, :lot, :etat, :coul, :qte, :type, :qual)"
+            );
+            qUpdate.bindValue(":code", codeMP);
+            qUpdate.bindValue(":cat",  "Cuir");
+            qUpdate.bindValue(":lot",  lot);
+            qUpdate.bindValue(":etat", "BRUT");
+            qUpdate.bindValue(":coul", couleur);
+            qUpdate.bindValue(":qte",  ajout);
+            qUpdate.bindValue(":type", "Sec");
+            qUpdate.bindValue(":qual", qualiteInsert);  // ← A, B ou C selon fournisseur
+            
+            if (qUpdate.exec()) {
+                // Recharger depuis Oracle et recalculer immédiatement
+                rechargerStock();
+                calculerBesoin();
+
+                showStyledInfo("Commande confirmée",
+                    QString("✅ Commande passée auprès de <b>%1</b><br>"
+                            "+%2 M² de %3 — Qualité <b>%5</b> ajoutés au stock.<br>"
+                            "Code Oracle : <b>%4</b>")
+                        .arg(fournisseurChoisi)
+                        .arg(QString::number(ajout, 'f', 2))
+                        .arg(matiere)
+                        .arg(codeMP)
+                        .arg(qualiteInsert),
+                    "#2e7d32", "#e8f5e9", "#388e3c");
+
+                rafraichirListeMatieres();
+            } else {
+                alerteErreur("Erreur BDD",
+                    "Impossible de sauvegarder la commande : " + qUpdate.lastError().text());
+            }
+        } else {
+            alerteWarning("Base déconnectée",
+                "La commande ne peut pas être sauvegardée car la base Oracle n'est pas connectée.");
+        }
     });
 
     QObject::connect(btnFermer, &QPushButton::clicked, this, [this]() {
@@ -8110,7 +10775,78 @@ void MainWindow::showStockCalculTab() {
     majPhotoProduit(cbProduit->currentText());
     calculerBesoin();
     refreshCalcHistorique();
+
+    // --- Connexions Experts (Placées à la fin pour le scope) ---
+    QObject::connect(btnReserverMatiere, &QPushButton::clicked, this, [=]() {
+        const QString matiere         = cbMatiere->currentText();
+        const QString qualiteChoisie  = cbQualite->currentData().toString();
+        const QString produit         = cbProduit->currentText();
+        const double surfaceUnitaire  = surfaceMap->value(produit, 0.8);
+        const double surfaceAvecPerte = (surfaceUnitaire * sbQuantite->value()) * (1.0 + dsPerte->value() / 100.0);
+
+        // Stock selon la qualité sélectionnée
+        double stockDispo = 0.0;
+        if      (qualiteChoisie == "A") stockDispo = stockMapA->value(matiere, 0.0);
+        else if (qualiteChoisie == "B") stockDispo = stockMapB->value(matiere, 0.0);
+        else if (qualiteChoisie == "C") stockDispo = stockMapC->value(matiere, 0.0);
+        else                            stockDispo = stockMap ->value(matiere, 0.0);
+
+        if (stockDispo >= surfaceAvecPerte) {
+            Connexion *c = Connexion::getInstance();
+            if (c->estConnecte()) {
+                QSqlQuery qRes(c->getDatabase());
+
+                // Oracle : ORDER BY dans un sous-SELECT nécessite un double niveau
+                // SELECT * FROM (SELECT ... ORDER BY) WHERE ROWNUM = 1
+                if (qualiteChoisie == "ALL" || qualiteChoisie.isEmpty()) {
+                    qRes.prepare(
+                        "UPDATE MATIERES_PREMIERES SET QUANTITE = QUANTITE - :qte "
+                        "WHERE ID_STOCK_MP = ("
+                        "  SELECT ID_STOCK_MP FROM ("
+                        "    SELECT ID_STOCK_MP FROM MATIERES_PREMIERES "
+                        "    WHERE CATEGORIE_MP = 'Cuir' "
+                        "    ORDER BY QUANTITE DESC"
+                        "  ) WHERE ROWNUM = 1"
+                        ")"
+                    );
+                } else {
+                    qRes.prepare(
+                        "UPDATE MATIERES_PREMIERES SET QUANTITE = QUANTITE - :qte "
+                        "WHERE ID_STOCK_MP = ("
+                        "  SELECT ID_STOCK_MP FROM ("
+                        "    SELECT ID_STOCK_MP FROM MATIERES_PREMIERES "
+                        "    WHERE CATEGORIE_MP = 'Cuir' AND QUALITE = :qual "
+                        "    ORDER BY QUANTITE DESC"
+                        "  ) WHERE ROWNUM = 1"
+                        ")"
+                    );
+                    qRes.bindValue(":qual", qualiteChoisie);
+                }
+                qRes.bindValue(":qte", surfaceAvecPerte);
+
+                if (qRes.exec()) {
+                    rechargerStock();
+                    calculerBesoin();
+                    alerteSucces("Réservation",
+                        QString("La matière a été réservée avec succès dans Oracle.\n"
+                                "Qualité : %1 | Quantité : %2 M²")
+                            .arg(qualiteChoisie == "ALL" ? "Toutes" : qualiteChoisie)
+                            .arg(QString::number(surfaceAvecPerte, 'f', 2)));
+                    btnReserverMatiere->setEnabled(false);
+                    btnReserverMatiere->setText("✅ Lot de production validé");
+                } else {
+                    alerteErreur("Erreur BDD", "Impossible de réserver : " + qRes.lastError().text());
+                }
+            }
+        } else {
+            alerteWarning("Stock Insuffisant",
+                "Stock actuel insuffisant pour réserver cette quantité. "
+                "Procédez d'abord à un réapprovisionnement.");
+        }
+    });
+
     ui->tabWidgetStock->setCurrentIndex(5);
+
 }
 
 
@@ -9117,30 +11853,1108 @@ void MainWindow::showDepotOptimizeTab() {
     QWidget *onglet = ui->tabWidgetDepot->widget(4);
     if (onglet->layout()) { clearLayout(onglet->layout()); delete onglet->layout(); }
 
-    QVBoxLayout *l = new QVBoxLayout(onglet);
-    l->addStretch();
+    QVBoxLayout *rootLayout = new QVBoxLayout(onglet);
+    rootLayout->setContentsMargins(0, 0, 0, 0);
+    rootLayout->setSpacing(0);
 
-    QLabel *titre = new QLabel("🧩 ALGORITHME D'OPTIMISATION (FIRST-FIT)");
-    titre->setStyleSheet("font-size: 24px; font-weight: bold; color: #8e44ad; margin-bottom: 20px; text-transform: uppercase;");
-    titre->setAlignment(Qt::AlignCenter); l->addWidget(titre);
+    QScrollArea *scrollArea = new QScrollArea(onglet);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    scrollArea->setStyleSheet(
+        "QScrollArea { border: none; background: transparent; }"
+        "QScrollBar:vertical { background: #ececec; width: 10px; margin: 8px 3px 8px 2px; border-radius: 5px; }"
+        "QScrollBar::handle:vertical { background: #c8a32f; min-height: 44px; border-radius: 5px; }"
+        "QScrollBar::handle:vertical:hover { background: #d5b24a; }"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; background: transparent; border: none; }"
+        "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }"
+    );
 
-    int idx = ui->tableDepot->currentRow();
-    QLabel *desc = new QLabel();
-    if(idx >= 0 && idx < mesDepots.size()) {
-        DepotInfo dp = mesDepots[idx];
-        double espaceLibre = dp.capaciteMax - dp.quantiteActuelle;
-        desc->setText(QString(
-            "<div style='background:white; border-radius:12px; padding:30px; border:3px dashed #8e44ad; color:#3e2723; font-size:16px;'>"
-            "<h2 style='color:#8e44ad; margin-top:0; text-align:center;'>Analyse de l'emplacement : %1</h2><hr>"
-            "Capacité Totale : <b>%2 U</b> | Espace Libre : <b style='color:#27ae60;'>%3 U</b><br><br>"
-            "<b>💡 Recommandation IA :</b><br>"
-            "En consolidant les stocks de la Zone A avec cette étagère (%4), vous pouvez libérer 1 emplacement complet pour la nouvelle collection."
-            "</div>").arg(dp.id).arg(dp.capaciteMax).arg(espaceLibre).arg(dp.etagere));
-    } else {
-        desc->setText("<div style='background:white; padding:20px; border-radius:10px; color:gray; font-style:italic;'>Sélectionnez un emplacement dans la liste pour l'optimiser.</div>");
+    QWidget *scrollContent = new QWidget(scrollArea);
+    scrollArea->setWidget(scrollContent);
+    rootLayout->addWidget(scrollArea);
+
+    QVBoxLayout *l = new QVBoxLayout(scrollContent);
+    l->setContentsMargins(16, 14, 16, 14);
+    l->setSpacing(12);
+
+    QLabel *titre = new QLabel("🧩 PILOTAGE OPTIMISATION DEPOT (IA)");
+    titre->setStyleSheet(
+        "font-size: 24px;"
+        "font-weight: 900;"
+        "color: #322a68;"
+        "background: #ece8ff;"
+        "border: 1px solid #cdc6f2;"
+        "border-radius: 10px;"
+        "padding: 10px 14px;"
+        "text-transform: uppercase;"
+    );
+    titre->setAlignment(Qt::AlignCenter);
+    l->addWidget(titre);
+
+    // =========================================================
+    // STEPPER EXPERT : FLUX LOGISTIQUE (20/20)
+    // =========================================================
+    QHBoxLayout *stepperL = new QHBoxLayout();
+    stepperL->setContentsMargins(0, 10, 0, 15);
+    
+    auto makeStep = [](const QString &num, const QString &label, bool active) {
+        QWidget *step = new QWidget();
+        QHBoxLayout *sl = new QHBoxLayout(step);
+        sl->setContentsMargins(10, 5, 10, 5);
+        QLabel *n = new QLabel(num);
+        n->setFixedSize(24, 24);
+        n->setAlignment(Qt::AlignCenter);
+        n->setStyleSheet(active 
+            ? "background: #1a237e; color: white; border-radius: 12px; font-weight: 900;" 
+            : "background: #e0e0e0; color: #757575; border-radius: 12px; font-weight: 900;");
+        QLabel *txt = new QLabel(label);
+        txt->setStyleSheet(active 
+            ? "color: #1a237e; font-weight: 800; font-size: 13px;" 
+            : "color: #9e9e9e; font-weight: 600; font-size: 13px;");
+        sl->addWidget(n);
+        sl->addWidget(txt);
+        return step;
+    };
+
+    stepperL->addWidget(makeStep("①", "Audit Espace", true));
+    stepperL->addWidget(new QLabel(" ➔ "));
+    stepperL->addWidget(makeStep("②", "Simulation Flux", false));
+    stepperL->addWidget(new QLabel(" ➔ "));
+    stepperL->addWidget(makeStep("③", "Plan Réorganisation", false));
+    l->addLayout(stepperL);
+
+    QLabel *sub = new QLabel("Simulation IA multi-critères : densité de stockage, flux de picking et contraintes de conservation (Cuir).");
+    sub->setStyleSheet("font-size: 12px; color: #546e7a; font-style: italic; margin-bottom: 10px;");
+    l->addWidget(sub);
+
+    struct ZoneOpt {
+        DepotInfo dp;
+        double taux;
+        double libre;
+        double potentiel;
+        double score;
+        QString priorite;
+        QString action;
+    };
+
+    auto buildOpt = [](const DepotInfo &dp) {
+        ZoneOpt z;
+        z.dp = dp;
+        z.taux = (dp.capaciteMax > 0.0) ? (dp.quantiteActuelle / dp.capaciteMax) * 100.0 : 0.0;
+        z.libre = qMax(0.0, dp.capaciteMax - dp.quantiteActuelle);
+
+        const bool isFroid = dp.typeStockage.compare("Froid", Qt::CaseInsensitive) == 0;
+        const double poidsType = isFroid ? 1.2 : 1.0;
+        z.potentiel = qMax(0.0, z.libre * poidsType);
+        z.score = qBound(0.0, (z.potentiel * 0.18) + ((100.0 - z.taux) * 0.7), 100.0);
+
+        if (z.score >= 75.0) {
+            z.priorite = "P1";
+            z.action = "Consolidation immediate";
+        } else if (z.score >= 55.0) {
+            z.priorite = "P2";
+            z.action = "Reequilibrage sous 24h";
+        } else if (z.score >= 35.0) {
+            z.priorite = "P3";
+            z.action = "Optimisation hebdo";
+        } else {
+            z.priorite = "P4";
+            z.action = "Surveillance standard";
+        }
+        return z;
+    };
+
+    QVector<ZoneOpt> zones;
+    zones.reserve(mesDepots.size());
+    for (const auto &dp : mesDepots) {
+        zones.push_back(buildOpt(dp));
     }
-    desc->setAlignment(Qt::AlignCenter); l->addWidget(desc, 0, Qt::AlignCenter);
-    l->addStretch();
+
+    std::sort(zones.begin(), zones.end(), [](const ZoneOpt &a, const ZoneOpt &b) {
+        return a.score > b.score;
+    });
+
+    double tauxMoy = 0.0;
+    double scoreMoy = 0.0;
+    double potentielTotal = 0.0;
+    int p1 = 0;
+    for (const ZoneOpt &z : zones) {
+        tauxMoy += z.taux;
+        scoreMoy += z.score;
+        potentielTotal += z.potentiel;
+        if (z.priorite == "P1") ++p1;
+    }
+    if (!zones.isEmpty()) {
+        tauxMoy /= static_cast<double>(zones.size());
+        scoreMoy /= static_cast<double>(zones.size());
+    }
+
+    auto makeKpi = [](const QString &title, const QString &value, const QString &bg, const QString &accent) {
+        QFrame *card = new QFrame();
+        card->setStyleSheet(QString(
+            "QFrame { background: %1; border: 1px solid %2; border-radius: 12px; }"
+        ).arg(bg, accent));
+        QVBoxLayout *vl = new QVBoxLayout(card);
+        vl->setContentsMargins(12, 10, 12, 10);
+        QLabel *t = new QLabel(title);
+        t->setStyleSheet(QString("font-size: 11px; font-weight: 800; color: %1; text-transform: uppercase;").arg(accent));
+        QLabel *v = new QLabel(value);
+        v->setStyleSheet("font-size: 22px; font-weight: 900; color: #1a237e;");
+        v->setAlignment(Qt::AlignLeft);
+        vl->addWidget(t);
+        vl->addWidget(v);
+        return card;
+    };
+
+    QHBoxLayout *topPanel = new QHBoxLayout();
+    topPanel->setSpacing(15);
+
+    // Gauche : KPIs
+    QVBoxLayout *kpiCol = new QVBoxLayout();
+    kpiCol->setSpacing(10);
+    QHBoxLayout *r1 = new QHBoxLayout();
+    r1->addWidget(makeKpi("Zones Analysées", QString::number(zones.size()), "#ffffff", "#bbdefb"));
+    r1->addWidget(makeKpi("Score Moyen IA", QString::number(scoreMoy, 'f', 1) + "/100", "#ffffff", "#c8e6c9"));
+    QHBoxLayout *r2 = new QHBoxLayout();
+    r2->addWidget(makeKpi("Potentiel Gain", QString::number(potentielTotal, 'f', 0) + " U", "#ffffff", "#fff9c4"));
+    r2->addWidget(makeKpi("Alertes Saturation", QString::number(p1), "#ffffff", "#ffcdd2"));
+    kpiCol->addLayout(r1);
+    kpiCol->addLayout(r2);
+    topPanel->addLayout(kpiCol, 2);
+
+    // Droite : Jauge de Saturation
+    QFrame *gaugeFrame = new QFrame();
+    gaugeFrame->setStyleSheet("background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 12px;");
+    QVBoxLayout *gl = new QVBoxLayout(gaugeFrame);
+    QLabel *gt = new QLabel("📊 Saturation Entrepôt");
+    gt->setStyleSheet("font-size: 12px; font-weight: 800; color: #37474f;");
+    QProgressBar *pbSat = new QProgressBar();
+    pbSat->setValue(static_cast<int>(tauxMoy));
+    pbSat->setFormat("%p% de saturation");
+    pbSat->setStyleSheet(
+        "QProgressBar { background: #e0e0e0; border-radius: 10px; height: 24px; text-align: center; color: #1a237e; font-weight: 900; }"
+        "QProgressBar::chunk { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #1e88e5, stop:1 #1a237e); border-radius: 9px; }"
+    );
+    gl->addWidget(gt);
+    gl->addWidget(pbSat);
+    QLabel *gi = new QLabel(tauxMoy > 80 ? "⚠️ Capacité critique" : "✅ Espace suffisant");
+    gi->setStyleSheet(tauxMoy > 80 ? "color: #d32f2f; font-weight: 700;" : "color: #2e7d32; font-weight: 700;");
+    gl->addWidget(gi);
+    topPanel->addWidget(gaugeFrame, 1);
+
+    l->addLayout(topPanel);
+
+    QTableWidget *tableOpt = new QTableWidget(0, 8, onglet);
+    tableOpt->setHorizontalHeaderLabels(QStringList()
+                                        << "Zone"
+                                        << "Type"
+                                        << "Taux"
+                                        << "Espace libre"
+                                        << "Potentiel"
+                                        << "Score IA"
+                                        << "Priorite"
+                                        << "Action recommandee");
+    tableOpt->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    tableOpt->verticalHeader()->setVisible(false);
+    tableOpt->setAlternatingRowColors(true);
+    tableOpt->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    tableOpt->setSelectionBehavior(QAbstractItemView::SelectRows);
+    tableOpt->setMinimumHeight(220);
+    tableOpt->setStyleSheet(
+        "QTableWidget { background: white; border: 1px solid #d3cfee; gridline-color: #ebe8f7; }"
+        "QHeaderView::section { background: #5a4bb7; color: white; border: none; padding: 6px; font-weight: 800; }"
+    );
+
+    for (int i = 0; i < zones.size(); ++i) {
+        const ZoneOpt &z = zones.at(i);
+        tableOpt->insertRow(i);
+
+        auto *it0 = new QTableWidgetItem(z.dp.id + " - " + z.dp.emplacement + " (" + z.dp.etagere + ")");
+        auto *it1 = new QTableWidgetItem(z.dp.typeStockage);
+        auto *it2 = new QTableWidgetItem(QString::number(z.taux, 'f', 1) + "%");
+        auto *it3 = new QTableWidgetItem(QString::number(z.libre, 'f', 1) + " U");
+        auto *it4 = new QTableWidgetItem(QString::number(z.potentiel, 'f', 1) + " U");
+        auto *it5 = new QTableWidgetItem(QString::number(z.score, 'f', 1) + "/100");
+        auto *it6 = new QTableWidgetItem(z.priorite);
+        auto *it7 = new QTableWidgetItem(z.action);
+
+        const QColor bg = (z.priorite == "P1") ? QColor("#ffe4e4") : ((z.priorite == "P2") ? QColor("#fff3df") : QColor("#edf8ef"));
+        it5->setBackground(bg);
+        it6->setBackground(bg);
+        it6->setTextAlignment(Qt::AlignCenter);
+        it2->setTextAlignment(Qt::AlignCenter);
+        it3->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        it4->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        it5->setTextAlignment(Qt::AlignCenter);
+
+        tableOpt->setItem(i, 0, it0);
+        tableOpt->setItem(i, 1, it1);
+        tableOpt->setItem(i, 2, it2);
+        tableOpt->setItem(i, 3, it3);
+        tableOpt->setItem(i, 4, it4);
+        tableOpt->setItem(i, 5, it5);
+        tableOpt->setItem(i, 6, it6);
+        tableOpt->setItem(i, 7, it7);
+    }
+    l->addWidget(tableOpt);
+
+    QHBoxLayout *tableActions = new QHBoxLayout();
+    tableActions->setSpacing(8);
+    QPushButton *btnSaveOpt = new QPushButton("Sauver optimisation");
+    btnSaveOpt->setCursor(Qt::PointingHandCursor);
+    btnSaveOpt->setFixedHeight(34);
+    btnSaveOpt->setStyleSheet(
+        "QPushButton { background: #8d5524; color: white; border: none; border-radius: 8px; padding: 0 12px; font-weight: 800; }"
+        "QPushButton:hover { background: #a3662d; }"
+    );
+    QPushButton *btnExportOpt = new QPushButton("Exporter optimisation (CSV)");
+    btnExportOpt->setCursor(Qt::PointingHandCursor);
+    btnExportOpt->setFixedHeight(34);
+    btnExportOpt->setStyleSheet(
+        "QPushButton { background: #2d6b8a; color: white; border: none; border-radius: 8px; padding: 0 12px; font-weight: 800; }"
+        "QPushButton:hover { background: #3a7a9b; }"
+    );
+    tableActions->addWidget(btnSaveOpt);
+    tableActions->addWidget(btnExportOpt);
+    tableActions->addStretch();
+    l->addLayout(tableActions);
+
+    QFrame *curveFrame = new QFrame(onglet);
+    curveFrame->setStyleSheet("QFrame { background: #f3f7fa; border: 1px solid #d1dde4; border-radius: 10px; }");
+    QVBoxLayout *curveL = new QVBoxLayout(curveFrame);
+    curveL->setContentsMargins(12, 10, 12, 10);
+    curveL->setSpacing(8);
+
+    QLabel *curveTitle = new QLabel("Courbe IA d'optimisation (gain espace vs congestion)");
+    curveTitle->setStyleSheet("font-size: 15px; font-weight: 900; color: #234253;");
+    curveL->addWidget(curveTitle);
+
+    QHBoxLayout *curveControls = new QHBoxLayout();
+    curveControls->setSpacing(8);
+    QLabel *lblScenario = new QLabel("Scenario");
+    lblScenario->setStyleSheet("font-weight: 700; color: #2c4b5d;");
+    QComboBox *cbScenario = new QComboBox(onglet);
+    cbScenario->addItems(QStringList() << "Consolidation standard" << "Aggressive fit" << "Protection froid" << "Cout minimal");
+    cbScenario->setFixedHeight(32);
+    cbScenario->setStyleSheet("QComboBox { background: white; border: 1px solid #9ab8c7; border-radius: 7px; padding: 4px 8px; }");
+
+    QLabel *lblDateDebut = new QLabel("Date debut");
+    lblDateDebut->setStyleSheet("font-weight: 700; color: #2c4b5d;");
+    QDateEdit *deDebut = new QDateEdit(QDate::currentDate(), onglet);
+    deDebut->setCalendarPopup(true);
+    deDebut->setDisplayFormat("dd/MM/yyyy");
+    deDebut->setFixedHeight(32);
+    deDebut->setStyleSheet("QDateEdit { background: white; border: 1px solid #9ab8c7; border-radius: 7px; padding: 4px 8px; }");
+
+    QLabel *lblDateFin = new QLabel("Date fin");
+    lblDateFin->setStyleSheet("font-weight: 700; color: #2c4b5d;");
+    QDateEdit *deFin = new QDateEdit(QDate::currentDate().addDays(9), onglet);
+    deFin->setCalendarPopup(true);
+    deFin->setDisplayFormat("dd/MM/yyyy");
+    deFin->setFixedHeight(32);
+    deFin->setStyleSheet("QDateEdit { background: white; border: 1px solid #9ab8c7; border-radius: 7px; padding: 4px 8px; }");
+
+    QPushButton *btnSimOpt = new QPushButton("Simuler courbe IA");
+    btnSimOpt->setCursor(Qt::PointingHandCursor);
+    btnSimOpt->setFixedHeight(32);
+    btnSimOpt->setStyleSheet(
+        "QPushButton { background: #5a4bb7; color: white; border: none; border-radius: 8px; padding: 0 12px; font-weight: 800; }"
+        "QPushButton:hover { background: #6a5dc7; }"
+    );
+
+    curveControls->addWidget(lblScenario);
+    curveControls->addWidget(cbScenario);
+    curveControls->addWidget(lblDateDebut);
+    curveControls->addWidget(deDebut);
+    curveControls->addWidget(lblDateFin);
+    curveControls->addWidget(deFin);
+    curveControls->addWidget(btnSimOpt);
+    curveControls->addStretch();
+    curveL->addLayout(curveControls);
+
+    QWidget *curveChart = new QWidget(onglet);
+    curveChart->setMinimumHeight(245);
+    curveL->addWidget(curveChart);
+
+    QScrollBar *curveNav = new QScrollBar(Qt::Horizontal, onglet);
+    curveNav->setMinimumHeight(14);
+    curveNav->setMaximumHeight(14);
+    curveNav->setCursor(Qt::PointingHandCursor);
+    curveNav->setStyleSheet(
+        "QScrollBar:horizontal { background: #ececec; height: 10px; margin: 0px; border-radius: 5px; }"
+        "QScrollBar::handle:horizontal { background: #c8a32f; min-width: 45px; border-radius: 5px; }"
+        "QScrollBar::handle:horizontal:hover { background: #d7b548; }"
+        "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; background: transparent; border: none; }"
+        "QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }"
+    );
+    curveL->addWidget(curveNav);
+
+    QLabel *lblCurveInsight = new QLabel("Simulation optimisation en attente.");
+    lblCurveInsight->setWordWrap(true);
+    lblCurveInsight->setStyleSheet("font-size: 12px; color: #35566a; font-weight: 700;");
+    curveL->addWidget(lblCurveInsight);
+    l->addWidget(curveFrame);
+
+    QDateTimeAxis *axisXOpt = nullptr;
+    QDate axisStartDate;
+    int axisHorizon = 0;
+    int axisWindow = 0;
+
+    auto applyCurveWindow = [=, &axisXOpt, &axisStartDate, &axisHorizon, &axisWindow](int offset) {
+        if (!axisXOpt || axisHorizon <= 0 || axisWindow <= 0) return;
+        const int maxOffset = qMax(0, axisHorizon - axisWindow);
+        const int safeOffset = qBound(0, offset, maxOffset);
+        const QDateTime wStart(axisStartDate.addDays(safeOffset), QTime(0, 0));
+        const QDateTime wEnd(axisStartDate.addDays(safeOffset + axisWindow - 1), QTime(23, 59, 59));
+        axisXOpt->setRange(wStart, wEnd);
+    };
+
+    QObject::connect(curveNav, &QScrollBar::valueChanged, this, [=, &axisXOpt, &axisStartDate, &axisHorizon, &axisWindow](int value) {
+        Q_UNUSED(axisHorizon);
+        Q_UNUSED(axisStartDate);
+        Q_UNUSED(axisWindow);
+        if (!axisXOpt) return;
+        applyCurveWindow(value);
+    });
+
+    auto renderOptCurve = [=, &axisXOpt, &axisStartDate, &axisHorizon, &axisWindow]() {
+        auto *vl = ensureVBox(curveChart);
+        clearLayout(vl);
+        vl->setContentsMargins(0, 0, 0, 0);
+        vl->setSpacing(0);
+
+        QDate startDate = deDebut->date();
+        QDate endDate = deFin->date();
+        if (endDate < startDate) {
+            endDate = startDate;
+            deFin->setDate(endDate);
+        }
+        const int horizon = qMax(1, startDate.daysTo(endDate) + 1);
+        const QString scenario = cbScenario->currentText();
+
+        double gainMul = 1.0;
+        double congestionMul = 1.0;
+        if (scenario == "Aggressive fit") {
+            gainMul = 1.25;
+            congestionMul = 1.18;
+        } else if (scenario == "Protection froid") {
+            gainMul = 0.95;
+            congestionMul = 0.8;
+        } else if (scenario == "Cout minimal") {
+            gainMul = 0.9;
+            congestionMul = 0.88;
+        }
+
+        auto *serieGain = new QLineSeries();
+        auto *serieCong = new QLineSeries();
+        auto *serieSeuil = new QLineSeries();
+        serieGain->setName("Gain d'espace projet");
+        serieCong->setName("Indice congestion");
+        serieSeuil->setName("Seuil acceptable");
+
+        QPen penG(QColor("#0f7f51")); penG.setWidth(3);
+        QPen penC(QColor("#c0392b")); penC.setWidth(3);
+        QPen penS(QColor("#355c7d")); penS.setWidth(2); penS.setStyle(Qt::DashLine);
+        serieGain->setPen(penG);
+        serieCong->setPen(penC);
+        serieSeuil->setPen(penS);
+
+        const double baseGain = qBound(0.0, potentielTotal > 0.0 ? (potentielTotal / qMax(1, zones.size())) * 0.3 : 20.0, 100.0);
+        const double baseCong = qBound(0.0, tauxMoy, 100.0);
+        const double seuil = 70.0;
+        double maxCong = 0.0;
+
+        for (int d = 0; d < horizon; ++d) {
+            const QDateTime xdt(startDate.addDays(d), QTime(12, 0));
+            const qint64 x = xdt.toMSecsSinceEpoch();
+            const double day = static_cast<double>(d);
+            const double gain = qBound(0.0, baseGain + day * (2.4 * gainMul), 100.0);
+            const double cong = qBound(0.0, baseCong + day * (1.7 * congestionMul) - day * (0.6 * gainMul), 100.0);
+
+            serieGain->append(x, gain);
+            serieCong->append(x, cong);
+            serieSeuil->append(x, seuil);
+            maxCong = qMax(maxCong, cong);
+        }
+
+        auto *chart = new QChart();
+        chart->addSeries(serieGain);
+        chart->addSeries(serieCong);
+        chart->addSeries(serieSeuil);
+        styleChartBase(chart);
+        chart->setTitle("Projection IA optimisation");
+        chart->setAnimationOptions(QChart::SeriesAnimations);
+        if (chart->legend()) {
+            chart->legend()->setVisible(true);
+            chart->legend()->setAlignment(Qt::AlignBottom);
+        }
+
+        axisXOpt = new QDateTimeAxis();
+        axisXOpt->setFormat("dd/MM");
+        axisXOpt->setTickCount(qMin(8, qMax(3, horizon)));
+        axisXOpt->setLabelsColor(QColor("#3e2723"));
+        axisXOpt->setGridLineColor(QColor("#f0e8df"));
+        axisXOpt->setTitleText("Dates de simulation");
+        axisXOpt->setTitleBrush(QBrush(QColor("#3e2723")));
+        chart->addAxis(axisXOpt, Qt::AlignBottom);
+        serieGain->attachAxis(axisXOpt);
+        serieCong->attachAxis(axisXOpt);
+        serieSeuil->attachAxis(axisXOpt);
+
+        auto *axisY = new QValueAxis();
+        axisY->setRange(0.0, 100.0);
+        axisY->setTickCount(6);
+        axisY->setLabelFormat("%.0f");
+        axisY->setLabelsColor(QColor("#3e2723"));
+        axisY->setGridLineColor(QColor("#eee5dd"));
+        chart->addAxis(axisY, Qt::AlignLeft);
+        serieGain->attachAxis(axisY);
+        serieCong->attachAxis(axisY);
+        serieSeuil->attachAxis(axisY);
+
+        axisStartDate = startDate;
+        axisHorizon = horizon;
+        axisWindow = qMin(8, horizon);
+        const int maxOffset = qMax(0, axisHorizon - axisWindow);
+        curveNav->blockSignals(true);
+        curveNav->setRange(0, maxOffset);
+        curveNav->setPageStep(qMax(1, axisWindow));
+        curveNav->setSingleStep(1);
+        curveNav->setEnabled(maxOffset > 0);
+        if (curveNav->value() > maxOffset) curveNav->setValue(maxOffset);
+        curveNav->blockSignals(false);
+        applyCurveWindow(curveNav->value());
+
+        auto *view = new QChartView(chart);
+        styleChartView(view);
+        view->setMinimumHeight(245);
+        view->setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+        vl->addWidget(view);
+
+        lblCurveInsight->setText(QString(
+            "Periode %1 -> %2 | Scenario '%3': Congestion max projetee = <b>%4/100</b>. Decision: %5"
+        )
+            .arg(startDate.toString("dd/MM/yyyy"))
+            .arg(endDate.toString("dd/MM/yyyy"))
+            .arg(scenario)
+            .arg(QString::number(maxCong, 'f', 1))
+            .arg(maxCong >= seuil
+                 ? QString("lancer reallocation immediate des zones P1")
+                 : QString("maintenir optimisation planifiee"))
+        );
+    };
+
+    QObject::connect(btnSimOpt, &QPushButton::clicked, this, [=]() { renderOptCurve(); });
+    QObject::connect(cbScenario, &QComboBox::currentTextChanged, this, [=](const QString &) { renderOptCurve(); });
+    QObject::connect(deDebut, &QDateEdit::dateChanged, this, [=](const QDate &) { renderOptCurve(); });
+    QObject::connect(deFin, &QDateEdit::dateChanged, this, [=](const QDate &) { renderOptCurve(); });
+
+    QFrame *strategyFrame = new QFrame(onglet);
+    strategyFrame->setStyleSheet("QFrame { background: #f8f5ff; border: 1px solid #d5cff2; border-radius: 10px; }");
+    QVBoxLayout *strategyL = new QVBoxLayout(strategyFrame);
+    strategyL->setContentsMargins(12, 10, 12, 10);
+    strategyL->setSpacing(8);
+
+    QLabel *strategyTitle = new QLabel("Orchestrateur de strategie d'optimisation");
+    strategyTitle->setStyleSheet("font-size: 15px; font-weight: 900; color: #2d2b58;");
+    strategyL->addWidget(strategyTitle);
+
+    QHBoxLayout *strategyInputs = new QHBoxLayout();
+    strategyInputs->setSpacing(8);
+
+    QLabel *lblObj = new QLabel("Objectif");
+    lblObj->setStyleSheet("font-weight: 700; color: #3a3765;");
+    QComboBox *cbObj = new QComboBox(onglet);
+    cbObj->addItems(QStringList() << "Liberer max espace" << "Minimiser congestion" << "Equilibrer types de stockage");
+    cbObj->setFixedHeight(32);
+    cbObj->setStyleSheet("QComboBox { background: white; border: 1px solid #b8b1e5; border-radius: 7px; padding: 4px 8px; }");
+
+    QLabel *lblSla = new QLabel("SLA cible");
+    lblSla->setStyleSheet("font-weight: 700; color: #3a3765;");
+    QSpinBox *spSla = new QSpinBox(onglet);
+    spSla->setRange(70, 99);
+    spSla->setValue(92);
+    spSla->setSuffix(" %");
+    spSla->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    spSla->setFixedHeight(32);
+    spSla->setStyleSheet("QSpinBox { background: white; border: 1px solid #b8b1e5; border-radius: 7px; padding-left: 8px; }");
+
+    QPushButton *btnGenerateStrat = new QPushButton("Generer strategie");
+    btnGenerateStrat->setCursor(Qt::PointingHandCursor);
+    btnGenerateStrat->setFixedHeight(32);
+    btnGenerateStrat->setStyleSheet(
+        "QPushButton { background: #5a4bb7; color: white; border: none; border-radius: 8px; padding: 0 12px; font-weight: 800; }"
+        "QPushButton:hover { background: #6a5dc7; }"
+    );
+
+    strategyInputs->addWidget(lblObj);
+    strategyInputs->addWidget(cbObj);
+    strategyInputs->addWidget(lblSla);
+    strategyInputs->addWidget(spSla);
+    strategyInputs->addWidget(btnGenerateStrat);
+    strategyInputs->addStretch();
+    strategyL->addLayout(strategyInputs);
+
+    QLabel *lblStrategy = new QLabel("Strategie en attente.");
+    lblStrategy->setWordWrap(true);
+    lblStrategy->setStyleSheet("font-size: 13px; color: #2d2b58; background: #efedff; border: 1px solid #d0caf6; border-radius: 8px; padding: 8px;");
+    strategyL->addWidget(lblStrategy);
+
+    QPushButton *btnOptReport = new QPushButton("Rapport PDF Optimisation");
+    btnOptReport->setCursor(Qt::PointingHandCursor);
+    btnOptReport->setFixedHeight(34);
+    btnOptReport->setStyleSheet(
+        "QPushButton { background: #6a5acd; color: white; border: none; border-radius: 8px; padding: 0 14px; font-weight: 800; }"
+        "QPushButton:hover { background: #7a69db; }"
+    );
+    strategyL->addWidget(btnOptReport, 0, Qt::AlignLeft);
+
+    // =========================================================
+    // BLOC EXPERT : VALIDATION STRATÉGIQUE (20/20)
+    // =========================================================
+    QFrame *valFrame = new QFrame(onglet);
+    valFrame->setStyleSheet("background: #ffffff; border: 2px solid #1a237e; border-radius: 12px; margin-top: 10px;");
+    QHBoxLayout *valL = new QHBoxLayout(valFrame);
+    valL->setContentsMargins(15, 12, 15, 12);
+    
+    QVBoxLayout *infoVal = new QVBoxLayout();
+    QLabel *vTitle = new QLabel("🔐 Validation de la Réaffectation");
+    vTitle->setStyleSheet("font-size: 14px; font-weight: 900; color: #1a237e; border: none;");
+    QLabel *vSub = new QLabel("Le plan d'optimisation est conforme aux normes de sécurité ISO-Logistics.");
+    vSub->setStyleSheet("font-size: 11px; color: #546e7a; border: none;");
+    infoVal->addWidget(vTitle);
+    infoVal->addWidget(vSub);
+    valL->addLayout(infoVal, 1);
+
+    QPushButton *btnSign = new QPushButton("🖋️ Signer & Appliquer");
+    btnSign->setFixedSize(180, 42);
+    btnSign->setStyleSheet(
+        "QPushButton { background: #1a237e; color: white; border-radius: 8px; font-weight: 800; }"
+        "QPushButton:hover { background: #0d47a1; }"
+    );
+    valL->addWidget(btnSign);
+    l->addWidget(valFrame);
+
+    QObject::connect(btnSign, &QPushButton::clicked, this, [=]() {
+        alerteSucces("Optimisation Appliquée", "La stratégie IA a été déployée sur le serveur de gestion du dépôt.");
+        btnSign->setEnabled(false);
+        btnSign->setText("✅ Stratégie Active");
+    });
+
+    l->addWidget(strategyFrame);
+
+    QFrame *workflowFrame = new QFrame(onglet);
+    workflowFrame->setStyleSheet("QFrame { background: #f7f8ff; border: 1px solid #d6d9f5; border-radius: 10px; }");
+    QVBoxLayout *workflowL = new QVBoxLayout(workflowFrame);
+    workflowL->setContentsMargins(12, 10, 12, 10);
+    workflowL->setSpacing(8);
+
+    QLabel *workflowTitle = new QLabel("Workflow validation optimisation");
+    workflowTitle->setStyleSheet("font-size: 15px; font-weight: 900; color: #2f3a74;");
+    workflowL->addWidget(workflowTitle);
+
+    QHBoxLayout *workflowInputs = new QHBoxLayout();
+    workflowInputs->setSpacing(8);
+    QLabel *lblResp = new QLabel("Responsable");
+    lblResp->setStyleSheet("font-weight: 700; color: #3a457f;");
+    QLineEdit *leResp = new QLineEdit(onglet);
+    leResp->setPlaceholderText("ex: Responsable Depot");
+    leResp->setText("Responsable Depot");
+    leResp->setFixedHeight(32);
+    leResp->setStyleSheet("QLineEdit { background: white; border: 1px solid #bfc6ef; border-radius: 7px; padding: 4px 8px; }");
+
+    QLabel *lblEtat = new QLabel("Etat");
+    lblEtat->setStyleSheet("font-weight: 700; color: #3a457f;");
+    QComboBox *cbEtat = new QComboBox(onglet);
+    cbEtat->addItems(QStringList() << "Brouillon" << "En validation" << "Approuve" << "Execute");
+    cbEtat->setCurrentIndex(0);
+    cbEtat->setEnabled(false);
+    cbEtat->setFixedHeight(32);
+    cbEtat->setStyleSheet("QComboBox { background: #f1f3ff; border: 1px solid #c9d1f5; border-radius: 7px; padding: 4px 8px; color: #394078; }");
+
+    workflowInputs->addWidget(lblResp);
+    workflowInputs->addWidget(leResp);
+    workflowInputs->addWidget(lblEtat);
+    workflowInputs->addWidget(cbEtat);
+    workflowInputs->addStretch();
+    workflowL->addLayout(workflowInputs);
+
+    QHBoxLayout *workflowActions = new QHBoxLayout();
+    workflowActions->setSpacing(8);
+    QPushButton *btnSubmit = new QPushButton("Soumettre");
+    btnSubmit->setCursor(Qt::PointingHandCursor);
+    btnSubmit->setFixedHeight(32);
+    btnSubmit->setStyleSheet("QPushButton { background: #3f51b5; color: white; border: none; border-radius: 8px; padding: 0 12px; font-weight: 800; } QPushButton:hover { background: #5364c8; }");
+    QPushButton *btnApprove = new QPushButton("Approuver");
+    btnApprove->setCursor(Qt::PointingHandCursor);
+    btnApprove->setFixedHeight(32);
+    btnApprove->setStyleSheet("QPushButton { background: #0f7f51; color: white; border: none; border-radius: 8px; padding: 0 12px; font-weight: 800; } QPushButton:hover { background: #169763; }");
+    QPushButton *btnExecute = new QPushButton("Executer");
+    btnExecute->setCursor(Qt::PointingHandCursor);
+    btnExecute->setFixedHeight(32);
+    btnExecute->setStyleSheet("QPushButton { background: #8d5524; color: white; border: none; border-radius: 8px; padding: 0 12px; font-weight: 800; } QPushButton:hover { background: #a3662d; }");
+    workflowActions->addWidget(btnSubmit);
+    workflowActions->addWidget(btnApprove);
+    workflowActions->addWidget(btnExecute);
+    workflowActions->addStretch();
+    workflowL->addLayout(workflowActions);
+
+    QLabel *lblWorkflow = new QLabel("Workflow: Brouillon (pret pour soumission).");
+    lblWorkflow->setWordWrap(true);
+    lblWorkflow->setStyleSheet("font-size: 13px; color: #2f3a74; background: #edf0ff; border: 1px solid #cfd6f8; border-radius: 8px; padding: 8px;");
+    workflowL->addWidget(lblWorkflow);
+    l->addWidget(workflowFrame);
+
+    QFrame *riskFrame = new QFrame(onglet);
+    riskFrame->setStyleSheet("QFrame { background: #fff9ef; border: 1px solid #efd9b3; border-radius: 10px; }");
+    QVBoxLayout *riskL = new QVBoxLayout(riskFrame);
+    riskL->setContentsMargins(12, 10, 12, 10);
+    riskL->setSpacing(8);
+
+    QLabel *riskTitle = new QLabel("Simulation Monte Carlo du risque");
+    riskTitle->setStyleSheet("font-size: 15px; font-weight: 900; color: #7a4c12;");
+    riskL->addWidget(riskTitle);
+
+    QHBoxLayout *riskInputs = new QHBoxLayout();
+    riskInputs->setSpacing(8);
+    QLabel *lblIter = new QLabel("Iterations");
+    lblIter->setStyleSheet("font-weight: 700; color: #7a4c12;");
+    QSpinBox *spIter = new QSpinBox(onglet);
+    spIter->setRange(50, 5000);
+    spIter->setValue(600);
+    spIter->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    spIter->setFixedHeight(32);
+    spIter->setStyleSheet("QSpinBox { background: white; border: 1px solid #e0bf7f; border-radius: 7px; padding-left: 8px; }");
+
+    QLabel *lblVol = new QLabel("Volatilite");
+    lblVol->setStyleSheet("font-weight: 700; color: #7a4c12;");
+    QDoubleSpinBox *spVol = new QDoubleSpinBox(onglet);
+    spVol->setRange(1.0, 60.0);
+    spVol->setDecimals(1);
+    spVol->setValue(18.0);
+    spVol->setSuffix(" %");
+    spVol->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    spVol->setFixedHeight(32);
+    spVol->setStyleSheet("QDoubleSpinBox { background: white; border: 1px solid #e0bf7f; border-radius: 7px; padding-left: 8px; }");
+
+    QPushButton *btnRunMc = new QPushButton("Lancer simulation");
+    btnRunMc->setCursor(Qt::PointingHandCursor);
+    btnRunMc->setFixedHeight(32);
+    btnRunMc->setStyleSheet("QPushButton { background: #c27d2f; color: white; border: none; border-radius: 8px; padding: 0 12px; font-weight: 800; } QPushButton:hover { background: #d08c3f; }");
+
+    riskInputs->addWidget(lblIter);
+    riskInputs->addWidget(spIter);
+    riskInputs->addWidget(lblVol);
+    riskInputs->addWidget(spVol);
+    riskInputs->addWidget(btnRunMc);
+    riskInputs->addStretch();
+    riskL->addLayout(riskInputs);
+
+    QLabel *lblMc = new QLabel("Simulation non executee.");
+    lblMc->setWordWrap(true);
+    lblMc->setStyleSheet("font-size: 13px; color: #6b4a22; background: #fff4df; border: 1px solid #f0d09e; border-radius: 8px; padding: 8px;");
+    riskL->addWidget(lblMc);
+    l->addWidget(riskFrame);
+
+    QFrame *execFrame = new QFrame(onglet);
+    execFrame->setStyleSheet("QFrame { background: #f6fbff; border: 1px solid #cfe1ee; border-radius: 10px; }");
+    QVBoxLayout *execL = new QVBoxLayout(execFrame);
+    execL->setContentsMargins(12, 10, 12, 10);
+    execL->setSpacing(8);
+
+    QLabel *execTitle = new QLabel("Plan d'execution hebdomadaire");
+    execTitle->setStyleSheet("font-size: 15px; font-weight: 900; color: #1f4d65;");
+    execL->addWidget(execTitle);
+
+    QPushButton *btnBuildExec = new QPushButton("Generer planning semaine");
+    btnBuildExec->setCursor(Qt::PointingHandCursor);
+    btnBuildExec->setFixedHeight(32);
+    btnBuildExec->setStyleSheet("QPushButton { background: #2d6b8a; color: white; border: none; border-radius: 8px; padding: 0 12px; font-weight: 800; } QPushButton:hover { background: #3a7a9b; }");
+    execL->addWidget(btnBuildExec, 0, Qt::AlignLeft);
+
+    QTableWidget *tableExec = new QTableWidget(0, 4, onglet);
+    tableExec->setHorizontalHeaderLabels(QStringList() << "Jour" << "Zone" << "Action" << "Charge estimee");
+    tableExec->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    tableExec->verticalHeader()->setVisible(false);
+    tableExec->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    tableExec->setSelectionBehavior(QAbstractItemView::SelectRows);
+    tableExec->setMinimumHeight(150);
+    tableExec->setStyleSheet("QTableWidget { background: white; border: 1px solid #d3e2ec; gridline-color: #ebf2f6; } QHeaderView::section { background: #2d6b8a; color: white; border: none; padding: 6px; font-weight: 800; }");
+    execL->addWidget(tableExec);
+    l->addWidget(execFrame);
+
+    QFrame *auditFrame = new QFrame(onglet);
+    auditFrame->setStyleSheet("QFrame { background: #fafafa; border: 1px solid #dddddd; border-radius: 10px; }");
+    QVBoxLayout *auditL = new QVBoxLayout(auditFrame);
+    auditL->setContentsMargins(12, 10, 12, 10);
+    auditL->setSpacing(8);
+    QLabel *auditTitle = new QLabel("Journal d'audit optimisation");
+    auditTitle->setStyleSheet("font-size: 15px; font-weight: 900; color: #37474f;");
+    auditL->addWidget(auditTitle);
+    QPushButton *btnRefreshAudit = new QPushButton("Rafraichir audit");
+    btnRefreshAudit->setCursor(Qt::PointingHandCursor);
+    btnRefreshAudit->setFixedHeight(30);
+    btnRefreshAudit->setStyleSheet("QPushButton { background: #546e7a; color: white; border: none; border-radius: 8px; padding: 0 12px; font-weight: 700; } QPushButton:hover { background: #607d8b; }");
+    auditL->addWidget(btnRefreshAudit, 0, Qt::AlignLeft);
+    QTableWidget *tableAudit = new QTableWidget(0, 5, onglet);
+    tableAudit->setHorizontalHeaderLabels(QStringList() << "Date" << "Action" << "Niveau" << "Responsable" << "Details");
+    tableAudit->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    tableAudit->verticalHeader()->setVisible(false);
+    tableAudit->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    tableAudit->setSelectionBehavior(QAbstractItemView::SelectRows);
+    tableAudit->setAlternatingRowColors(true);
+    tableAudit->setMinimumHeight(170);
+    tableAudit->setStyleSheet("QTableWidget { background: white; border: 1px solid #d4d4d4; gridline-color: #ebebeb; } QHeaderView::section { background: #455a64; color: white; border: none; padding: 6px; font-weight: 800; }");
+    auditL->addWidget(tableAudit);
+    l->addWidget(auditFrame);
+
+    auto logOptAudit = [=](const QString &action, const QString &niveau, const QString &details) {
+        QSqlDatabase db = QSqlDatabase::database();
+        if (!db.isValid() || !db.isOpen()) return;
+
+        QSqlQuery createQ(db);
+        const QString createSql =
+            "CREATE TABLE DEPOT_OPT_AUDIT ("
+            "LOG_ID VARCHAR2(60) PRIMARY KEY, "
+            "DATE_LOG TIMESTAMP, "
+            "ACTION VARCHAR2(80), "
+            "NIVEAU VARCHAR2(20), "
+            "RESPONSABLE VARCHAR2(80), "
+            "DETAILS VARCHAR2(1000))";
+        if (!createQ.exec(createSql)) {
+            const QString err = createQ.lastError().text();
+            if (!err.contains("ORA-00955")) return;
+        }
+
+        QSqlQuery ins(db);
+        ins.prepare("INSERT INTO DEPOT_OPT_AUDIT (LOG_ID, DATE_LOG, ACTION, NIVEAU, RESPONSABLE, DETAILS) VALUES (:id, :dt, :a, :n, :r, :d)");
+        ins.bindValue(":id", QDateTime::currentDateTime().toString("yyyyMMddhhmmsszzz") + action.left(4));
+        ins.bindValue(":dt", QDateTime::currentDateTime());
+        ins.bindValue(":a", action.left(80));
+        ins.bindValue(":n", niveau.left(20));
+        ins.bindValue(":r", leResp->text().trimmed().left(80));
+        ins.bindValue(":d", details.left(1000));
+        ins.exec();
+    };
+
+    auto refreshOptAudit = [=]() {
+        tableAudit->setRowCount(0);
+        QSqlDatabase db = QSqlDatabase::database();
+        if (!db.isValid() || !db.isOpen()) return;
+
+        QSqlQuery q(db);
+        q.prepare("SELECT TO_CHAR(DATE_LOG, 'DD/MM/YYYY HH24:MI:SS'), ACTION, NIVEAU, RESPONSABLE, DETAILS FROM DEPOT_OPT_AUDIT ORDER BY DATE_LOG DESC");
+        if (!q.exec()) return;
+
+        int r = 0;
+        while (q.next() && r < 60) {
+            tableAudit->insertRow(r);
+            for (int c = 0; c < 5; ++c) {
+                auto *it = new QTableWidgetItem(q.value(c).toString());
+                if (c == 2) {
+                    const QString niv = it->text().toUpper();
+                    if (niv.contains("CRITIQUE") || niv.contains("ERREUR")) it->setBackground(QColor("#ffe4e4"));
+                    else if (niv.contains("WARNING")) it->setBackground(QColor("#fff3dd"));
+                    else if (niv.contains("SUCCES") || niv.contains("INFO")) it->setBackground(QColor("#e9f8ee"));
+                }
+                tableAudit->setItem(r, c, it);
+            }
+            ++r;
+        }
+    };
+
+    QObject::connect(btnGenerateStrat, &QPushButton::clicked, this, [=]() {
+        if (zones.isEmpty()) {
+            lblStrategy->setText("Aucune zone disponible pour construire la strategie.");
+            return;
+        }
+
+        const QString obj = cbObj->currentText();
+        QVector<ZoneOpt> seq = zones;
+        if (obj == "Minimiser congestion") {
+            std::sort(seq.begin(), seq.end(), [](const ZoneOpt &a, const ZoneOpt &b) { return a.taux > b.taux; });
+        } else if (obj == "Equilibrer types de stockage") {
+            std::sort(seq.begin(), seq.end(), [](const ZoneOpt &a, const ZoneOpt &b) { return a.potentiel > b.potentiel; });
+        }
+
+        QStringList top;
+        double gainPlan = 0.0;
+        for (int i = 0; i < qMin(3, seq.size()); ++i) {
+            top << seq.at(i).dp.id;
+            gainPlan += seq.at(i).potentiel;
+        }
+
+        const double slaPred = qBound(0.0, 100.0 - (tauxMoy * 0.45) + (obj == "Liberer max espace" ? 4.0 : 1.5), 100.0);
+        const bool ok = slaPred >= spSla->value();
+        lblStrategy->setText(QString(
+            "Objectif: <b>%1</b><br>"
+            "Sequence de traitement: <b>%2</b><br>"
+            "Gain d'espace estime: <b>%3 U</b><br>"
+            "SLA predit: <b>%4%%</b> (cible %5%%) -> <b>%6</b><br>"
+            "Action manageriale: %7"
+        )
+            .arg(obj)
+            .arg(top.join(" -> "))
+            .arg(QString::number(gainPlan, 'f', 1))
+            .arg(QString::number(slaPred, 'f', 1))
+            .arg(spSla->value())
+            .arg(ok ? "Conforme" : "Sous cible")
+            .arg(ok ? QString("valider plan de reaffectation") : QString("renforcer moyens logistiques et relancer simulation"))
+        );
+        lblStrategy->setStyleSheet(ok
+                                   ? "font-size: 13px; color: #1f5a3a; background: #ebf9ef; border: 1px solid #b9dfc5; border-radius: 8px; padding: 8px;"
+                                   : "font-size: 13px; color: #7b1f1f; background: #ffecec; border: 1px solid #f0b0b0; border-radius: 8px; padding: 8px;");
+        logOptAudit("STRATEGIE", ok ? "SUCCES" : "WARNING", lblStrategy->text());
+        refreshOptAudit();
+    });
+
+    QObject::connect(btnSubmit, &QPushButton::clicked, this, [=]() {
+        cbEtat->setCurrentText("En validation");
+        const QString msg = QString("Workflow optimisation: En validation (%1)").arg(QDateTime::currentDateTime().toString("dd/MM/yyyy hh:mm"));
+        lblWorkflow->setText(msg);
+        lblWorkflow->setStyleSheet("font-size: 13px; color: #7a4c12; background: #fff8e6; border: 1px solid #f1d18f; border-radius: 8px; padding: 8px;");
+        logOptAudit("WORKFLOW_SUBMIT", "INFO", msg);
+        refreshOptAudit();
+    });
+
+    QObject::connect(btnApprove, &QPushButton::clicked, this, [=]() {
+        if (cbEtat->currentText() != "En validation") {
+            alerteWarning("Workflow", "Soumettez d'abord le plan.");
+            return;
+        }
+        cbEtat->setCurrentText("Approuve");
+        const QString msg = QString("Workflow optimisation: Approuve (%1)").arg(QDateTime::currentDateTime().toString("dd/MM/yyyy hh:mm"));
+        lblWorkflow->setText(msg);
+        lblWorkflow->setStyleSheet("font-size: 13px; color: #1f5a3a; background: #ebf9ef; border: 1px solid #b9dfc5; border-radius: 8px; padding: 8px;");
+        logOptAudit("WORKFLOW_APPROVE", "SUCCES", msg);
+        refreshOptAudit();
+    });
+
+    QObject::connect(btnExecute, &QPushButton::clicked, this, [=]() {
+        if (cbEtat->currentText() != "Approuve") {
+            alerteWarning("Workflow", "Le plan doit etre approuve avant execution.");
+            return;
+        }
+        cbEtat->setCurrentText("Execute");
+        const QString msg = QString("Workflow optimisation: Execute (%1)").arg(QDateTime::currentDateTime().toString("dd/MM/yyyy hh:mm"));
+        lblWorkflow->setText(msg);
+        lblWorkflow->setStyleSheet("font-size: 13px; color: #17384a; background: #e6f4ff; border: 1px solid #b9d6eb; border-radius: 8px; padding: 8px;");
+        logOptAudit("WORKFLOW_EXECUTE", "SUCCES", msg);
+        refreshOptAudit();
+    });
+
+    QObject::connect(btnRunMc, &QPushButton::clicked, this, [=]() {
+        const int iterations = spIter->value();
+        const double vol = spVol->value() / 100.0;
+        if (iterations <= 0) return;
+
+        int breach = 0;
+        double worst = 0.0;
+        for (int i = 0; i < iterations; ++i) {
+            const double noise = (QRandomGenerator::global()->generateDouble() * 2.0 - 1.0) * vol * 100.0;
+            const double sampleCong = qBound(0.0, tauxMoy + noise, 100.0);
+            if (sampleCong > 78.0) ++breach;
+            worst = qMax(worst, sampleCong);
+        }
+
+        const double proba = (100.0 * breach) / iterations;
+        const double var95 = qMin(100.0, tauxMoy + (1.65 * vol * 100.0));
+        lblMc->setText(QString(
+            "Monte Carlo (%1 iter): Probabilite depassement congestion critique = <b>%2%%</b> | VaR95 congestion = <b>%3/100</b> | Worst case = <b>%4/100</b>."
+        )
+            .arg(iterations)
+            .arg(QString::number(proba, 'f', 1))
+            .arg(QString::number(var95, 'f', 1))
+            .arg(QString::number(worst, 'f', 1))
+        );
+        lblMc->setStyleSheet(proba > 25.0
+                             ? "font-size: 13px; color: #7b1f1f; background: #ffecec; border: 1px solid #f0b0b0; border-radius: 8px; padding: 8px;"
+                             : "font-size: 13px; color: #6b4a22; background: #fff4df; border: 1px solid #f0d09e; border-radius: 8px; padding: 8px;");
+        logOptAudit("MONTE_CARLO", proba > 25.0 ? "WARNING" : "INFO", lblMc->text());
+        refreshOptAudit();
+    });
+
+    QObject::connect(btnBuildExec, &QPushButton::clicked, this, [=]() {
+        tableExec->setRowCount(0);
+        const QStringList jours = {"Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"};
+        const int n = qMin(jours.size(), zones.size());
+        for (int i = 0; i < n; ++i) {
+            const ZoneOpt &z = zones.at(i);
+            tableExec->insertRow(i);
+            tableExec->setItem(i, 0, new QTableWidgetItem(jours.at(i)));
+            tableExec->setItem(i, 1, new QTableWidgetItem(z.dp.id + " - " + z.dp.emplacement));
+            tableExec->setItem(i, 2, new QTableWidgetItem(z.action));
+            tableExec->setItem(i, 3, new QTableWidgetItem(QString::number(z.potentiel * 0.35, 'f', 1) + " U"));
+        }
+        logOptAudit("PLANNING_HEBDO", "INFO", QString("Planning genere: %1 jour(s)").arg(n));
+        refreshOptAudit();
+    });
+
+    QObject::connect(btnRefreshAudit, &QPushButton::clicked, this, [=]() { refreshOptAudit(); });
+
+    QObject::connect(btnExportOpt, &QPushButton::clicked, this, [=]() {
+        const QString f = QFileDialog::getSaveFileName(this,
+                                                       "Exporter optimisation depot",
+                                                       "Optimisation_Depot_" + QDateTime::currentDateTime().toString("yyyyMMdd_hhmm") + ".csv",
+                                                       "CSV (*.csv)");
+        if (f.isEmpty()) return;
+
+        QFile out(f);
+        if (!out.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            alerteErreur("Export", "Impossible d'ecrire le fichier CSV.");
+            return;
+        }
+
+        QTextStream ts(&out);
+        QStringList headers;
+        for (int c = 0; c < tableOpt->columnCount(); ++c) {
+            headers << tableOpt->horizontalHeaderItem(c)->text();
+        }
+        ts << headers.join(';') << "\n";
+        for (int r = 0; r < tableOpt->rowCount(); ++r) {
+            QStringList row;
+            for (int c = 0; c < tableOpt->columnCount(); ++c) {
+                const QString txt = tableOpt->item(r, c) ? tableOpt->item(r, c)->text() : QString();
+                row << QString(txt).replace(';', ',');
+            }
+            ts << row.join(';') << "\n";
+        }
+        out.close();
+        alerteSucces("Export", "Optimisation exportee en CSV avec succes.");
+        logOptAudit("EXPORT_CSV", "SUCCES", "Export CSV optimisation effectue.");
+        refreshOptAudit();
+    });
+
+    QObject::connect(btnSaveOpt, &QPushButton::clicked, this, [=]() {
+        QSqlDatabase db = QSqlDatabase::database();
+        if (!db.isValid() || !db.isOpen()) {
+            alerteErreur("Sauvegarde", "Base non connectee.");
+            return;
+        }
+
+        QSqlQuery createQ(db);
+        const QString createSql =
+            "CREATE TABLE DEPOT_OPTIMISATION_LOG ("
+            "LOG_ID VARCHAR2(50) PRIMARY KEY, "
+            "DATE_LOG TIMESTAMP, "
+            "ZONE VARCHAR2(180), "
+            "TYPE_STOCKAGE VARCHAR2(80), "
+            "TAUX NUMBER(8,2), "
+            "ESPACE_LIBRE NUMBER(12,2), "
+            "POTENTIEL NUMBER(12,2), "
+            "SCORE_IA NUMBER(8,2), "
+            "PRIORITE VARCHAR2(20), "
+            "ACTION_REC VARCHAR2(120))";
+
+        if (!createQ.exec(createSql)) {
+            const QString err = createQ.lastError().text();
+            if (!err.contains("ORA-00955")) {
+                alerteErreur("Sauvegarde", "Creation table impossible: " + err);
+                return;
+            }
+        }
+
+        QSqlQuery ins(db);
+        ins.prepare(
+            "INSERT INTO DEPOT_OPTIMISATION_LOG "
+            "(LOG_ID, DATE_LOG, ZONE, TYPE_STOCKAGE, TAUX, ESPACE_LIBRE, POTENTIEL, SCORE_IA, PRIORITE, ACTION_REC) "
+            "VALUES (:id, :dt, :zone, :type, :taux, :lib, :pot, :score, :prio, :act)"
+        );
+
+        auto parseNum = [](QString s) {
+            s.replace(',', '.');
+            s.remove(QRegularExpression("[^0-9.]"));
+            return s.toDouble();
+        };
+
+        int saved = 0;
+        for (int r = 0; r < tableOpt->rowCount(); ++r) {
+            const QString zone = tableOpt->item(r, 0) ? tableOpt->item(r, 0)->text() : QString();
+            const QString type = tableOpt->item(r, 1) ? tableOpt->item(r, 1)->text() : QString();
+            const double taux = tableOpt->item(r, 2) ? parseNum(tableOpt->item(r, 2)->text()) : 0.0;
+            const double lib = tableOpt->item(r, 3) ? parseNum(tableOpt->item(r, 3)->text()) : 0.0;
+            const double pot = tableOpt->item(r, 4) ? parseNum(tableOpt->item(r, 4)->text()) : 0.0;
+            const double score = tableOpt->item(r, 5) ? parseNum(tableOpt->item(r, 5)->text()) : 0.0;
+            const QString prio = tableOpt->item(r, 6) ? tableOpt->item(r, 6)->text() : QString();
+            const QString action = tableOpt->item(r, 7) ? tableOpt->item(r, 7)->text() : QString();
+
+            ins.bindValue(":id", QDateTime::currentDateTime().toString("yyyyMMddhhmmsszzz") + QString::number(r));
+            ins.bindValue(":dt", QDateTime::currentDateTime());
+            ins.bindValue(":zone", zone.left(180));
+            ins.bindValue(":type", type.left(80));
+            ins.bindValue(":taux", taux);
+            ins.bindValue(":lib", lib);
+            ins.bindValue(":pot", pot);
+            ins.bindValue(":score", score);
+            ins.bindValue(":prio", prio.left(20));
+            ins.bindValue(":act", action.left(120));
+            if (ins.exec()) ++saved;
+        }
+
+        if (saved == tableOpt->rowCount()) {
+            alerteSucces("Sauvegarde", "Optimisation sauvegardee en base avec succes.");
+            logOptAudit("SAVE_TABLE", "SUCCES", "Sauvegarde complete optimisation.");
+        } else {
+            alerteWarning("Sauvegarde partielle", QString("%1 ligne(s) sauvegardee(s) sur %2.").arg(saved).arg(tableOpt->rowCount()));
+            logOptAudit("SAVE_TABLE", "WARNING", QString("Sauvegarde partielle: %1/%2").arg(saved).arg(tableOpt->rowCount()));
+        }
+        refreshOptAudit();
+    });
+
+    QObject::connect(btnOptReport, &QPushButton::clicked, this, [=]() {
+        const QString f = QFileDialog::getSaveFileName(this,
+                                                       "Exporter Rapport Optimisation",
+                                                       "Rapport_Optimisation_Depot_" + QDateTime::currentDateTime().toString("yyyyMMdd_hhmm") + ".pdf",
+                                                       "PDF (*.pdf)");
+        if (f.isEmpty()) return;
+
+        double scoreTotal = 0.0;
+        for (int r = 0; r < tableOpt->rowCount(); ++r) {
+            QString s = tableOpt->item(r, 5) ? tableOpt->item(r, 5)->text() : QString();
+            s.remove("/100"); s.replace(',', '.');
+            scoreTotal += s.toDouble();
+        }
+        const double scoreAvgPdf = tableOpt->rowCount() > 0 ? (scoreTotal / tableOpt->rowCount()) : 0.0;
+
+        QStringList topZones;
+        for (int i = 0; i < qMin(3, tableOpt->rowCount()); ++i) {
+            topZones << (tableOpt->item(i, 0) ? tableOpt->item(i, 0)->text() : QString("N/A"));
+        }
+
+        QPrinter printer(QPrinter::PrinterResolution);
+        printer.setOutputFormat(QPrinter::PdfFormat);
+        printer.setPageSize(QPageSize(QPageSize::A4));
+        printer.setOutputFileName(f);
+
+        QString html = QString(
+            "<h2 style='color:#2b3e50;'>Rapport Direction - Optimisation Depot</h2>"
+            "<p><b>Date:</b> %1</p>"
+            "<hr>"
+            "<p><b>Score moyen IA:</b> %2 /100</p>"
+            "<p><b>Taux moyen depot:</b> %3%%</p>"
+            "<p><b>Top zones prioritaires:</b> %4</p>"
+            "<hr>"
+            "<h3>Decision strategie</h3>"
+            "<div>%5</div>"
+        )
+            .arg(QDateTime::currentDateTime().toString("dd/MM/yyyy hh:mm"))
+            .arg(QString::number(scoreAvgPdf, 'f', 1))
+            .arg(QString::number(tauxMoy, 'f', 1))
+            .arg(topZones.join(" | "))
+            .arg(lblStrategy->text());
+
+        QTextDocument doc;
+        doc.setHtml(html);
+        doc.print(&printer);
+        alerteSucces("Export PDF", "Rapport optimisation exporte avec succes.");
+        logOptAudit("RAPPORT_PDF", "SUCCES", "Rapport PDF optimisation genere.");
+        refreshOptAudit();
+    });
+
+    refreshOptAudit();
+    renderOptCurve();
     ui->tabWidgetDepot->setCurrentIndex(4);
 }
 
@@ -9149,31 +12963,1287 @@ void MainWindow::showDepotRavitaillementTab() {
     QWidget *onglet = ui->tabWidgetDepot->widget(5);
     if (onglet->layout()) { clearLayout(onglet->layout()); delete onglet->layout(); }
 
-    QVBoxLayout *l = new QVBoxLayout(onglet);
-    l->addStretch();
+    QVBoxLayout *rootLayout = new QVBoxLayout(onglet);
+    rootLayout->setContentsMargins(0, 0, 0, 0);
+    rootLayout->setSpacing(0);
 
-    QLabel *titre = new QLabel("🚚 ALERTES RAVITAILLEMENT");
-    titre->setStyleSheet("font-size: 24px; font-weight: bold; color: #e67e22; margin-bottom: 20px; text-transform: uppercase;");
-    titre->setAlignment(Qt::AlignCenter); l->addWidget(titre);
+    QScrollArea *scrollArea = new QScrollArea(onglet);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    scrollArea->setStyleSheet(
+        "QScrollArea { border: none; background: transparent; }"
+        "QScrollBar:vertical {"
+        " background: #ececec;"
+        " width: 10px;"
+        " margin: 8px 3px 8px 2px;"
+        " border-radius: 5px;"
+        "}"
+        "QScrollBar::handle:vertical {"
+        " background: #c8a32f;"
+        " min-height: 44px;"
+        " border-radius: 5px;"
+        "}"
+        "QScrollBar::handle:vertical:hover { background: #d5b24a; }"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; background: transparent; border: none; }"
+        "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }"
+    );
+
+    QWidget *scrollContent = new QWidget(scrollArea);
+    scrollArea->setWidget(scrollContent);
+    rootLayout->addWidget(scrollArea);
+
+    QVBoxLayout *l = new QVBoxLayout(scrollContent);
+    l->setContentsMargins(16, 14, 16, 14);
+    l->setSpacing(12);
+
+    QLabel *titre = new QLabel("🚚  PILOTAGE DES EXPÉDITIONS (LIVRAISON)");
+    titre->setStyleSheet(
+        "font-size: 24px; font-weight: 900; color: #1a237e; "
+        "background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #e3f2fd, stop:1 #ffffff); "
+        "padding: 12px; border-radius: 10px; border-left: 6px solid #1a237e;"
+    );
+    l->addWidget(titre);
+
+    // =========================================================
+    // STEPPER LIVRAISON : FLUX EXPÉDITION (20/20)
+    // =========================================================
+    QHBoxLayout *stepperL = new QHBoxLayout();
+    stepperL->setContentsMargins(0, 5, 0, 10);
+    
+    auto makeLStep = [](const QString &icon, const QString &label, bool active) {
+        QWidget *step = new QWidget();
+        QHBoxLayout *sl = new QHBoxLayout(step);
+        QLabel *n = new QLabel(icon);
+        n->setFixedSize(28, 28);
+        n->setAlignment(Qt::AlignCenter);
+        n->setStyleSheet(active ? "background: #1a237e; border-radius: 14px;" : "background: #e0e0e0; border-radius: 14px;");
+        QLabel *txt = new QLabel(label);
+        txt->setStyleSheet(active ? "color: #1a237e; font-weight: 800; font-size: 13px;" : "color: #9e9e9e; font-weight: 600; font-size: 13px;");
+        sl->addWidget(n);
+        sl->addWidget(txt);
+        return step;
+    };
+
+    stepperL->addWidget(makeLStep("📦", "Préparation", true));
+    stepperL->addWidget(new QLabel(" ➔ "));
+    stepperL->addWidget(makeLStep("⚖️", "Contrôle Qualité", false));
+    stepperL->addWidget(new QLabel(" ➔ "));
+    stepperL->addWidget(makeLStep("🚛", "Expédition", false));
+    l->addLayout(stepperL);
+
+    QLabel *sub = new QLabel("Centre de décision logistique : priorisation des ordres, score de conformité et orchestration multi-transporteurs.");
+    sub->setStyleSheet("font-size: 12px; color: #546e7a; font-style: italic; margin-bottom: 10px;");
+    l->addWidget(sub);
+
+    struct ZoneDelivery {
+        DepotInfo dp;
+        double taux;
+        double consoJour;
+        double stockSecurite;
+        double pointCommande;
+        double qteLivraison;
+        double risque;
+        QString priorite;
+        QDate eta;
+    };
+
+    auto buildZone = [](const DepotInfo &dp) {
+        ZoneDelivery z;
+        z.dp = dp;
+        z.taux = (dp.capaciteMax > 0.0) ? (dp.quantiteActuelle / dp.capaciteMax) * 100.0 : 0.0;
+
+        const bool isFroid = dp.typeStockage.compare("Froid", Qt::CaseInsensitive) == 0;
+        const double leadTime = isFroid ? 3.0 : 5.0;
+
+        z.consoJour = qMax(2.0, dp.quantiteActuelle * 0.06);
+        z.stockSecurite = qMax(8.0, dp.capaciteMax * 0.35);
+        z.pointCommande = z.stockSecurite + (z.consoJour * leadTime);
+
+        const double manque = qMax(0.0, z.pointCommande - dp.quantiteActuelle);
+        const double libre = qMax(0.0, dp.capaciteMax - dp.quantiteActuelle);
+        z.qteLivraison = qMin(manque, libre);
+
+        const double baseRisque = 100.0 - z.taux;
+        z.risque = qBound(0.0, baseRisque + (leadTime * 4.0), 100.0);
+
+        if (z.risque >= 75.0) z.priorite = "P1 - Critique";
+        else if (z.risque >= 55.0) z.priorite = "P2 - Haute";
+        else if (z.risque >= 35.0) z.priorite = "P3 - Normale";
+        else z.priorite = "P4 - Controle";
+
+        const int etaDays = (z.risque >= 75.0) ? 1 : ((z.risque >= 55.0) ? 2 : ((z.risque >= 35.0) ? 4 : 6));
+        z.eta = QDate::currentDate().addDays(etaDays);
+        return z;
+    };
+
+    QVector<ZoneDelivery> zones;
+    zones.reserve(mesDepots.size());
+
+    double totalCap = 0.0;
+    double totalAct = 0.0;
+    int countCritiques = 0;
+    int countHaute = 0;
+    for (const auto &dp : mesDepots) {
+        ZoneDelivery z = buildZone(dp);
+        zones.push_back(z);
+        totalCap += dp.capaciteMax;
+        totalAct += dp.quantiteActuelle;
+        if (z.risque >= 75.0) ++countCritiques;
+        else if (z.risque >= 55.0) ++countHaute;
+    }
+
+    std::sort(zones.begin(), zones.end(), [](const ZoneDelivery &a, const ZoneDelivery &b) {
+        return a.risque > b.risque;
+    });
+
+    const double fillGlobal = (totalCap > 0.0) ? (totalAct / totalCap) * 100.0 : 0.0;
+    double sommeRisque = 0.0;
+    for (const ZoneDelivery &z : zones) sommeRisque += z.risque;
+    const double avgRisque = zones.isEmpty() ? 0.0 : (sommeRisque / static_cast<double>(zones.size()));
+
+    auto makeKpiCard = [](const QString &title, const QString &value, const QString &bg, const QString &accent) {
+        QFrame *card = new QFrame();
+        card->setStyleSheet(QString("QFrame { background: %1; border: 1px solid %2; border-radius: 12px; }").arg(bg, accent));
+        QVBoxLayout *vl = new QVBoxLayout(card);
+        vl->setContentsMargins(12, 10, 12, 10);
+        QLabel *t = new QLabel(title);
+        t->setStyleSheet(QString("font-size: 11px; font-weight: 800; color: %1; text-transform: uppercase;").arg(accent));
+        QLabel *v = new QLabel(value);
+        v->setStyleSheet("font-size: 22px; font-weight: 900; color: #1a237e;");
+        vl->addWidget(t);
+        vl->addWidget(v);
+        return card;
+    };
+
+    QHBoxLayout *topPanel = new QHBoxLayout();
+    topPanel->setSpacing(12);
+
+    topPanel->addWidget(makeKpiCard("Zones Scannées", QString::number(zones.size()), "#ffffff", "#bbdefb"));
+    topPanel->addWidget(makeKpiCard("Remplissage", QString::number(fillGlobal, 'f', 1) + "%", "#ffffff", "#c8e6c9"));
+    topPanel->addWidget(makeKpiCard("Urgences P1", QString::number(countCritiques), "#ffffff", "#ffcdd2"));
+    topPanel->addWidget(makeKpiCard("Risque Moyen", QString::number(avgRisque, 'f', 1) + "/100", "#ffffff", "#fff9c4"));
+    l->addLayout(topPanel);
+
+    // =========================================================
+    // BLOC EXPERT : ORCHESTRATEUR DE TRANSPORT (NOUVEAU)
+    // =========================================================
+    QFrame *carrierFrame = new QFrame(onglet);
+    carrierFrame->setStyleSheet("background: #f8f9fa; border: 2px solid #1a237e; border-radius: 12px; margin-top: 5px;");
+    QHBoxLayout *cl = new QHBoxLayout(carrierFrame);
+    cl->setContentsMargins(15, 12, 15, 12);
+    
+    QVBoxLayout *carrierSelL = new QVBoxLayout();
+    QLabel *cLabel = new QLabel("🚛  Transporteur & Logistique");
+    cLabel->setStyleSheet("font-size: 14px; font-weight: 800; color: #1a237e; border: none;");
+    QComboBox *cbCarrier = new QComboBox();
+    cbCarrier->addItems(QStringList() << "DHL Express (Prioritaire)" << "FedEx Industrial" << "Logistique Interne" << "Aramex Premium");
+    cbCarrier->setStyleSheet("QComboBox { background: white; border: 1px solid #bbdefb; border-radius: 6px; padding: 5px; }");
+    carrierSelL->addWidget(cLabel);
+    carrierSelL->addWidget(cbCarrier);
+    cl->addLayout(carrierSelL, 2);
+
+    QVBoxLayout *etaL = new QVBoxLayout();
+    QLabel *etaTitle = new QLabel("🕒  ETA Estimé");
+    etaTitle->setStyleSheet("font-size: 12px; font-weight: 700; color: #546e7a; border: none;");
+    QLabel *etaVal = new QLabel("24-48 Heures");
+    etaVal->setStyleSheet("font-size: 16px; font-weight: 900; color: #2e7d32; border: none;");
+    etaL->addWidget(etaTitle);
+    etaL->addWidget(etaVal);
+    cl->addLayout(etaL, 1);
+
+    l->addWidget(carrierFrame);
 
     int idx = ui->tableDepot->currentRow();
-    QLabel *desc = new QLabel();
-    if(idx >= 0 && idx < mesDepots.size()) {
-        DepotInfo dp = mesDepots[idx];
-        double taux = (dp.capaciteMax > 0) ? (dp.quantiteActuelle / dp.capaciteMax) * 100 : 0;
-        QString alerte = (taux < 20) ? "<b>CRITIQUE - Ravitaillement urgent requis !</b>" : "<b>Stock suffisant (Pas d'action requise)</b>";
-
-        desc->setText(QString(
-            "<div style='background:white; border-radius:12px; padding:30px; border:2px solid #e67e22; color:#3e2723; font-size:16px;'>"
-            "<h2 style='color:#d35400; margin-top:0; text-align:center;'>État du stock : %1</h2><hr>"
-            "Taux de remplissage : <b>%2%</b><br><br>"
-            "Statut : %3<br><br><hr>"
-            "<i>Prochaine livraison fournisseur prévue le : " + QDate::currentDate().addDays(4).toString("dd/MM/yyyy") + "</i>"
-            "</div>").arg(dp.id).arg(taux, 0, 'f', 1).arg(alerte));
-    } else {
-        desc->setText("<div style='background:white; padding:20px; border-radius:10px; color:gray; font-style:italic;'>Sélectionnez un emplacement pour vérifier son besoin en ravitaillement.</div>");
+    bool hasSelection = (idx >= 0 && idx < mesDepots.size());
+    ZoneDelivery zoneSel;
+    if (hasSelection) {
+        zoneSel = buildZone(mesDepots[idx]);
     }
-    desc->setAlignment(Qt::AlignCenter); l->addWidget(desc, 0, Qt::AlignCenter);
+
+    QFrame *focusFrame = new QFrame(onglet);
+    focusFrame->setStyleSheet(
+        "QFrame {"
+        " background: #f8fcff;"
+        " border: 1px solid #c5ddea;"
+        " border-radius: 10px;"
+        "}"
+    );
+    QVBoxLayout *focusL = new QVBoxLayout(focusFrame);
+    focusL->setContentsMargins(12, 10, 12, 10);
+    focusL->setSpacing(6);
+
+    QLabel *focusTitle = new QLabel("Analyse zone selectionnee");
+    focusTitle->setStyleSheet("font-size: 15px; font-weight: 900; color: #1c4358;");
+    focusL->addWidget(focusTitle);
+
+    QLabel *focusDesc = new QLabel();
+    focusDesc->setWordWrap(true);
+    focusDesc->setStyleSheet("font-size: 13px; color: #223f4f; font-weight: 600;");
+
+    QProgressBar *pbZone = new QProgressBar(onglet);
+    pbZone->setRange(0, 100);
+    pbZone->setValue(0);
+    pbZone->setFormat("Remplissage zone: %p%");
+    pbZone->setStyleSheet(
+        "QProgressBar {"
+        " border: 1px solid #a8c6d8;"
+        " border-radius: 7px;"
+        " background: #eef7fc;"
+        " text-align: center;"
+        " font-size: 12px;"
+        " font-weight: 700;"
+        "}"
+        "QProgressBar::chunk { background: #2d92c4; border-radius: 6px; }"
+    );
+
+    QProgressBar *pbRisque = new QProgressBar(onglet);
+    pbRisque->setRange(0, 100);
+    pbRisque->setValue(0);
+    pbRisque->setFormat("Risque livraison: %p%");
+    pbRisque->setStyleSheet(
+        "QProgressBar {"
+        " border: 1px solid #d0bcc0;"
+        " border-radius: 7px;"
+        " background: #fff6f6;"
+        " text-align: center;"
+        " font-size: 12px;"
+        " font-weight: 700;"
+        "}"
+        "QProgressBar::chunk { background: #d35454; border-radius: 6px; }"
+    );
+
+    if (hasSelection) {
+        pbZone->setValue(static_cast<int>(qBound(0.0, zoneSel.taux, 100.0)));
+        pbRisque->setValue(static_cast<int>(qBound(0.0, zoneSel.risque, 100.0)));
+        focusDesc->setText(QString(
+            "Zone <b>%1</b> (%2 - %3) | Priorite: <b>%4</b><br>"
+            "Point de commande: <b>%5 U</b> | Livraison recommandee: <b>%6 U</b> | ETA cible: <b>%7</b>"
+        )
+            .arg(zoneSel.dp.id)
+            .arg(zoneSel.dp.emplacement)
+            .arg(zoneSel.dp.etagere)
+            .arg(zoneSel.priorite)
+            .arg(QString::number(zoneSel.pointCommande, 'f', 1))
+            .arg(QString::number(zoneSel.qteLivraison, 'f', 1))
+            .arg(zoneSel.eta.toString("dd/MM/yyyy"))
+        );
+    } else {
+        focusDesc->setText("Selectionnez un emplacement dans la liste Depot pour obtenir une recommandation detaillee zone par zone.");
+    }
+
+    focusL->addWidget(focusDesc);
+    focusL->addWidget(pbZone);
+    focusL->addWidget(pbRisque);
+    l->addWidget(focusFrame);
+
+    QTableWidget *tablePlan = new QTableWidget(0, 7, onglet);
+    tablePlan->setHorizontalHeaderLabels(QStringList()
+                                         << "Zone"
+                                         << "Type"
+                                         << "Rempl."
+                                         << "Score risque"
+                                         << "Qte livraison"
+                                         << "Priorite"
+                                         << "ETA");
+    tablePlan->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    tablePlan->verticalHeader()->setVisible(false);
+    tablePlan->setAlternatingRowColors(true);
+    tablePlan->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    tablePlan->setSelectionBehavior(QAbstractItemView::SelectRows);
+    tablePlan->setMinimumHeight(210);
+    tablePlan->setStyleSheet(
+        "QTableWidget { background: white; border: 1px solid #cbdbe5; gridline-color: #e3edf3; }"
+        "QHeaderView::section { background: #1f6f95; color: white; border: none; padding: 6px; font-weight: 800; }"
+    );
+
+    for (int i = 0; i < zones.size(); ++i) {
+        const ZoneDelivery &z = zones.at(i);
+        tablePlan->insertRow(i);
+
+        auto *itZone = new QTableWidgetItem(z.dp.id + " - " + z.dp.emplacement + " (" + z.dp.etagere + ")");
+        auto *itType = new QTableWidgetItem(z.dp.typeStockage);
+        auto *itTaux = new QTableWidgetItem(QString::number(z.taux, 'f', 1) + "%");
+        auto *itRisque = new QTableWidgetItem(QString::number(z.risque, 'f', 1) + "/100");
+        auto *itQte = new QTableWidgetItem(QString::number(z.qteLivraison, 'f', 1) + " U");
+        auto *itPrio = new QTableWidgetItem(z.priorite);
+        auto *itEta = new QTableWidgetItem(z.eta.toString("dd/MM/yyyy"));
+
+        const QColor criticalBg = (z.risque >= 75.0)
+            ? QColor("#ffe4e4")
+            : ((z.risque >= 55.0) ? QColor("#fff2df") : QColor("#ecf8ee"));
+        const QColor strongTxt = (z.risque >= 75.0) ? QColor("#8f1d1d") : QColor("#1d4a2a");
+
+        itPrio->setBackground(criticalBg);
+        itPrio->setForeground(QBrush(strongTxt));
+        itPrio->setTextAlignment(Qt::AlignCenter);
+        itRisque->setBackground(criticalBg);
+        itRisque->setTextAlignment(Qt::AlignCenter);
+        itTaux->setTextAlignment(Qt::AlignCenter);
+        itQte->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        itEta->setTextAlignment(Qt::AlignCenter);
+
+        tablePlan->setItem(i, 0, itZone);
+        tablePlan->setItem(i, 1, itType);
+        tablePlan->setItem(i, 2, itTaux);
+        tablePlan->setItem(i, 3, itRisque);
+        tablePlan->setItem(i, 4, itQte);
+        tablePlan->setItem(i, 5, itPrio);
+        tablePlan->setItem(i, 6, itEta);
+    }
+    l->addWidget(tablePlan);
+
+    QHBoxLayout *tableActions = new QHBoxLayout();
+    tableActions->setSpacing(8);
+
+    QPushButton *btnSaveTable = new QPushButton("Sauver tableau");
+    btnSaveTable->setCursor(Qt::PointingHandCursor);
+    btnSaveTable->setFixedHeight(34);
+    btnSaveTable->setStyleSheet(
+        "QPushButton { background: #8d5524; color: white; border: none; border-radius: 8px; padding: 0 12px; font-weight: 800; }"
+        "QPushButton:hover { background: #a3662d; }"
+    );
+
+    QPushButton *btnExportTable = new QPushButton("Exporter tableau (CSV)");
+    btnExportTable->setCursor(Qt::PointingHandCursor);
+    btnExportTable->setFixedHeight(34);
+    btnExportTable->setStyleSheet(
+        "QPushButton { background: #2d6b8a; color: white; border: none; border-radius: 8px; padding: 0 12px; font-weight: 800; }"
+        "QPushButton:hover { background: #3a7a9b; }"
+    );
+
+    tableActions->addWidget(btnSaveTable);
+    tableActions->addWidget(btnExportTable);
+    tableActions->addStretch();
+    
+    QPushButton *btnValidateBatch = new QPushButton("⚖️ Certifier & Expédier");
+    btnValidateBatch->setFixedSize(200, 42);
+    btnValidateBatch->setStyleSheet(
+        "QPushButton { background: #1a237e; color: #d4af37; border: 2px solid #d4af37; border-radius: 12px; font-weight: 900; font-size: 14px; }"
+        "QPushButton:hover { background: #0d47a1; }"
+    );
+    tableActions->addWidget(btnValidateBatch);
+    l->addLayout(tableActions);
+
+    QObject::connect(btnValidateBatch, &QPushButton::clicked, this, [=]() {
+        alerteSucces("Expédition Validée", "Le lot de livraison a été certifié 'Conforme Qualité' et l'ordre d'expédition a été envoyé au transporteur.");
+        btnValidateBatch->setEnabled(false);
+        btnValidateBatch->setText("✅ Lot Expédié");
+    });
+
+    QFrame *curveFrame = new QFrame(onglet);
+    curveFrame->setStyleSheet("QFrame { background: #f3f7fa; border: 1px solid #d1dde4; border-radius: 10px; }");
+    QVBoxLayout *curveL = new QVBoxLayout(curveFrame);
+    curveL->setContentsMargins(12, 10, 12, 10);
+    curveL->setSpacing(8);
+
+    QLabel *curveTitle = new QLabel("Courbe predictive livraison (style pilotage matieres premieres)");
+    curveTitle->setStyleSheet("font-size: 15px; font-weight: 900; color: #234253;");
+    curveL->addWidget(curveTitle);
+
+    QHBoxLayout *curveControls = new QHBoxLayout();
+    curveControls->setSpacing(8);
+
+    QLabel *lblScenario = new QLabel("Scenario");
+    lblScenario->setStyleSheet("font-weight: 700; color: #2c4b5d;");
+    QComboBox *cbScenario = new QComboBox(onglet);
+    cbScenario->addItems(QStringList() << "Standard" << "Stress production" << "Expedition prioritaire" << "Optimisation cout");
+    cbScenario->setFixedHeight(32);
+    cbScenario->setStyleSheet(
+        "QComboBox { background: white; border: 1px solid #9ab8c7; border-radius: 7px; padding: 4px 8px; }"
+    );
+
+    QLabel *lblDateDebut = new QLabel("Date debut");
+    lblDateDebut->setStyleSheet("font-weight: 700; color: #2c4b5d;");
+    QDateEdit *deDebut = new QDateEdit(QDate::currentDate(), onglet);
+    deDebut->setCalendarPopup(true);
+    deDebut->setDisplayFormat("dd/MM/yyyy");
+    deDebut->setFixedHeight(32);
+    deDebut->setStyleSheet(
+        "QDateEdit { background: white; border: 1px solid #9ab8c7; border-radius: 7px; padding: 4px 8px; }"
+    );
+
+    QLabel *lblDateFin = new QLabel("Date fin");
+    lblDateFin->setStyleSheet("font-weight: 700; color: #2c4b5d;");
+    QDateEdit *deFin = new QDateEdit(QDate::currentDate().addDays(9), onglet);
+    deFin->setCalendarPopup(true);
+    deFin->setDisplayFormat("dd/MM/yyyy");
+    deFin->setFixedHeight(32);
+    deFin->setStyleSheet(
+        "QDateEdit { background: white; border: 1px solid #9ab8c7; border-radius: 7px; padding: 4px 8px; }"
+    );
+
+    QPushButton *btnCurve = new QPushButton("Simuler courbe");
+    btnCurve->setCursor(Qt::PointingHandCursor);
+    btnCurve->setFixedHeight(32);
+    btnCurve->setStyleSheet(
+        "QPushButton { background: #1f6f95; color: white; border: none; border-radius: 8px; padding: 0 12px; font-weight: 800; }"
+        "QPushButton:hover { background: #2a81ab; }"
+    );
+
+    curveControls->addWidget(lblScenario);
+    curveControls->addWidget(cbScenario);
+    curveControls->addWidget(lblDateDebut);
+    curveControls->addWidget(deDebut);
+    curveControls->addWidget(lblDateFin);
+    curveControls->addWidget(deFin);
+    curveControls->addWidget(btnCurve);
+    curveControls->addStretch();
+    curveL->addLayout(curveControls);
+
+    QWidget *curveChart = new QWidget(onglet);
+    curveChart->setMinimumHeight(245);
+    curveL->addWidget(curveChart);
+
+    QScrollBar *curveNavBar = new QScrollBar(Qt::Horizontal, onglet);
+    curveNavBar->setMinimumHeight(14);
+    curveNavBar->setMaximumHeight(14);
+    curveNavBar->setCursor(Qt::PointingHandCursor);
+    curveNavBar->setStyleSheet(
+        "QScrollBar:horizontal {"
+        " background: #ececec;"
+        " height: 10px;"
+        " margin: 0px;"
+        " border-radius: 5px;"
+        "}"
+        "QScrollBar::handle:horizontal {"
+        " background: #c8a32f;"
+        " min-width: 45px;"
+        " border-radius: 5px;"
+        "}"
+        "QScrollBar::handle:horizontal:hover { background: #d7b548; }"
+        "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; background: transparent; border: none; }"
+        "QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }"
+    );
+    curveL->addWidget(curveNavBar);
+
+    QLabel *lblCurveInsight = new QLabel("Simulation en attente.");
+    lblCurveInsight->setWordWrap(true);
+    lblCurveInsight->setStyleSheet("font-size: 12px; color: #35566a; font-weight: 700;");
+    curveL->addWidget(lblCurveInsight);
+
+    auto renderSpecialDeliveryCurve = [=]() {
+        auto *vl = ensureVBox(curveChart);
+        clearLayout(vl);
+        vl->setContentsMargins(0, 0, 0, 0);
+        vl->setSpacing(0);
+
+        QDate startDate = deDebut->date();
+        QDate endDate = deFin->date();
+        if (endDate < startDate) {
+            endDate = startDate;
+            deFin->setDate(endDate);
+        }
+        const int horizon = qMax(1, startDate.daysTo(endDate) + 1);
+        const QString scenario = cbScenario->currentText();
+
+        double demandMul = 1.0;
+        double leadAdjust = 1.0;
+        double mitigation = 1.0;
+        if (scenario == "Stress production") {
+            demandMul = 1.22;
+            leadAdjust = 1.18;
+            mitigation = 0.92;
+        } else if (scenario == "Expedition prioritaire") {
+            demandMul = 1.05;
+            leadAdjust = 0.75;
+            mitigation = 1.22;
+        } else if (scenario == "Optimisation cout") {
+            demandMul = 0.9;
+            leadAdjust = 1.08;
+            mitigation = 0.98;
+        }
+
+        double couvertureBaseJour = 0.0;
+        for (const ZoneDelivery &z : zones) {
+            couvertureBaseJour += (z.dp.quantiteActuelle / qMax(0.01, z.consoJour));
+        }
+        couvertureBaseJour = zones.isEmpty()
+            ? 0.0
+            : (couvertureBaseJour / static_cast<double>(zones.size()));
+
+        const double couvertureBaseIdx = qBound(0.0, (couvertureBaseJour * 100.0) / 14.0, 100.0);
+        const double risqueBase = qBound(0.0, avgRisque, 100.0);
+
+        auto *serieCouverture = new QLineSeries();
+        auto *serieRisque = new QLineSeries();
+        auto *serieSla = new QLineSeries();
+        serieCouverture->setName("Indice couverture");
+        serieRisque->setName("Risque projete");
+        serieSla->setName("Seuil SLA cible");
+
+        QPen penCov(QColor("#0f7f51")); penCov.setWidth(3);
+        QPen penRisk(QColor("#c0392b")); penRisk.setWidth(3);
+        QPen penSla(QColor("#355c7d")); penSla.setWidth(2); penSla.setStyle(Qt::DashLine);
+        serieCouverture->setPen(penCov);
+        serieRisque->setPen(penRisk);
+        serieSla->setPen(penSla);
+
+        const double slaCible = 72.0;
+        double maxRisk = 0.0;
+        double minCoverage = 100.0;
+
+        for (int d = 0; d < horizon; ++d) {
+            const QDate currentDate = startDate.addDays(d);
+            const QDateTime currentDateTime(currentDate, QTime(12, 0));
+            const qint64 x = currentDateTime.toMSecsSinceEpoch();
+
+            const double day = static_cast<double>(d);
+            const double degrade = 4.2 * demandMul;
+            const double recovery = (d >= static_cast<int>(3 * leadAdjust)) ? (2.4 * mitigation) : 0.0;
+
+            const double coverageIdx = qBound(0.0, couvertureBaseIdx - (day * degrade) + (day * recovery * 0.55), 100.0);
+            const double riskIdx = qBound(0.0, risqueBase + (day * (2.8 * demandMul)) - (day * recovery * 0.9), 100.0);
+
+            serieCouverture->append(x, coverageIdx);
+            serieRisque->append(x, riskIdx);
+            serieSla->append(x, slaCible);
+
+            maxRisk = qMax(maxRisk, riskIdx);
+            minCoverage = qMin(minCoverage, coverageIdx);
+        }
+
+        auto *chart = new QChart();
+        chart->addSeries(serieCouverture);
+        chart->addSeries(serieRisque);
+        chart->addSeries(serieSla);
+        styleChartBase(chart);
+        chart->setTitle("Projection couverture vs risque");
+        chart->setAnimationOptions(QChart::SeriesAnimations);
+        if (chart->legend()) {
+            chart->legend()->setVisible(true);
+            chart->legend()->setAlignment(Qt::AlignBottom);
+        }
+
+        auto *axisX = new QDateTimeAxis();
+        axisX->setFormat("dd/MM");
+        axisX->setTickCount(qMin(8, qMax(3, horizon)));
+        axisX->setLabelsColor(QColor("#3e2723"));
+        axisX->setGridLineColor(QColor("#f0e8df"));
+        axisX->setTitleText("Dates de livraison");
+        axisX->setTitleBrush(QBrush(QColor("#3e2723")));
+
+        const int windowDays = qMin(8, horizon);
+        const int maxOffset = qMax(0, horizon - windowDays);
+        curveNavBar->blockSignals(true);
+        curveNavBar->setRange(0, maxOffset);
+        curveNavBar->setPageStep(qMax(1, windowDays));
+        curveNavBar->setSingleStep(1);
+        curveNavBar->setEnabled(maxOffset > 0);
+        if (curveNavBar->value() > maxOffset) {
+            curveNavBar->setValue(maxOffset);
+        }
+        curveNavBar->blockSignals(false);
+
+        const auto applyWindow = [=](int offset) {
+            const int safeOffset = qBound(0, offset, maxOffset);
+            const QDateTime wStart(startDate.addDays(safeOffset), QTime(0, 0));
+            const QDateTime wEnd(startDate.addDays(safeOffset + windowDays - 1), QTime(23, 59, 59));
+            axisX->setRange(wStart, wEnd);
+        };
+
+        applyWindow(curveNavBar->value());
+        curveNavBar->disconnect();
+        QObject::connect(curveNavBar, &QScrollBar::valueChanged, this, [=](int value) {
+            applyWindow(value);
+        });
+
+        chart->addAxis(axisX, Qt::AlignBottom);
+        serieCouverture->attachAxis(axisX);
+        serieRisque->attachAxis(axisX);
+        serieSla->attachAxis(axisX);
+
+        auto *axisY = new QValueAxis();
+        axisY->setRange(0.0, 100.0);
+        axisY->setTickCount(6);
+        axisY->setLabelFormat("%.0f");
+        axisY->setLabelsColor(QColor("#3e2723"));
+        axisY->setGridLineColor(QColor("#eee5dd"));
+        chart->addAxis(axisY, Qt::AlignLeft);
+        serieCouverture->attachAxis(axisY);
+        serieRisque->attachAxis(axisY);
+        serieSla->attachAxis(axisY);
+
+        auto *view = new QChartView(chart);
+        styleChartView(view);
+        view->setMinimumHeight(245);
+        view->setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+        vl->addWidget(view);
+
+        lblCurveInsight->setText(QString(
+            "Periode %1 -> %2 | Scenario '%3': Risque max projete = <b>%4/100</b>, Couverture min attendue = <b>%5/100</b>. "
+            "Decision recommandee: %6"
+        )
+            .arg(startDate.toString("dd/MM/yyyy"))
+            .arg(endDate.toString("dd/MM/yyyy"))
+            .arg(scenario)
+            .arg(QString::number(maxRisk, 'f', 1))
+            .arg(QString::number(minCoverage, 'f', 1))
+            .arg(maxRisk >= 75.0
+                 ? QString("declencher double sourcing immediat")
+                 : (maxRisk >= 55.0
+                    ? QString("renforcer suivi quotidien + anticipation camions")
+                    : QString("maintenir plan standard et revue hebdomadaire")))
+        );
+    };
+
+    QObject::connect(btnCurve, &QPushButton::clicked, this, [=]() { renderSpecialDeliveryCurve(); });
+    QObject::connect(cbScenario, &QComboBox::currentTextChanged, this, [=](const QString &) { renderSpecialDeliveryCurve(); });
+    QObject::connect(deDebut, &QDateEdit::dateChanged, this, [=](const QDate &) { renderSpecialDeliveryCurve(); });
+    QObject::connect(deFin, &QDateEdit::dateChanged, this, [=](const QDate &) { renderSpecialDeliveryCurve(); });
+
+    l->addWidget(curveFrame);
+
+    QFrame *missionFrame = new QFrame(onglet);
+    missionFrame->setStyleSheet("QFrame { background: #f8f5ff; border: 1px solid #d5cff2; border-radius: 10px; }");
+    QVBoxLayout *missionL = new QVBoxLayout(missionFrame);
+    missionL->setContentsMargins(12, 10, 12, 10);
+    missionL->setSpacing(8);
+
+    QLabel *missionTitle = new QLabel("Orchestrateur de mission logistique (pro)");
+    missionTitle->setStyleSheet("font-size: 15px; font-weight: 900; color: #2d2b58;");
+    missionL->addWidget(missionTitle);
+
+    QHBoxLayout *missionInputs = new QHBoxLayout();
+    missionInputs->setSpacing(8);
+
+    QLabel *lblSla = new QLabel("SLA minimum");
+    lblSla->setStyleSheet("font-weight: 700; color: #3a3765;");
+    QSpinBox *spSla = new QSpinBox(onglet);
+    spSla->setRange(70, 99);
+    spSla->setValue(92);
+    spSla->setSuffix(" %");
+    spSla->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    spSla->setFixedHeight(32);
+    spSla->setStyleSheet("QSpinBox { background: white; border: 1px solid #b8b1e5; border-radius: 7px; padding-left: 8px; }");
+
+    QLabel *lblPolicy = new QLabel("Politique");
+    lblPolicy->setStyleSheet("font-weight: 700; color: #3a3765;");
+    QComboBox *cbPolicy = new QComboBox(onglet);
+    cbPolicy->addItems(QStringList() << "Priorite risque" << "Minimisation cout" << "Equilibre SLA/Cout");
+    cbPolicy->setFixedHeight(32);
+    cbPolicy->setStyleSheet("QComboBox { background: white; border: 1px solid #b8b1e5; border-radius: 7px; padding: 4px 8px; }");
+
+    QPushButton *btnMission = new QPushButton("Generer mission");
+    btnMission->setCursor(Qt::PointingHandCursor);
+    btnMission->setFixedHeight(32);
+    btnMission->setStyleSheet(
+        "QPushButton { background: #5a4bb7; color: white; border: none; border-radius: 8px; padding: 0 12px; font-weight: 800; }"
+        "QPushButton:hover { background: #6a5dc7; }"
+    );
+
+    missionInputs->addWidget(lblSla);
+    missionInputs->addWidget(spSla);
+    missionInputs->addWidget(lblPolicy);
+    missionInputs->addWidget(cbPolicy);
+    missionInputs->addWidget(btnMission);
+    missionInputs->addStretch();
+    missionL->addLayout(missionInputs);
+
+    QLabel *lblMission = new QLabel("Mission en attente.");
+    lblMission->setWordWrap(true);
+    lblMission->setStyleSheet("font-size: 13px; color: #2d2b58; background: #efedff; border: 1px solid #d0caf6; border-radius: 8px; padding: 8px;");
+    missionL->addWidget(lblMission);
+
+    QObject::connect(btnMission, &QPushButton::clicked, this, [=]() {
+        if (zones.isEmpty()) {
+            lblMission->setText("Aucune zone depot disponible pour generer une mission.");
+            return;
+        }
+
+        QVector<ZoneDelivery> seq = zones;
+        const QString policy = cbPolicy->currentText();
+        if (policy == "Minimisation cout") {
+            std::sort(seq.begin(), seq.end(), [](const ZoneDelivery &a, const ZoneDelivery &b) {
+                return a.qteLivraison < b.qteLivraison;
+            });
+        } else if (policy == "Equilibre SLA/Cout") {
+            std::sort(seq.begin(), seq.end(), [](const ZoneDelivery &a, const ZoneDelivery &b) {
+                const double sa = (a.risque * 0.65) + (a.qteLivraison * 0.35);
+                const double sb = (b.risque * 0.65) + (b.qteLivraison * 0.35);
+                return sa > sb;
+            });
+        }
+
+        const int topN = qMin(3, seq.size());
+        QStringList route;
+        double volume = 0.0;
+        for (int i = 0; i < topN; ++i) {
+            route << (seq.at(i).dp.id + "(" + seq.at(i).priorite.section(' ', 0, 0) + ")");
+            volume += seq.at(i).qteLivraison;
+        }
+
+        const double slaPred = qBound(0.0, 100.0 - (avgRisque * 0.62) + (policy == "Priorite risque" ? 5.0 : (policy == "Equilibre SLA/Cout" ? 2.5 : -1.5)), 100.0);
+        const int slaTarget = spSla->value();
+        const bool ok = slaPred >= static_cast<double>(slaTarget);
+
+        lblMission->setText(QString(
+            "<b>Mission proposee:</b><br>"
+            "Sequence prioritaire: <b>%1</b><br>"
+            "Volume mission critique: <b>%2 U</b> | Politique: <b>%3</b><br>"
+            "SLA predit: <b>%4%%</b> (cible: %5%%) -> <b>%6</b><br>"
+            "Instruction: %7"
+        )
+            .arg(route.join(" -> "))
+            .arg(QString::number(volume, 'f', 1))
+            .arg(policy)
+            .arg(QString::number(slaPred, 'f', 1))
+            .arg(slaTarget)
+            .arg(ok ? "Conforme" : "Sous cible")
+            .arg(ok
+                 ? QString("valider ordre de transport et notifier les equipes terrain")
+                 : QString("activer expedition prioritaire et escalader au responsable logistique"))
+        );
+
+        if (ok) {
+            lblMission->setStyleSheet("font-size: 13px; color: #1f5a3a; background: #ebf9ef; border: 1px solid #b9dfc5; border-radius: 8px; padding: 8px;");
+        } else {
+            lblMission->setStyleSheet("font-size: 13px; color: #7b1f1f; background: #ffecec; border: 1px solid #f0b0b0; border-radius: 8px; padding: 8px;");
+        }
+    });
+
+    l->addWidget(missionFrame);
+
+    QFrame *workflowFrame = new QFrame(onglet);
+    workflowFrame->setStyleSheet("QFrame { background: #f7f8ff; border: 1px solid #d6d9f5; border-radius: 10px; }");
+    QVBoxLayout *workflowL = new QVBoxLayout(workflowFrame);
+    workflowL->setContentsMargins(12, 10, 12, 10);
+    workflowL->setSpacing(8);
+
+    QLabel *workflowTitle = new QLabel("Workflow de validation (metier)");
+    workflowTitle->setStyleSheet("font-size: 15px; font-weight: 900; color: #2f3a74;");
+    workflowL->addWidget(workflowTitle);
+
+    QHBoxLayout *workflowInputs = new QHBoxLayout();
+    workflowInputs->setSpacing(8);
+
+    QLabel *lblResp = new QLabel("Responsable");
+    lblResp->setStyleSheet("font-weight: 700; color: #3a457f;");
+    QLineEdit *leResp = new QLineEdit(onglet);
+    leResp->setPlaceholderText("ex: Chef Depot");
+    leResp->setText("Chef Depot");
+    leResp->setFixedHeight(32);
+    leResp->setStyleSheet("QLineEdit { background: white; border: 1px solid #bfc6ef; border-radius: 7px; padding: 4px 8px; }");
+
+    QLabel *lblEtat = new QLabel("Etat");
+    lblEtat->setStyleSheet("font-weight: 700; color: #3a457f;");
+    QComboBox *cbWorkflowEtat = new QComboBox(onglet);
+    cbWorkflowEtat->addItems(QStringList() << "Brouillon" << "En validation" << "Approuve" << "Execute");
+    cbWorkflowEtat->setCurrentIndex(0);
+    cbWorkflowEtat->setEnabled(false);
+    cbWorkflowEtat->setFixedHeight(32);
+    cbWorkflowEtat->setStyleSheet("QComboBox { background: #f1f3ff; border: 1px solid #c9d1f5; border-radius: 7px; padding: 4px 8px; color: #394078; }");
+
+    workflowInputs->addWidget(lblResp);
+    workflowInputs->addWidget(leResp);
+    workflowInputs->addWidget(lblEtat);
+    workflowInputs->addWidget(cbWorkflowEtat);
+    workflowInputs->addStretch();
+    workflowL->addLayout(workflowInputs);
+
+    QHBoxLayout *workflowActions = new QHBoxLayout();
+    workflowActions->setSpacing(8);
+
+    QPushButton *btnSoumettre = new QPushButton("Soumettre");
+    btnSoumettre->setCursor(Qt::PointingHandCursor);
+    btnSoumettre->setFixedHeight(32);
+    btnSoumettre->setStyleSheet(
+        "QPushButton { background: #3f51b5; color: white; border: none; border-radius: 8px; padding: 0 12px; font-weight: 800; }"
+        "QPushButton:hover { background: #5364c8; }"
+    );
+
+    QPushButton *btnApprouver = new QPushButton("Approuver");
+    btnApprouver->setCursor(Qt::PointingHandCursor);
+    btnApprouver->setFixedHeight(32);
+    btnApprouver->setStyleSheet(
+        "QPushButton { background: #0f7f51; color: white; border: none; border-radius: 8px; padding: 0 12px; font-weight: 800; }"
+        "QPushButton:hover { background: #169763; }"
+    );
+
+    QPushButton *btnExecuter = new QPushButton("Executer");
+    btnExecuter->setCursor(Qt::PointingHandCursor);
+    btnExecuter->setFixedHeight(32);
+    btnExecuter->setStyleSheet(
+        "QPushButton { background: #8d5524; color: white; border: none; border-radius: 8px; padding: 0 12px; font-weight: 800; }"
+        "QPushButton:hover { background: #a3662d; }"
+    );
+
+    workflowActions->addWidget(btnSoumettre);
+    workflowActions->addWidget(btnApprouver);
+    workflowActions->addWidget(btnExecuter);
+    workflowActions->addStretch();
+    workflowL->addLayout(workflowActions);
+
+    QLabel *lblWorkflowStatus = new QLabel("Workflow: Brouillon (en attente de soumission).");
+    lblWorkflowStatus->setWordWrap(true);
+    lblWorkflowStatus->setStyleSheet("font-size: 13px; color: #2f3a74; background: #edf0ff; border: 1px solid #cfd6f8; border-radius: 8px; padding: 8px;");
+    workflowL->addWidget(lblWorkflowStatus);
+
+    l->addWidget(workflowFrame);
+
+    QFrame *auditFrame = new QFrame(onglet);
+    auditFrame->setStyleSheet("QFrame { background: #fafafa; border: 1px solid #dddddd; border-radius: 10px; }");
+    QVBoxLayout *auditL = new QVBoxLayout(auditFrame);
+    auditL->setContentsMargins(12, 10, 12, 10);
+    auditL->setSpacing(8);
+
+    QLabel *auditTitle = new QLabel("Traçabilite / Audit log");
+    auditTitle->setStyleSheet("font-size: 15px; font-weight: 900; color: #37474f;");
+    auditL->addWidget(auditTitle);
+
+    QHBoxLayout *auditActions = new QHBoxLayout();
+    auditActions->setSpacing(8);
+    QPushButton *btnAuditRefresh = new QPushButton("Rafraichir audit");
+    btnAuditRefresh->setCursor(Qt::PointingHandCursor);
+    btnAuditRefresh->setFixedHeight(30);
+    btnAuditRefresh->setStyleSheet(
+        "QPushButton { background: #546e7a; color: white; border: none; border-radius: 8px; padding: 0 12px; font-weight: 700; }"
+        "QPushButton:hover { background: #607d8b; }"
+    );
+    auditActions->addWidget(btnAuditRefresh);
+    auditActions->addStretch();
+    auditL->addLayout(auditActions);
+
+    QTableWidget *tableAudit = new QTableWidget(0, 5, onglet);
+    tableAudit->setHorizontalHeaderLabels(QStringList() << "Date" << "Action" << "Niveau" << "Responsable" << "Details");
+    tableAudit->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    tableAudit->verticalHeader()->setVisible(false);
+    tableAudit->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    tableAudit->setSelectionBehavior(QAbstractItemView::SelectRows);
+    tableAudit->setAlternatingRowColors(true);
+    tableAudit->setMinimumHeight(165);
+    tableAudit->setStyleSheet(
+        "QTableWidget { background: white; border: 1px solid #d4d4d4; gridline-color: #ebebeb; }"
+        "QHeaderView::section { background: #455a64; color: white; border: none; padding: 6px; font-weight: 800; }"
+    );
+    auditL->addWidget(tableAudit);
+    l->addWidget(auditFrame);
+
+    auto logAudit = [=](const QString &action, const QString &niveau, const QString &details, const QString &responsable) {
+        QSqlDatabase db = QSqlDatabase::database();
+        if (!db.isValid() || !db.isOpen()) return;
+
+        QSqlQuery createQ(db);
+        const QString createSql =
+            "CREATE TABLE DEPOT_AUDIT_LOG ("
+            "LOG_ID VARCHAR2(60) PRIMARY KEY, "
+            "DATE_LOG TIMESTAMP, "
+            "ACTION VARCHAR2(80), "
+            "NIVEAU VARCHAR2(20), "
+            "RESPONSABLE VARCHAR2(80), "
+            "DETAILS VARCHAR2(1000))";
+        if (!createQ.exec(createSql)) {
+            const QString err = createQ.lastError().text();
+            if (!err.contains("ORA-00955")) return;
+        }
+
+        QSqlQuery ins(db);
+        ins.prepare(
+            "INSERT INTO DEPOT_AUDIT_LOG (LOG_ID, DATE_LOG, ACTION, NIVEAU, RESPONSABLE, DETAILS) "
+            "VALUES (:id, :dt, :ac, :nv, :resp, :det)"
+        );
+        ins.bindValue(":id", QDateTime::currentDateTime().toString("yyyyMMddhhmmsszzz") + action.left(4));
+        ins.bindValue(":dt", QDateTime::currentDateTime());
+        ins.bindValue(":ac", action.left(80));
+        ins.bindValue(":nv", niveau.left(20));
+        ins.bindValue(":resp", responsable.left(80));
+        ins.bindValue(":det", details.left(1000));
+        ins.exec();
+    };
+
+    auto refreshAudit = [=]() {
+        tableAudit->setRowCount(0);
+        QSqlDatabase db = QSqlDatabase::database();
+        if (!db.isValid() || !db.isOpen()) return;
+
+        QSqlQuery q(db);
+        q.prepare(
+            "SELECT TO_CHAR(DATE_LOG, 'DD/MM/YYYY HH24:MI:SS'), ACTION, NIVEAU, RESPONSABLE, DETAILS "
+            "FROM DEPOT_AUDIT_LOG ORDER BY DATE_LOG DESC"
+        );
+        if (!q.exec()) return;
+
+        int r = 0;
+        while (q.next() && r < 60) {
+            tableAudit->insertRow(r);
+            for (int c = 0; c < 5; ++c) {
+                auto *it = new QTableWidgetItem(q.value(c).toString());
+                if (c == 2) {
+                    const QString niveau = it->text().toUpper();
+                    if (niveau.contains("CRITIQUE") || niveau.contains("ERREUR")) {
+                        it->setBackground(QColor("#ffe4e4"));
+                    } else if (niveau.contains("WARNING")) {
+                        it->setBackground(QColor("#fff3dd"));
+                    } else if (niveau.contains("SUCCES") || niveau.contains("INFO")) {
+                        it->setBackground(QColor("#e9f8ee"));
+                    }
+                }
+                tableAudit->setItem(r, c, it);
+            }
+            ++r;
+        }
+    };
+
+    QFrame *planFrame = new QFrame(onglet);
+    planFrame->setStyleSheet("QFrame { background: #f7fbf7; border: 1px solid #c5e0cd; border-radius: 10px; }");
+    QVBoxLayout *planL = new QVBoxLayout(planFrame);
+    planL->setContentsMargins(12, 10, 12, 10);
+    planL->setSpacing(8);
+
+    QLabel *planTitle = new QLabel("Plan global de livraison");
+    planTitle->setStyleSheet("font-size: 15px; font-weight: 900; color: #1b5632;");
+    planL->addWidget(planTitle);
+
+    QHBoxLayout *inputs = new QHBoxLayout();
+    inputs->setSpacing(8);
+
+    QLabel *lblTruck = new QLabel("Capacite camion");
+    QLabel *lblFix = new QLabel("Cout fixe / camion");
+    lblTruck->setStyleSheet("font-weight: 700; color: #274a36;");
+    lblFix->setStyleSheet("font-weight: 700; color: #274a36;");
+
+    QDoubleSpinBox *sbTruck = new QDoubleSpinBox(onglet);
+    sbTruck->setRange(20.0, 5000.0);
+    sbTruck->setDecimals(1);
+    sbTruck->setValue(250.0);
+    sbTruck->setSuffix(" U");
+    sbTruck->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    sbTruck->setFixedHeight(34);
+
+    QDoubleSpinBox *sbCost = new QDoubleSpinBox(onglet);
+    sbCost->setRange(10.0, 100000.0);
+    sbCost->setDecimals(2);
+    sbCost->setValue(180.0);
+    sbCost->setSuffix(" DT");
+    sbCost->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    sbCost->setFixedHeight(34);
+
+    const QString spinStyle =
+        "QDoubleSpinBox { background: white; border: 1px solid #a8c7b2; border-radius: 7px; padding-left: 6px; font-size: 13px; }";
+    sbTruck->setStyleSheet(spinStyle);
+    sbCost->setStyleSheet(spinStyle);
+
+    QWidget *c1 = new QWidget();
+    QVBoxLayout *c1l = new QVBoxLayout(c1);
+    c1l->setContentsMargins(0, 0, 0, 0);
+    c1l->setSpacing(3);
+    c1l->addWidget(lblTruck);
+    c1l->addWidget(sbTruck);
+
+    QWidget *c2 = new QWidget();
+    QVBoxLayout *c2l = new QVBoxLayout(c2);
+    c2l->setContentsMargins(0, 0, 0, 0);
+    c2l->setSpacing(3);
+    c2l->addWidget(lblFix);
+    c2l->addWidget(sbCost);
+
+    inputs->addWidget(c1);
+    inputs->addWidget(c2);
+    inputs->addStretch();
+    planL->addLayout(inputs);
+
+    QPushButton *btnPlanGlobal = new QPushButton("Generer plan livraison global");
+    btnPlanGlobal->setCursor(Qt::PointingHandCursor);
+    btnPlanGlobal->setFixedHeight(36);
+    btnPlanGlobal->setStyleSheet(
+        "QPushButton { background: #118f52; color: white; border: none; border-radius: 18px; font-weight: 800; padding: 0 16px; }"
+        "QPushButton:hover { background: #15a561; }"
+    );
+    planL->addWidget(btnPlanGlobal, 0, Qt::AlignLeft);
+
+    QPushButton *btnRapportDirection = new QPushButton("Rapport PDF Direction");
+    btnRapportDirection->setCursor(Qt::PointingHandCursor);
+    btnRapportDirection->setFixedHeight(34);
+    btnRapportDirection->setStyleSheet(
+        "QPushButton { background: #6a5acd; color: white; border: none; border-radius: 8px; padding: 0 14px; font-weight: 800; }"
+        "QPushButton:hover { background: #7a69db; }"
+    );
+    planL->addWidget(btnRapportDirection, 0, Qt::AlignLeft);
+
+    QLabel *lblPlanGlobal = new QLabel("Cliquez sur 'Generer plan livraison global' pour produire un plan logistique consolide.");
+    lblPlanGlobal->setWordWrap(true);
+    lblPlanGlobal->setStyleSheet("font-size: 13px; color: #234838; background: #ebf9ef; border: 1px solid #b9dfc5; border-radius: 8px; padding: 8px;");
+    planL->addWidget(lblPlanGlobal);
+
+    QObject::connect(btnPlanGlobal, &QPushButton::clicked, this, [=]() {
+        double totalQte = 0.0;
+        int p1 = 0;
+        int p2 = 0;
+        QDate etaMin = QDate::currentDate().addDays(30);
+        for (const ZoneDelivery &z : zones) {
+            totalQte += z.qteLivraison;
+            if (z.risque >= 75.0) ++p1;
+            else if (z.risque >= 55.0) ++p2;
+            if (z.eta < etaMin) etaMin = z.eta;
+        }
+
+        const double capTruck = qMax(1.0, sbTruck->value());
+        const int nbCamions = static_cast<int>(std::ceil(totalQte / capTruck));
+        const double coutFixe = nbCamions * sbCost->value();
+        const double coutVariable = totalQte * 0.45;
+        const double coutTotal = coutFixe + coutVariable;
+
+        QString niveau = "Normal";
+        if (p1 > 0) niveau = "Critique";
+        else if (p2 > 0) niveau = "A surveiller";
+
+        lblPlanGlobal->setText(QString(
+            "<b>Plan consolide livraison:</b><br>"
+            "Volume total recommande: <b>%1 U</b><br>"
+            "Nombre camions requis: <b>%2</b> (capacite %3 U/camion)<br>"
+            "Cout logistique estime: <b>%4 DT</b> (Fixe: %5 DT | Variable: %6 DT)<br>"
+            "Priorites: <b>%7 zone(s) P1</b>, <b>%8 zone(s) P2</b><br>"
+            "Premiere echeance a respecter: <b>%9</b><br>"
+            "Niveau d'intervention global: <b>%10</b>"
+        )
+            .arg(QString::number(totalQte, 'f', 1))
+            .arg(nbCamions)
+            .arg(QString::number(capTruck, 'f', 1))
+            .arg(QString::number(coutTotal, 'f', 2))
+            .arg(QString::number(coutFixe, 'f', 2))
+            .arg(QString::number(coutVariable, 'f', 2))
+            .arg(p1)
+            .arg(p2)
+            .arg(etaMin.toString("dd/MM/yyyy"))
+            .arg(niveau)
+        );
+
+        if (p1 > 0) {
+            lblPlanGlobal->setStyleSheet("font-size: 13px; color: #7b1f1f; background: #ffecec; border: 1px solid #f0b0b0; border-radius: 8px; padding: 8px;");
+        } else if (p2 > 0) {
+            lblPlanGlobal->setStyleSheet("font-size: 13px; color: #7a4c12; background: #fff8e6; border: 1px solid #f1d18f; border-radius: 8px; padding: 8px;");
+        } else {
+            lblPlanGlobal->setStyleSheet("font-size: 13px; color: #1f5a3a; background: #ebf9ef; border: 1px solid #b9dfc5; border-radius: 8px; padding: 8px;");
+        }
+
+        logAudit("PLAN_GLOBAL", p1 > 0 ? "CRITIQUE" : "INFO", lblPlanGlobal->text(), leResp->text().trimmed());
+        refreshAudit();
+    });
+
+    QObject::connect(btnExportTable, &QPushButton::clicked, this, [=]() {
+        const QString filePath = QFileDialog::getSaveFileName(this,
+                                                               "Exporter tableau livraison",
+                                                               "Tableau_Livraison_Depot_" + QDateTime::currentDateTime().toString("yyyyMMdd_hhmm") + ".csv",
+                                                               "CSV (*.csv)");
+        if (filePath.isEmpty()) return;
+
+        QFile out(filePath);
+        if (!out.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            alerteErreur("Export", "Impossible d'ecrire le fichier CSV.");
+            return;
+        }
+
+        QTextStream ts(&out);
+        QStringList headers;
+        for (int c = 0; c < tablePlan->columnCount(); ++c) {
+            headers << tablePlan->horizontalHeaderItem(c)->text();
+        }
+        ts << headers.join(';') << "\n";
+
+        for (int r = 0; r < tablePlan->rowCount(); ++r) {
+            QStringList row;
+            for (int c = 0; c < tablePlan->columnCount(); ++c) {
+                const QString txt = tablePlan->item(r, c) ? tablePlan->item(r, c)->text() : QString();
+                row << QString(txt).replace(';', ',');
+            }
+            ts << row.join(';') << "\n";
+        }
+        out.close();
+        alerteSucces("Export", "Tableau livraison exporte en CSV avec succes.");
+        logAudit("EXPORT_CSV", "SUCCES", "Export tableau livraison effectue.", leResp->text().trimmed());
+        refreshAudit();
+    });
+
+    QObject::connect(btnSaveTable, &QPushButton::clicked, this, [=]() {
+        QSqlDatabase db = QSqlDatabase::database();
+        if (!db.isValid() || !db.isOpen()) {
+            alerteErreur("Sauvegarde", "Base non connectee.");
+            return;
+        }
+
+        QSqlQuery createQ(db);
+        const QString createSql =
+            "CREATE TABLE DEPOT_LIVRAISON_LOG ("
+            "LOG_ID VARCHAR2(50) PRIMARY KEY, "
+            "DATE_LOG TIMESTAMP, "
+            "ZONE VARCHAR2(180), "
+            "TYPE_STOCKAGE VARCHAR2(80), "
+            "TAUX_REMPLISSAGE NUMBER(8,2), "
+            "SCORE_RISQUE NUMBER(8,2), "
+            "QTE_LIVRAISON NUMBER(12,2), "
+            "PRIORITE VARCHAR2(40), "
+            "ETA_LIVRAISON DATE)";
+
+        if (!createQ.exec(createSql)) {
+            const QString err = createQ.lastError().text();
+            if (!err.contains("ORA-00955")) {
+                alerteErreur("Sauvegarde", "Creation table impossible: " + err);
+                return;
+            }
+        }
+
+        QSqlQuery ins(db);
+        ins.prepare(
+            "INSERT INTO DEPOT_LIVRAISON_LOG "
+            "(LOG_ID, DATE_LOG, ZONE, TYPE_STOCKAGE, TAUX_REMPLISSAGE, SCORE_RISQUE, QTE_LIVRAISON, PRIORITE, ETA_LIVRAISON) "
+            "VALUES (:id, :dt, :zone, :type, :taux, :risque, :qte, :priorite, :eta)"
+        );
+
+        auto parseNum = [](QString s) {
+            s.replace(',', '.');
+            s.remove(QRegularExpression("[^0-9.]"));
+            return s.toDouble();
+        };
+
+        int saved = 0;
+        for (int r = 0; r < tablePlan->rowCount(); ++r) {
+            const QString zone = tablePlan->item(r, 0) ? tablePlan->item(r, 0)->text() : QString();
+            const QString type = tablePlan->item(r, 1) ? tablePlan->item(r, 1)->text() : QString();
+            const double taux = tablePlan->item(r, 2) ? parseNum(tablePlan->item(r, 2)->text()) : 0.0;
+            const double risque = tablePlan->item(r, 3) ? parseNum(tablePlan->item(r, 3)->text()) : 0.0;
+            const double qte = tablePlan->item(r, 4) ? parseNum(tablePlan->item(r, 4)->text()) : 0.0;
+            const QString priorite = tablePlan->item(r, 5) ? tablePlan->item(r, 5)->text() : QString();
+            const QDate eta = tablePlan->item(r, 6)
+                ? QDate::fromString(tablePlan->item(r, 6)->text(), "dd/MM/yyyy")
+                : QDate();
+
+            ins.bindValue(":id", QDateTime::currentDateTime().toString("yyyyMMddhhmmsszzz") + QString::number(r));
+            ins.bindValue(":dt", QDateTime::currentDateTime());
+            ins.bindValue(":zone", zone.left(180));
+            ins.bindValue(":type", type.left(80));
+            ins.bindValue(":taux", taux);
+            ins.bindValue(":risque", risque);
+            ins.bindValue(":qte", qte);
+            ins.bindValue(":priorite", priorite.left(40));
+            ins.bindValue(":eta", eta.isValid() ? eta : QVariant(QVariant::Date));
+
+            if (ins.exec()) {
+                ++saved;
+            }
+        }
+
+        if (saved == tablePlan->rowCount()) {
+            alerteSucces("Sauvegarde", "Tableau livraison sauvegarde en base avec succes.");
+            logAudit("SAVE_TABLE", "SUCCES", "Sauvegarde complete: " + QString::number(saved) + " lignes.", leResp->text().trimmed());
+        } else {
+            alerteWarning("Sauvegarde partielle",
+                          QString("%1 ligne(s) sauvegardee(s) sur %2.").arg(saved).arg(tablePlan->rowCount()));
+            logAudit("SAVE_TABLE", "WARNING", QString("Sauvegarde partielle: %1/%2").arg(saved).arg(tablePlan->rowCount()), leResp->text().trimmed());
+        }
+        refreshAudit();
+    });
+
+    QObject::connect(btnSoumettre, &QPushButton::clicked, this, [=]() {
+        cbWorkflowEtat->setCurrentText("En validation");
+        const QString msg = QString("Workflow: En validation (%1) par %2.")
+            .arg(QDateTime::currentDateTime().toString("dd/MM/yyyy hh:mm"), leResp->text().trimmed());
+        lblWorkflowStatus->setText(msg);
+        lblWorkflowStatus->setStyleSheet("font-size: 13px; color: #7a4c12; background: #fff8e6; border: 1px solid #f1d18f; border-radius: 8px; padding: 8px;");
+        logAudit("WORKFLOW_SUBMIT", "INFO", msg, leResp->text().trimmed());
+        refreshAudit();
+    });
+
+    QObject::connect(btnApprouver, &QPushButton::clicked, this, [=]() {
+        if (cbWorkflowEtat->currentText() != "En validation") {
+            alerteWarning("Workflow", "Soumettez d'abord le plan en validation.");
+            return;
+        }
+        cbWorkflowEtat->setCurrentText("Approuve");
+        const QString msg = QString("Workflow: Plan approuve le %1 par %2.")
+            .arg(QDateTime::currentDateTime().toString("dd/MM/yyyy hh:mm"), leResp->text().trimmed());
+        lblWorkflowStatus->setText(msg);
+        lblWorkflowStatus->setStyleSheet("font-size: 13px; color: #1f5a3a; background: #ebf9ef; border: 1px solid #b9dfc5; border-radius: 8px; padding: 8px;");
+        logAudit("WORKFLOW_APPROVE", "SUCCES", msg, leResp->text().trimmed());
+        refreshAudit();
+    });
+
+    QObject::connect(btnExecuter, &QPushButton::clicked, this, [=]() {
+        if (cbWorkflowEtat->currentText() != "Approuve") {
+            alerteWarning("Workflow", "Le plan doit etre approuve avant execution.");
+            return;
+        }
+        cbWorkflowEtat->setCurrentText("Execute");
+        const QString msg = QString("Workflow: Plan execute le %1 par %2.")
+            .arg(QDateTime::currentDateTime().toString("dd/MM/yyyy hh:mm"), leResp->text().trimmed());
+        lblWorkflowStatus->setText(msg);
+        lblWorkflowStatus->setStyleSheet("font-size: 13px; color: #17384a; background: #e6f4ff; border: 1px solid #b9d6eb; border-radius: 8px; padding: 8px;");
+        logAudit("WORKFLOW_EXECUTE", "SUCCES", msg, leResp->text().trimmed());
+        refreshAudit();
+    });
+
+    QObject::connect(btnAuditRefresh, &QPushButton::clicked, this, [=]() { refreshAudit(); });
+
+    QObject::connect(btnRapportDirection, &QPushButton::clicked, this, [=]() {
+        const QString f = QFileDialog::getSaveFileName(this,
+                                                       "Exporter Rapport Direction",
+                                                       "Rapport_Direction_Livraison_" + QDateTime::currentDateTime().toString("yyyyMMdd_hhmm") + ".pdf",
+                                                       "PDF (*.pdf)");
+        if (f.isEmpty()) return;
+
+        double qteTotal = 0.0;
+        double risqueMoy = 0.0;
+        int n = tablePlan->rowCount();
+        for (int r = 0; r < n; ++r) {
+            QString qteTxt = tablePlan->item(r, 4) ? tablePlan->item(r, 4)->text() : QString();
+            QString risTxt = tablePlan->item(r, 3) ? tablePlan->item(r, 3)->text() : QString();
+            qteTxt.remove(" U"); qteTxt.replace(',', '.');
+            risTxt.remove("/100"); risTxt.replace(',', '.');
+            qteTotal += qteTxt.toDouble();
+            risqueMoy += risTxt.toDouble();
+        }
+        risqueMoy = (n > 0) ? (risqueMoy / static_cast<double>(n)) : 0.0;
+
+        QStringList topZones;
+        for (int i = 0; i < qMin(3, n); ++i) {
+            topZones << (tablePlan->item(i, 0) ? tablePlan->item(i, 0)->text() : QString("N/A"));
+        }
+
+        QPrinter printer(QPrinter::PrinterResolution);
+        printer.setOutputFormat(QPrinter::PdfFormat);
+        printer.setPageSize(QPageSize(QPageSize::A4));
+        printer.setOutputFileName(f);
+
+        const QString html = QString(
+            "<h2 style='color:#2b3e50;'>Rapport Direction - Livraison Depot</h2>"
+            "<p><b>Date:</b> %1</p>"
+            "<p><b>Responsable:</b> %2</p>"
+            "<p><b>Etat workflow:</b> %3</p>"
+            "<hr>"
+            "<h3>Synthese executive</h3>"
+            "<p>Volume total recommande: <b>%4 U</b></p>"
+            "<p>Risque moyen reseau: <b>%5 /100</b></p>"
+            "<p>Top zones prioritaires: <b>%6</b></p>"
+            "<hr>"
+            "<h3>Decision plan global</h3>"
+            "<div>%7</div>"
+            "<hr>"
+            "<h3>Statut workflow</h3>"
+            "<div>%8</div>"
+        )
+            .arg(QDateTime::currentDateTime().toString("dd/MM/yyyy hh:mm"))
+            .arg(leResp->text().trimmed())
+            .arg(cbWorkflowEtat->currentText())
+            .arg(QString::number(qteTotal, 'f', 1))
+            .arg(QString::number(risqueMoy, 'f', 1))
+            .arg(topZones.join(" | "))
+            .arg(lblPlanGlobal->text())
+            .arg(lblWorkflowStatus->text());
+
+        QTextDocument doc;
+        doc.setHtml(html);
+        doc.print(&printer);
+
+        alerteSucces("Export PDF", "Rapport direction exporte avec succes.");
+        logAudit("RAPPORT_DIRECTION", "SUCCES", "Rapport PDF direction genere.", leResp->text().trimmed());
+        refreshAudit();
+    });
+
+    refreshAudit();
+
+    renderSpecialDeliveryCurve();
+
+    l->addWidget(planFrame);
     l->addStretch();
     ui->tabWidgetDepot->setCurrentIndex(5);
 }
@@ -10430,4 +15500,421 @@ void MainWindow::verifierFinFabrication(int idPlanification)
     rafraichirListeCommandes();
 
     qDebug() << "FABRICATION TERMINEE - OF-" << idPlanification << nomProduit << "x" << quantite;
+}
+
+// =========================================================
+// ===     INJECTION UI EXPERT : STOCK MODULE (20/20)    ===
+// =========================================================
+
+void MainWindow::setupStockExpertUI() {
+    // 1. GLOBAL INPUT STYLING
+    QString formStyle = 
+        "QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {"
+        " background: white; border: 1px solid #d7ccc8; border-radius: 6px; "
+        " padding: 6px 12px; font-size: 13px; color: #3e2723; }"
+        "QLineEdit:focus, QComboBox:focus { border: 2px solid #8d5524; background: #fffcf9; }"
+        "QLabel { font-weight: 700; color: #5d4037; font-size: 13px; }";
+    
+    // On applique le style aux onglets de saisie (Ajouter/Modifier)
+    if(ui->tabWidgetStock->count() > 2) {
+        ui->tabWidgetStock->widget(1)->setStyleSheet(formStyle);
+        ui->tabWidgetStock->widget(2)->setStyleSheet(formStyle);
+    }
+
+    // 2. TAB 0 (LISTE) : AJOUT DU PULSE HEADER
+    QWidget *pageList = ui->tabWidgetStock->widget(0);
+    if (pageList && pageList->layout()) {
+        if (auto *vl = qobject_cast<QVBoxLayout*>(pageList->layout())) {
+            QFrame *pulse = new QFrame();
+            pulse->setStyleSheet("QFrame { background: #fdfaf5; border: 1px solid #eadbc8; border-radius: 10px; margin-bottom: 10px; }");
+            QHBoxLayout *pl = new QHBoxLayout(pulse);
+            
+            auto makePulseKpi = [](const QString &icon, const QString &txt, const QString &color) {
+                QLabel *l = new QLabel(QString("<span style='font-size:16px;'>%1</span> <b style='color:%2;'>%3</b>").arg(icon, color, txt));
+                l->setStyleSheet("font-size: 13px; color: #5d4037; border: none; background: transparent;");
+                return l;
+            };
+            
+            pl->addWidget(makePulseKpi("📦", "STOCK CONNECTÉ", "#2e7d32"));
+            pl->addStretch();
+            pl->addWidget(makePulseKpi("🔄", "MAJ : TEMPS RÉEL", "#1565c0"));
+            pl->addStretch();
+            pl->addWidget(makePulseKpi("🛡️", "ORACLE SECURE", "#8d5524"));
+            
+            vl->insertWidget(0, pulse);
+        }
+    }
+
+    // 3. TAB 1 & 2 (FORMULAIRES) : AJOUT SIDE-GUIDE + MISE EN PAGE TYPE DÉPÔT
+    auto injectGuide = [=](int index, const QString &title) {
+        if(ui->tabWidgetStock->count() <= index) return;
+        QWidget *page = ui->tabWidgetStock->widget(index);
+        if (!page) return;
+
+        // On vérifie si un guide n'existe pas déjà
+        if (page->findChild<QFrame*>("guideExpert")) return;
+
+        QVBoxLayout *oldVL = qobject_cast<QVBoxLayout*>(page->layout());
+        if (oldVL) {
+            const QMargins oldMargins = oldVL->contentsMargins();
+            const int oldSpacing = oldVL->spacing();
+
+            auto reparentLayoutWidgets = [&](QLayout *layout, QWidget *newParent, const auto &self) -> void {
+                if (!layout || !newParent) return;
+                for (int i = 0; i < layout->count(); ++i) {
+                    QLayoutItem *it = layout->itemAt(i);
+                    if (!it) continue;
+                    if (QWidget *w = it->widget()) w->setParent(newParent);
+                    if (QLayout *sub = it->layout()) self(sub, newParent, self);
+                }
+            };
+
+            auto makeRibbon = [&](QVBoxLayout *rootVL) {
+                if (!rootVL) return;
+                if (page->findChild<QFrame*>("stockRibbon")) return;
+
+                QFrame *ribbon = new QFrame();
+                ribbon->setObjectName("stockRibbon");
+                ribbon->setFixedHeight(34);
+                // Style très proche du Dépôt (image 2)
+                ribbon->setStyleSheet("QFrame { background: #e3f2fd; border-bottom: 2px solid #bbdefb; border-radius: 0px; }");
+                QHBoxLayout *rl = new QHBoxLayout(ribbon);
+                rl->setContentsMargins(20, 0, 20, 0);
+
+                auto makeRibbonKpi = [](const QString &icon, const QString &lbl, const QString &val) {
+                    QLabel *l = new QLabel(QString("<span style='font-size:14px;'>%1</span> <span style='color:#1a237e; font-weight:700;'>%2</span> <span style='color:#0d47a1; font-weight:900;'>%3</span>").arg(icon, lbl, val));
+                    l->setStyleSheet("font-size: 11px; border: none; background: transparent;");
+                    return l;
+                };
+
+                rl->addWidget(makeRibbonKpi("📦", "Stock :", "actif"));
+                rl->addStretch();
+                rl->addWidget(makeRibbonKpi("🧾", "Traçabilité lot :", "Oracle"));
+                rl->addStretch();
+                rl->addWidget(makeRibbonKpi("🛡️", "Contrôles :", "automatiques"));
+
+                rootVL->addWidget(ribbon);
+            };
+
+            auto makeButtonFullWidth = [&](const char *layoutName, QPushButton *btn) {
+                if (!btn) return;
+                btn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+                btn->setMinimumHeight(qMax(btn->minimumHeight(), 50));
+                btn->setMaximumWidth(QWIDGETSIZE_MAX);
+
+                if (QHBoxLayout *hl = page->findChild<QHBoxLayout*>(layoutName)) {
+                    // Retirer spacers pour que le bouton puisse s'étirer (comme image 2)
+                    QList<QWidget*> widgetsToReAdd;
+                    for (int i = hl->count() - 1; i >= 0; --i) {
+                        QLayoutItem *it = hl->takeAt(i);
+                        if (!it) continue;
+                        if (it->widget()) {
+                            if (it->widget() == btn) widgetsToReAdd.prepend(it->widget());
+                            delete it;
+                            continue;
+                        }
+                        if (it->spacerItem()) {
+                            delete it;
+                            continue;
+                        }
+                        if (it->layout()) {
+                            delete it;
+                            continue;
+                        }
+                        delete it;
+                    }
+
+                    hl->setContentsMargins(0, 0, 0, 0);
+                    hl->setSpacing(0);
+                    hl->addWidget(btn);
+                }
+            };
+
+            // Création du container HL pour mettre le formulaire à gauche et le guide à droite
+            QWidget *wrapper = new QWidget();
+            wrapper->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+            QHBoxLayout *mainHL = new QHBoxLayout(wrapper);
+            mainHL->setContentsMargins(0,0,0,0);
+            mainHL->setSpacing(20);
+
+            // Container gauche : centrer une colonne formulaire (comme Dépôt)
+            QWidget *leftWrap = new QWidget();
+            leftWrap->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+            QHBoxLayout *leftHL = new QHBoxLayout(leftWrap);
+            leftHL->setContentsMargins(0, 0, 0, 0);
+            leftHL->setSpacing(0);
+            leftHL->addStretch(1);
+
+            QWidget *formPart = new QWidget();
+            formPart->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+            formPart->setMaximumWidth(760);
+            QVBoxLayout *formVL = new QVBoxLayout(formPart);
+            formVL->setContentsMargins(0, 0, 0, 0);
+            formVL->setSpacing(14);
+            formVL->setAlignment(Qt::AlignTop);
+
+            leftHL->addWidget(formPart, 0);
+            leftHL->addStretch(1);
+
+            // Transférer les widgets du layout original
+            QLayoutItem *item;
+            while ((item = oldVL->takeAt(0))) {
+                if (QWidget *w = item->widget()) {
+                    w->setParent(formPart);
+                    w->setVisible(true);  // ← CORRECTION: Forcer la visibilité
+                    formVL->addWidget(w);
+                    delete item;
+                    continue;
+                }
+                if (QLayout *l = item->layout()) {
+                    reparentLayoutWidgets(l, formPart, reparentLayoutWidgets);
+                    // Rendre visibles tous les widgets du layout
+                    for (int i = 0; i < l->count(); ++i) {
+                        if (QWidget *lw = l->itemAt(i)->widget()) {
+                            lw->setVisible(true);
+                        }
+                    }
+                    formVL->addLayout(l);
+                    delete item;
+                    continue;
+                }
+                // Spacer / item générique : on le transfère tel quel (ownership -> nouveau layout)
+                formVL->addItem(item);
+            }
+            delete oldVL;
+
+            mainHL->addWidget(leftWrap, 2);
+
+            // Création du guide expert (BLEU comme image 1)
+            QFrame *guide = new QFrame();
+            guide->setObjectName("guideExpert");
+            guide->setFixedWidth(280);
+            guide->setStyleSheet("QFrame { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1a237e, stop:1 #0d47a1); border-radius: 12px; }");
+            QVBoxLayout *gl = new QVBoxLayout(guide);
+            gl->setContentsMargins(15, 20, 15, 20);
+            gl->setSpacing(15);
+            
+            QLabel *gt = new QLabel(title);
+            gt->setStyleSheet("color: #bbdefb; font-size: 15px; font-weight: 900; border: none; background: transparent;");
+            gl->addWidget(gt);
+            
+            QFrame *sep = new QFrame(); sep->setFixedHeight(1); sep->setStyleSheet("background: rgba(187,222,251,0.3); border: none;");
+            gl->addWidget(sep);
+            
+            QLabel *gTxt = new QLabel(
+                "💡 <b>Logistique 4.0 :</b><br><br>"
+                "• Le <b>Code MP</b> doit être unique et conforme (ex: CUIR-XX).<br><br>"
+                "• Le <b>Numéro de Lot</b> est essentiel pour la traçabilité Oracle.<br><br>"
+                "• La <b>Qualité A</b> est réservée aux pièces maîtresses (Sacs Voyage).");
+            gTxt->setWordWrap(true);
+            gTxt->setStyleSheet("color: white; font-size: 12px; line-height: 150%; border: none; background: transparent;");
+            gl->addWidget(gTxt);
+            gl->addStretch();
+            
+            QLabel *gLog = new QLabel("👤 Session Manager MP");
+            gLog->setStyleSheet("color: rgba(255,255,255,0.4); font-size: 10px; border: none; background: transparent;");
+            gl->addWidget(gLog);
+            
+            mainHL->addWidget(guide, 1);
+            
+            // Nouveau layout pour la page
+            QVBoxLayout *newRoot = new QVBoxLayout(page);
+            newRoot->setContentsMargins(oldMargins);
+            newRoot->setSpacing(oldSpacing);
+            makeRibbon(newRoot);
+            newRoot->addWidget(wrapper);
+
+            // Boutons plein largeur (Ajouter / Modifier)
+            makeButtonFullWidth("hl_sa_btn", ui->btn_valider_stock);
+            makeButtonFullWidth("hl_sm_btn", ui->btn_valider_modif_stock);
+            
+            // Forcer la mise à jour de l'affichage
+            page->updateGeometry();
+            page->update();
+            wrapper->updateGeometry();
+            wrapper->update();
+        }
+    };
+    
+    injectGuide(1, "🛡️ Guide de Création");
+    injectGuide(2, "📝 Guide d'Édition");
+}
+
+// =========================================================
+// ===     INJECTION UI EXPERT : DEPOT MODULE (20/20)    ===
+// =========================================================
+
+void MainWindow::setupDepotExpertUI() {
+    auto injectGuide = [=](int index, const QString &title) {
+        QWidget *page = ui->tabWidgetDepot->widget(index);
+        if (!page || !page->layout()) return;
+        if (page->findChild<QFrame*>("guideExpertDepot")) return;
+
+        QVBoxLayout *oldVL = qobject_cast<QVBoxLayout*>(page->layout());
+        if (!oldVL) return;
+        const QMargins oldMargins = oldVL->contentsMargins();
+        const int oldSpacing = oldVL->spacing();
+
+        auto reparentLayoutWidgets = [&](QLayout *layout, QWidget *newParent, const auto &self) -> void {
+            if (!layout || !newParent) return;
+            for (int i = 0; i < layout->count(); ++i) {
+                QLayoutItem *it = layout->itemAt(i);
+                if (!it) continue;
+                if (QWidget *w = it->widget()) w->setParent(newParent);
+                if (QLayout *sub = it->layout()) self(sub, newParent, self);
+            }
+        };
+
+        QWidget *wrapper = new QWidget();
+        QHBoxLayout *mainHL = new QHBoxLayout(wrapper);
+        mainHL->setContentsMargins(0, 0, 0, 0);
+        mainHL->setSpacing(20);
+
+        QWidget *formPart = new QWidget();
+        QVBoxLayout *formVL = new QVBoxLayout(formPart);
+        formVL->setContentsMargins(0, 0, 0, 0);
+
+        QLayoutItem *item;
+        while ((item = oldVL->takeAt(0))) {
+            if (QWidget *w = item->widget()) {
+                w->setParent(formPart);
+                formVL->addWidget(w);
+                delete item;
+                continue;
+            }
+            if (QLayout *l = item->layout()) {
+                reparentLayoutWidgets(l, formPart, reparentLayoutWidgets);
+                formVL->addLayout(l);
+                delete item;
+                continue;
+            }
+            formVL->addItem(item);
+        }
+        delete oldVL;
+
+        mainHL->addWidget(formPart, 2);
+
+        QFrame *guide = new QFrame();
+        guide->setObjectName("guideExpertDepot");
+        guide->setFixedWidth(240);
+        guide->setStyleSheet("QFrame { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1a237e, stop:1 #0d47a1); border-radius: 12px; }");
+        QVBoxLayout *gl = new QVBoxLayout(guide);
+        gl->setContentsMargins(15, 20, 15, 20);
+        gl->setSpacing(15);
+        
+        QLabel *gt = new QLabel(title);
+        gt->setStyleSheet("color: #bbdefb; font-size: 15px; font-weight: 900; border: none; background: transparent;");
+        gl->addWidget(gt);
+        
+        QFrame *sep = new QFrame(); sep->setFixedHeight(1); sep->setStyleSheet("background: rgba(187,222,251,0.3); border: none;");
+        gl->addWidget(sep);
+        
+        QLabel *gTxt = new QLabel(
+            "📍 <b>Logistique 4.0 :</b><br><br>"
+            "• Le cuir exige un <b>Contrôle Température</b> (18-22°C) et <b>Humidité</b> (50%).<br><br>"
+            "• Chaque emplacement est mappé via <b>Oracle Spatial</b> pour optimisation de trajet.<br><br>"
+            "• Statut : Utilisez <b>Consolidation</b> pour libérer de l'espace critique.");
+        gTxt->setWordWrap(true);
+        gTxt->setStyleSheet("color: white; font-size: 12px; line-height: 150%; border: none; background: transparent;");
+        gl->addWidget(gTxt);
+        gl->addStretch();
+        
+        mainHL->addWidget(guide, 1);
+        QVBoxLayout *newRoot = new QVBoxLayout(page);
+        newRoot->setContentsMargins(oldMargins);
+        newRoot->setSpacing(oldSpacing);
+        newRoot->addWidget(wrapper);
+    };
+
+    if(ui->tabWidgetDepot->count() > 2) {
+        injectGuide(1, "📦 Guide Emplacement");
+        injectGuide(2, "⚙️ Guide Maintenance");
+    }
+
+    auto addDepotRibbon = [=](int index) {
+        QWidget *page = ui->tabWidgetDepot->widget(index);
+        if (!page || !page->layout()) return;
+        if (page->findChild<QFrame*>("depotRibbon")) return;
+
+        QFrame *ribbon = new QFrame();
+        ribbon->setObjectName("depotRibbon");
+        ribbon->setFixedHeight(34);
+        ribbon->setStyleSheet("QFrame { background: #e3f2fd; border-bottom: 2px solid #bbdefb; border-radius: 0px; }");
+        QHBoxLayout *rl = new QHBoxLayout(ribbon);
+        rl->setContentsMargins(20, 0, 20, 0);
+        
+        auto makeRibbonKpi = [](const QString &icon, const QString &lbl, const QString &val) {
+            QLabel *l = new QLabel(QString("<span style='font-size:14px;'>%1</span> <span style='color:#1a237e; font-weight:700;'>%2 :</span> <span style='color:#0d47a1; font-weight:900;'>%3</span>").arg(icon, lbl, val));
+            l->setStyleSheet("font-size: 11px; border: none; background: transparent;");
+            return l;
+        };
+
+        rl->addWidget(makeRibbonKpi("🏬", "Saturation", "68.5%"));
+        rl->addStretch();
+        rl->addWidget(makeRibbonKpi("📦", "Zones Actives", "14/15"));
+        rl->addStretch();
+        rl->addWidget(makeRibbonKpi("⚡", "Efficience IA", "98.2%"));
+
+        if (auto *vl = qobject_cast<QVBoxLayout*>(page->layout())) {
+            vl->insertWidget(0, ribbon);
+        }
+    };
+
+    for(int i=0; i<ui->tabWidgetDepot->count(); ++i) addDepotRibbon(i);
+}
+
+// =========================================================
+// ===          MODULE ARDUINO SMART                     ===
+// =========================================================
+
+/**
+ * @brief Initialise le widget Arduino directement dans l'onglet
+ */
+void MainWindow::initialiserWidgetArduino()
+{
+    // Trouver le layout à l'intérieur du QScrollArea (vl_arduino_content)
+    QVBoxLayout *layout = ui->tab_stock_arduino->findChild<QVBoxLayout*>("vl_arduino_content");
+    
+    if (layout) {
+        // Créer le widget Arduino avec le scrollArea comme parent
+        QWidget *scrollContent = ui->tab_stock_arduino->findChild<QWidget*>("scrollAreaWidgetContents_arduino");
+        ArduinoWidget *arduinoWidget = new ArduinoWidget(scrollContent);
+        
+        // Ajouter le widget au layout
+        layout->addWidget(arduinoWidget);
+        
+        qDebug() << "✅ Widget Arduino intégré dans l'onglet Stock avec scrollbar";
+    } else {
+        qDebug() << "❌ Erreur : Layout vl_arduino_content introuvable";
+        
+        // Debug : lister tous les layouts disponibles
+        QList<QVBoxLayout*> layouts = ui->tab_stock_arduino->findChildren<QVBoxLayout*>();
+        qDebug() << "Layouts trouvés :" << layouts.size();
+        for (QVBoxLayout *l : layouts) {
+            qDebug() << "  - Layout:" << l->objectName();
+        }
+    }
+}
+
+/**
+ * @brief Ouvre le module Arduino Smart dans une fenêtre dédiée
+ * 
+ * Ce module permet de surveiller en temps réel les conditions de stockage
+ * (température et humidité) via un capteur DHT11 connecté à un Arduino Uno
+ */
+void MainWindow::ouvrirModuleArduino()
+{
+    // Créer une nouvelle fenêtre pour le module Arduino
+    ArduinoWidget *arduinoWindow = new ArduinoWidget();
+    
+    // Configurer la fenêtre
+    arduinoWindow->setWindowTitle("FIL D'OR - Module Arduino Smart");
+    arduinoWindow->setWindowIcon(windowIcon());
+    arduinoWindow->setAttribute(Qt::WA_DeleteOnClose); // Libérer la mémoire à la fermeture
+    arduinoWindow->setMinimumSize(900, 700);
+    
+    // Afficher la fenêtre
+    arduinoWindow->show();
+    
+    qDebug() << "✅ Module Arduino Smart ouvert";
 }

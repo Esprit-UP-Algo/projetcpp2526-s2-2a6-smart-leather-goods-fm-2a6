@@ -1,0 +1,117 @@
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                                                                           ║
+║                    ⚡ QUICK START - MODULE ARDUINO SMART                 ║
+║                         Installation en 5 Minutes                        ║
+║                                                                           ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+📦 VOUS AVEZ REÇU
+═══════════════════════════════════════════════════════════════════════════
+
+✅ 6 fichiers de code (C++ / Qt + Arduino)
+✅ 12 fichiers de documentation (88 pages)
+✅ Tout est prêt à l'emploi !
+
+
+⚡ INSTALLATION ULTRA-RAPIDE (5 ÉTAPES)
+═══════════════════════════════════════════════════════════════════════════
+
+┌───────────────────────────────────────────────────────────────────────┐
+│ ÉTAPE 1 : ARDUINO (10 min)                                           │
+└───────────────────────────────────────────────────────────────────────┘
+
+  1. Installer bibliothèque DHT (Adafruit) dans Arduino IDE
+  2. Câbler DHT11 : VCC→5V, GND→GND, DATA→Pin3
+  3. Téléverser "arduino_dht11_code.ino"
+  4. Tester moniteur série (9600 bauds)
+
+
+┌───────────────────────────────────────────────────────────────────────┐
+│ ÉTAPE 2 : COMPILER (5 min)                                           │
+└───────────────────────────────────────────────────────────────────────┘
+
+  1. Ouvrir CMakeLists.txt dans Qt Creator
+  2. Configurer le projet
+  3. Compiler (Ctrl+B)
+
+
+┌───────────────────────────────────────────────────────────────────────┐
+│ ÉTAPE 3 : AJOUTER BOUTON (2 min)                                     │
+└───────────────────────────────────────────────────────────────────────┘
+
+  Dans mainwindow.cpp (constructeur), ajouter :
+
+  QPushButton *btn = new QPushButton("🔌 Arduino Smart");
+  btn->setStyleSheet("background: #1565c0; color: white; padding: 12px;");
+  connect(btn, &QPushButton::clicked, this, &MainWindow::ouvrirModuleArduino);
+  // Ajouter btn à votre layout
+
+
+┌───────────────────────────────────────────────────────────────────────┐
+│ ÉTAPE 4 : TESTER (3 min)                                             │
+└───────────────────────────────────────────────────────────────────────┘
+
+  1. Lancer l'application
+  2. Cliquer sur "🔌 Arduino Smart"
+  3. Sélectionner COM5 (ou autre port)
+  4. Cliquer "Connecter"
+  5. Vérifier l'affichage des données
+
+
+┌───────────────────────────────────────────────────────────────────────┐
+│ ÉTAPE 5 : VÉRIFIER BDD (1 min)                                       │
+└───────────────────────────────────────────────────────────────────────┘
+
+  Après 30 secondes, exécuter :
+  
+  SELECT * FROM historique_capteur ORDER BY date_mesure DESC;
+
+
+═══════════════════════════════════════════════════════════════════════════
+✅ C'EST FAIT !
+═══════════════════════════════════════════════════════════════════════════
+
+Votre module est opérationnel ! 🚀
+
+
+📚 DOCUMENTATION COMPLÈTE
+═══════════════════════════════════════════════════════════════════════════
+
+Pour plus de détails, consultez :
+
+  ⭐ COMMENCEZ_ICI.md              Point de départ
+  📖 README_MODULE_ARDUINO.txt     Vue d'ensemble
+  📘 MODULE_ARDUINO_README.md      Documentation complète
+  🔧 COMPILATION_ET_TEST.md        Guide d'installation
+  ✅ CHECKLIST_COMPLETE.md         Checklist détaillée
+
+
+🆘 PROBLÈMES COURANTS
+═══════════════════════════════════════════════════════════════════════════
+
+❌ "Aucun port disponible"
+   → Vérifier branchement USB + installer pilotes Arduino
+
+❌ "Port déjà utilisé"
+   → Fermer l'IDE Arduino et le moniteur série
+
+❌ "Erreur compilation Qt5SerialPort not found"
+   → Installer Qt SerialPort via Qt Maintenance Tool
+
+❌ "Données corrompues (H:0.00;T:0.00)"
+   → Vérifier câblage DHT11 + tester avec un autre capteur
+
+
+📞 SUPPORT
+═══════════════════════════════════════════════════════════════════════════
+
+Consultez :
+  • MODULE_ARDUINO_README.md (section "Dépannage")
+  • COMPILATION_ET_TEST.md (section "Dépannage")
+  • INDEX_DOCUMENTATION.md (pour trouver une info)
+
+
+═══════════════════════════════════════════════════════════════════════════
+© 2026 FIL D'OR — Tous droits réservés
+Module Arduino Smart v1.0.0
+═══════════════════════════════════════════════════════════════════════════

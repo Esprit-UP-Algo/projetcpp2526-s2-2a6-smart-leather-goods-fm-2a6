@@ -2935,6 +2935,270 @@ QTabBar::tab:hover:!selected { background: #d7ccc8; }</string>
            </attribute>
           </widget>
 
+          <widget class="QWidget" name="tab_stock_arduino">
+           <attribute name="title">
+            <string>🔌 Arduino Smart</string>
+           </attribute>
+           <layout class="QHBoxLayout" name="hl_stock_arduino_main">
+            <property name="spacing">
+             <number>0</number>
+            </property>
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <item>
+             <widget class="QFrame" name="frame_arduino_sidebar">
+              <property name="minimumSize">
+               <size>
+                <width>200</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>200</width>
+                <height>16777215</height>
+               </size>
+              </property>
+              <property name="styleSheet">
+               <string>QFrame#frame_arduino_sidebar {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #f4d03f, stop:0.5 #f9e79f, stop:1 #f4d03f);
+    border-right: 3px solid #d4af37;
+}
+QPushButton {
+    background-color: rgba(255, 255, 255, 0.7);
+    color: #3e2723;
+    border: 2px solid rgba(212, 175, 55, 0.3);
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 13px;
+    font-weight: bold;
+    text-align: left;
+    margin: 5px;
+}
+QPushButton:hover {
+    background-color: rgba(255, 255, 255, 0.9);
+    border: 2px solid #d4af37;
+}
+QPushButton:pressed {
+    background-color: #ffffff;
+    border: 2px solid #8d5524;
+}
+QLabel {
+    color: #3e2723;
+    font-weight: bold;
+    padding: 10px;
+}</string>
+              </property>
+              <property name="frameShape">
+               <enum>QFrame::StyledPanel</enum>
+              </property>
+              <property name="frameShadow">
+               <enum>QFrame::Raised</enum>
+              </property>
+              <layout class="QVBoxLayout" name="vl_arduino_sidebar">
+               <item>
+                <widget class="QLabel" name="lbl_arduino_titre">
+                 <property name="text">
+                  <string>🔌 ARDUINO
+SMART</string>
+                 </property>
+                 <property name="alignment">
+                  <set>Qt::AlignCenter</set>
+                 </property>
+                 <property name="styleSheet">
+                  <string>font-size: 16px; font-weight: bold; color: #3e2723; padding: 20px 10px;</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="Line" name="line_arduino_1">
+                 <property name="styleSheet">
+                  <string>background-color: rgba(62, 39, 35, 0.3);</string>
+                 </property>
+                 <property name="orientation">
+                  <enum>Qt::Horizontal</enum>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QPushButton" name="btn_arduino_dashboard">
+                 <property name="text">
+                  <string>📊 Tableau de Bord</string>
+                 </property>
+                 <property name="minimumSize">
+                  <size>
+                   <width>0</width>
+                   <height>45</height>
+                  </size>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QPushButton" name="btn_arduino_connexion">
+                 <property name="text">
+                  <string>🔌 Connexion</string>
+                 </property>
+                 <property name="minimumSize">
+                  <size>
+                   <width>0</width>
+                   <height>45</height>
+                  </size>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QPushButton" name="btn_arduino_graphique">
+                 <property name="text">
+                  <string>📈 Graphiques</string>
+                 </property>
+                 <property name="minimumSize">
+                  <size>
+                   <width>0</width>
+                   <height>45</height>
+                  </size>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QPushButton" name="btn_arduino_historique">
+                 <property name="text">
+                  <string>📜 Historique</string>
+                 </property>
+                 <property name="minimumSize">
+                  <size>
+                   <width>0</width>
+                   <height>45</height>
+                  </size>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QPushButton" name="btn_arduino_alertes">
+                 <property name="text">
+                  <string>⚠️ Alertes</string>
+                 </property>
+                 <property name="minimumSize">
+                  <size>
+                   <width>0</width>
+                   <height>45</height>
+                  </size>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <spacer name="verticalSpacer_arduino_sidebar">
+                 <property name="orientation">
+                  <enum>Qt::Vertical</enum>
+                 </property>
+                 <property name="sizeHint" stdset="0">
+                  <size>
+                   <width>20</width>
+                   <height>40</height>
+                  </size>
+                 </property>
+                </spacer>
+               </item>
+               <item>
+                <widget class="QLabel" name="lbl_arduino_info">
+                 <property name="text">
+                  <string>💡 Surveillance
+Temps Réel</string>
+                 </property>
+                 <property name="alignment">
+                  <set>Qt::AlignCenter</set>
+                 </property>
+                 <property name="styleSheet">
+                  <string>font-size: 11px; color: #3e2723; padding: 10px;</string>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <layout class="QVBoxLayout" name="vl_stock_arduino">
+              <property name="spacing">
+               <number>0</number>
+              </property>
+              <item>
+               <widget class="QScrollArea" name="scrollArea_arduino">
+                <property name="widgetResizable">
+                 <bool>true</bool>
+                </property>
+                <property name="frameShape">
+                 <enum>QFrame::NoFrame</enum>
+                </property>
+                <property name="styleSheet">
+                 <string>QScrollArea {
+    background-color: #ffffff;
+    border: none;
+}
+QScrollBar:vertical {
+    background: #f5f5f5;
+    width: 12px;
+    border-radius: 6px;
+    margin: 0px;
+}
+QScrollBar::handle:vertical {
+    background: #d4af37;
+    border-radius: 6px;
+    min-height: 30px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #f4d03f;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: none;
+}</string>
+                </property>
+                <widget class="QWidget" name="scrollAreaWidgetContents_arduino">
+                 <property name="geometry">
+                  <rect>
+                   <x>0</x>
+                   <y>0</y>
+                   <width>600</width>
+                   <height>800</height>
+                  </rect>
+                 </property>
+                 <layout class="QVBoxLayout" name="vl_arduino_content">
+                  <property name="spacing">
+                   <number>0</number>
+                  </property>
+                  <property name="leftMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="topMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="rightMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="bottomMargin">
+                   <number>0</number>
+                  </property>
+                 </layout>
+                </widget>
+               </widget>
+              </item>
+             </layout>
+            </item>
+           </layout>
+          </widget>
+
          </widget>
         </item>
        </layout>
