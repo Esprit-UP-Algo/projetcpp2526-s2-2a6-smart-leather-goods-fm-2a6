@@ -197,6 +197,30 @@ QLabel#lbl_fire_status, QLabel#lbl_rfid_status {
     padding: 8px;
     text-align: center;
 }
+
+/* 9. STYLE CHATBOT SPECIFIQUE */
+QTextEdit#chatOutput {
+    background-color: #faf8f5;
+    border: 2px solid #d7ccc8;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+QLineEdit#chatInput {
+    background-color: #ffffff;
+    border: 2px solid #d7ccc8;
+    font-size: 14px;
+}
+
+QPushButton#sendButton {
+    background-color: #2e7d32;
+    transition: 0.3s;
+}
+
+QPushButton#sendButton:hover {
+    background-color: #388e3c;
+    transform: scale(1.02);
+}
 </string>
   </property>
   <widget class="QWidget" name="centralwidget">
@@ -611,6 +635,89 @@ QLabel#lbl_fire_status, QLabel#lbl_rfid_status {
            </property>
           </column>
          </widget>
+        </item>
+       </layout>
+      </widget>
+
+      <!-- ONGLET CHATBOT IA -->
+      <widget class="QWidget" name="tab_chatbot">
+       <attribute name="title">
+        <string>Chatbot IA</string>
+       </attribute>
+
+       <layout class="QVBoxLayout" name="verticalLayout_chatbot">
+        <property name="spacing">
+         <number>15</number>
+        </property>
+        <property name="leftMargin">
+         <number>30</number>
+        </property>
+        <property name="topMargin">
+         <number>20</number>
+        </property>
+        <property name="rightMargin">
+         <number>30</number>
+        </property>
+        <property name="bottomMargin">
+         <number>30</number>
+        </property>
+
+        <!-- TITRE -->
+        <item>
+         <widget class="QLabel" name="label_chat_title">
+          <property name="text">
+           <string>🤖 Assistant Intelligent - Smart Leather</string>
+          </property>
+          <property name="styleSheet">
+           <string>font-size:18px; font-weight:bold; color:#3e2723;</string>
+          </property>
+         </widget>
+        </item>
+
+        <!-- ZONE CHAT -->
+        <item>
+         <widget class="QTextEdit" name="chatOutput">
+          <property name="readOnly">
+           <bool>true</bool>
+          </property>
+          <property name="styleSheet">
+           <string>
+background-color: #ffffff;
+border-radius: 15px;
+padding: 10px;
+           </string>
+          </property>
+         </widget>
+        </item>
+
+        <!-- INPUT + BOUTON -->
+        <item>
+         <layout class="QHBoxLayout" name="hl_chat_input">
+          <item>
+           <widget class="QLineEdit" name="chatInput">
+            <property name="placeholderText">
+             <string>Posez votre question sur les produits...</string>
+            </property>
+           </widget>
+          </item>
+
+          <item>
+           <widget class="QPushButton" name="sendButton">
+            <property name="text">
+             <string>Envoyer</string>
+            </property>
+            <property name="styleSheet">
+             <string>
+background-color:#2e7d32;
+color:white;
+border-radius:15px;
+padding:10px 20px;
+font-weight:bold;
+             </string>
+            </property>
+           </widget>
+          </item>
+         </layout>
         </item>
        </layout>
       </widget>

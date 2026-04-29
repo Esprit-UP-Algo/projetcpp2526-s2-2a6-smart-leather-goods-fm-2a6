@@ -46,6 +46,11 @@ private:
     void setFormMode(bool isNewMode);
     void updateClientStatus();
     void updateIAPrediction();
+    void verifierPlanifications();
+   void envoyerMail(QString to, QString subject, QString body);
+    QString getProduitsFromDB();
+   void askChatbot(QString question);
+    void on_sendButton_clicked();
     // ← SUPPRIME on_btn_tri_points_clicked() D'ICI
 };
 
