@@ -1,0 +1,97 @@
+-- Sprint 3 - IA Decoupe
+-- Controle qualite des contraintes par produit
+-- Objectif: detecter les incoherences metier sur PROJET_CPP.PRODUIT_PIECES
+
+-- 1) Vue detaillee des lignes incoherentes
+SELECT
+    p.ID_PRODUIT,
+    p.NOM_PIECE,
+    p.ZONE_PREFEREE,
+    p.SENS_GRAIN,
+    p.NIVEAU_QUALITE,
+    CASE
+        WHEN p.ZONE_PREFEREE NOT IN ('DOSSET','CROUPON','FLANC','COLLET')
+             OR p.ZONE_PREFEREE IS NULL THEN 'ZONE_INVALIDE'
+        WHEN p.SENS_GRAIN NOT IN (0,1,2)
+             OR p.SENS_GRAIN IS NULL THEN 'SENS_GRAIN_INVALIDE'
+        WHEN p.NIVEAU_QUALITE NOT IN (1,2,3)
+             OR p.NIVEAU_QUALITE IS NULL THEN 'QUALITE_INVALIDE'
+        WHEN (LOWER(p.NOM_PIECE) LIKE '%bandouli%' OR LOWER(p.NOM_PIECE) LIKE '%anse%' OR LOWER(p.NOM_PIECE) LIKE '%bretelle%' OR LOWER(p.NOM_PIECE) LIKE '%sangle%')
+             AND p.SENS_GRAIN <> 1 THEN 'GRAIN_METIER_NON_CONFORME'
+        WHEN (LOWER(p.NOM_PIECE) LIKE '%face%' OR LOWER(p.NOM_PIECE) LIKE '%avant%' OR LOWER(p.NOM_PIECE) LIKE '%dos%' OR LOWER(p.NOM_PIECE) LIKE '%arriere%')
+             AND p.ZONE_PREFEREE <> 'DOSSET' THEN 'ZONE_METIER_PANNEAU_NON_CONFORME'
+        WHEN (LOWER(p.NOM_PIECE) LIKE '%rabat%' OR LOWER(p.NOM_PIECE) LIKE '%poche%' OR LOWER(p.NOM_PIECE) LIKE '%fond%')
+             AND p.ZONE_PREFEREE <> 'CROUPON' THEN 'ZONE_METIER_PATRON_NON_CONFORME'
+        ELSE NULL
+    END AS TYPE_INCOHERENCE
+FROM PROJET_CPP.PRODUIT_PIECES p
+WHERE
+      p.ZONE_PREFEREE NOT IN ('DOSSET','CROUPON','FLANC','COLLET')
+   OR p.ZONE_PREFEREE IS NULL
+   OR p.SENS_GRAIN NOT IN (0,1,2)
+   OR p.SENS_GRAIN IS NULL
+   OR p.NIVEAU_QUALITE NOT IN (1,2,3)
+   OR p.NIVEAU_QUALITE IS NULL
+   OR (
+        (LOWER(p.NOM_PIECE) LIKE '%bandouli%' OR LOWER(p.NOM_PIECE) LIKE '%anse%' OR LOWER(p.NOM_PIECE) LIKE '%bretelle%' OR LOWER(p.NOM_PIECE) LIKE '%sangle%')
+        AND p.SENS_GRAIN <> 1
+      )
+   OR (
+        (LOWER(p.NOM_PIECE) LIKE '%face%' OR LOWER(p.NOM_PIECE) LIKE '%avant%' OR LOWER(p.NOM_PIECE) LIKE '%dos%' OR LOWER(p.NOM_PIECE) LIKE '%arriere%')
+        AND p.ZONE_PREFEREE <> 'DOSSET'
+      )
+   OR (
+        (LOWER(p.NOM_PIECE) LIKE '%rabat%' OR LOWER(p.NOM_PIECE) LIKE '%poche%' OR LOWER(p.NOM_PIECE) LIKE '%fond%')
+        AND p.ZONE_PREFEREE <> 'CROUPON'
+      )
+ORDER BY p.ID_PRODUIT, p.NOM_PIECE;
+
+-- 2) Resume par produit (nombre d'incoherences)
+SELECT
+    p.ID_PRODUIT,
+    COUNT(*) AS NB_INCOHERENCES
+FROM PROJET_CPP.PRODUIT_PIECES p
+WHERE
+      p.ZONE_PREFEREE NOT IN ('DOSSET','CROUPON','FLANC','COLLET')
+   OR p.ZONE_PREFEREE IS NULL
+   OR p.SENS_GRAIN NOT IN (0,1,2)
+   OR p.SENS_GRAIN IS NULL
+   OR p.NIVEAU_QUALITE NOT IN (1,2,3)
+   OR p.NIVEAU_QUALITE IS NULL
+   OR (
+        (LOWER(p.NOM_PIECE) LIKE '%bandouli%' OR LOWER(p.NOM_PIECE) LIKE '%anse%' OR LOWER(p.NOM_PIECE) LIKE '%bretelle%' OR LOWER(p.NOM_PIECE) LIKE '%sangle%')
+        AND p.SENS_GRAIN <> 1
+      )
+   OR (
+        (LOWER(p.NOM_PIECE) LIKE '%face%' OR LOWER(p.NOM_PIECE) LIKE '%avant%' OR LOWER(p.NOM_PIECE) LIKE '%dos%' OR LOWER(p.NOM_PIECE) LIKE '%arriere%')
+        AND p.ZONE_PREFEREE <> 'DOSSET'
+      )
+   OR (
+        (LOWER(p.NOM_PIECE) LIKE '%rabat%' OR LOWER(p.NOM_PIECE) LIKE '%poche%' OR LOWER(p.NOM_PIECE) LIKE '%fond%')
+        AND p.ZONE_PREFEREE <> 'CROUPON'
+      )
+GROUP BY p.ID_PRODUIT
+ORDER BY NB_INCOHERENCES DESC, p.ID_PRODUIT;
+
+-- 3) Controle rapide de conformite globale (0 attendu)
+SELECT COUNT(*) AS NB_TOTAL_INCOHERENCES
+FROM PROJET_CPP.PRODUIT_PIECES p
+WHERE
+      p.ZONE_PREFEREE NOT IN ('DOSSET','CROUPON','FLANC','COLLET')
+   OR p.ZONE_PREFEREE IS NULL
+   OR p.SENS_GRAIN NOT IN (0,1,2)
+   OR p.SENS_GRAIN IS NULL
+   OR p.NIVEAU_QUALITE NOT IN (1,2,3)
+   OR p.NIVEAU_QUALITE IS NULL
+   OR (
+        (LOWER(p.NOM_PIECE) LIKE '%bandouli%' OR LOWER(p.NOM_PIECE) LIKE '%anse%' OR LOWER(p.NOM_PIECE) LIKE '%bretelle%' OR LOWER(p.NOM_PIECE) LIKE '%sangle%')
+        AND p.SENS_GRAIN <> 1
+      )
+   OR (
+        (LOWER(p.NOM_PIECE) LIKE '%face%' OR LOWER(p.NOM_PIECE) LIKE '%avant%' OR LOWER(p.NOM_PIECE) LIKE '%dos%' OR LOWER(p.NOM_PIECE) LIKE '%arriere%')
+        AND p.ZONE_PREFEREE <> 'DOSSET'
+      )
+   OR (
+        (LOWER(p.NOM_PIECE) LIKE '%rabat%' OR LOWER(p.NOM_PIECE) LIKE '%poche%' OR LOWER(p.NOM_PIECE) LIKE '%fond%')
+        AND p.ZONE_PREFEREE <> 'CROUPON'
+      );
