@@ -12,18 +12,20 @@ class Depot
     QString etagere; ///< fusion (reprise en base dans ETAGERE)
     double capacite_max = 0.0;
     double quantite_actuelle = 0.0;
+    double valeur_gaz = 0.0;
     QString type_stockage;
     QString m_derniereErreurSaisie;
 
 public:
     Depot();
     /// \a emplacement et \a etagere sont fusionnés en base dans la colonne ETAGERE (ex. « Zone A — E1 »).
-    Depot(QString emplacement, QString etagere, double capMax, double qteActuelle, QString typeStock);
+    Depot(QString emplacement, QString etagere, double capMax, double qteActuelle, double valeurGaz, QString typeStock);
 
     static QString messageSiSaisieInvalide(const QString &emplacement,
                                           const QString &etagere,
                                           double capaciteMax,
                                           double quantiteActuelle,
+                                          double valeurGaz,
                                           const QString &typeStockage);
     /// À l'ajout : l'ID est généré par la séquence — le champ doit rester vide.
     static QString messageIdAjoutNeDoitPasEtreSaisi(const QString &idTexteBrut);

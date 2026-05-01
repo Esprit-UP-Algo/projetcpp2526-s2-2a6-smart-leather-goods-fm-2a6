@@ -3160,6 +3160,7 @@ QTabBar::tab:hover:!selected { background: #d7ccc8; }</string>
               <column><property name="text"><string>Étagère</string></property></column>
               <column><property name="text"><string>Capacité Max</string></property></column>
               <column><property name="text"><string>Quantité</string></property></column>
+              <column><property name="text"><string>Valeur Gaz</string></property></column>
               <column><property name="text"><string>Type</string></property></column>
               <column><property name="text"><string>Remplissage</string></property></column>
              </widget>
@@ -3282,7 +3283,10 @@ QTabBar::tab:hover:!selected { background: #d7ccc8; }</string>
            <attribute name="title"><string>🧩 Optimisation (IA)</string></attribute>
           </widget>
           <widget class="QWidget" name="tab_depot_ravit">
-           <attribute name="title"><string>🚚 Ravitaillement</string></attribute>
+           <attribute name="title"><string>🚚 Livraison</string></attribute>
+          </widget>
+          <widget class="QWidget" name="tab_depot_gaz">
+           <attribute name="title"><string>🔥 Valeur Gaz</string></attribute>
           </widget>
          </widget>
         </item>
@@ -3296,3 +3300,4 @@ QTabBar::tab:hover:!selected { background: #d7ccc8; }</string>
  <resources/>
  <connections/>
 </ui>
+

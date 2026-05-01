@@ -17,8 +17,14 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+<<<<<<< HEAD
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Gui PrintSupport Charts Sql Network TextToSpeech Multimedia)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Gui PrintSupport Charts Sql Network TextToSpeech Multimedia)
+=======
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Gui PrintSupport Charts Sql)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Gui PrintSupport Charts Sql SerialPort)
+find_package(Qt${QT_VERSION_MAJOR} QUIET COMPONENTS WebEngineWidgets)
+>>>>>>> 3eec5fa (depot final)
 
 set(PROJECT_SOURCES
     main.cpp
@@ -53,7 +59,7 @@ set(PROJECT_SOURCES
 if(QT_VERSION_MAJOR VERSION_GREATER_EQUAL 6)
     qt_add_executable(ProjetCpp
         MANUAL_FINALIZATION
-        ${PROJECT_SOURCES}
+        ${PROJECT_SOURCES} arduino.cpp arduino.h
     )
 else()
     if(ANDROID)
@@ -69,10 +75,22 @@ target_link_libraries(ProjetCpp PRIVATE
     Qt${QT_VERSION_MAJOR}::PrintSupport
     Qt${QT_VERSION_MAJOR}::Charts
     Qt${QT_VERSION_MAJOR}::Sql
+<<<<<<< HEAD
     Qt${QT_VERSION_MAJOR}::Network
     Qt${QT_VERSION_MAJOR}::TextToSpeech
     Qt${QT_VERSION_MAJOR}::Multimedia
+=======
+    Qt6::SerialPort
+>>>>>>> 3eec5fa (depot final)
 )
+
+if(TARGET Qt${QT_VERSION_MAJOR}::WebEngineWidgets)
+    target_link_libraries(ProjetCpp PRIVATE Qt${QT_VERSION_MAJOR}::WebEngineWidgets)
+    target_compile_definitions(ProjetCpp PRIVATE HAS_QT_WEBENGINE=1)
+else()
+    message(WARNING "Qt WebEngineWidgets non trouve. Le dashboard livraison utilisera un mode de secours sans Google Maps.")
+    target_compile_definitions(ProjetCpp PRIVATE HAS_QT_WEBENGINE=0)
+endif()
 
 set(BUNDLE_ID_OPTION "")
 if(APPLE AND QT_VERSION VERSION_LESS 6.1.0)

@@ -43,6 +43,8 @@ class QProcess;
 class QTimer;
 class AssistantVoiceController;
 
+#include "arduino.h"
+
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
@@ -67,7 +69,7 @@ struct CommandeInfo { QString id; QString idProduit; int quantite; QString idMat
 struct EmployeInfo { QString id; QString nom; QString prenom; QString poste; QString email; QString telephone; QString departement; QDate dateEmbauche; double salaire; QString rfid; };
 struct MatiereInfo { QString id; QString code; QString categorie; QString numLot; QString etat; QString couleur; double quantite; QString typeStockage; QString qualite; };
 struct ClientInfo { QString id; QString nom; QString telephone; QString adresse; QString email; int pointsFidelite; };
-struct DepotInfo { QString id; QString emplacement; QString etagere; double capaciteMax; double quantiteActuelle; QString typeStockage; };
+struct DepotInfo { QString id; QString emplacement; QString etagere; double capaciteMax; double quantiteActuelle; double valeurGaz; QString typeStockage; };
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -208,7 +210,10 @@ private:
     void calculerStatsDepots();
     void preparerFormulaireDepot(bool estModif, int idx = -1);
     void showDepotOptimizeTab();
+    void setupDepotExpertUI();
     void showDepotRavitaillementTab();
+    void showDepotRavitaillementMapTab();
+    void showDepotValeurGazTab();
 
     // Module Stock (NOUVEAU - SPA avec onglets)
     bool validerMatiereAjout();
@@ -217,6 +222,7 @@ private:
     void preparerFormulaireStock(bool estModif, int idx = -1);
     void showStockRavitaillementTab();
     void showStockCalculTab();
+    void setupStockExpertUI();
     void preparerFormulairePlanif(bool estModification);
     void preparerFormulaireProduit(bool estModif, int idx = -1);
     void ouvrirDialogueClient(bool estModif);
