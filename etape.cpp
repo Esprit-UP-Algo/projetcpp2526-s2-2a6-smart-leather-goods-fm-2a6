@@ -100,7 +100,6 @@ QSqlQueryModel* Etape::afficher()
     model->setQuery(
         "SELECT e.ID_SUIVI, e.ID_PLANIFICATION, "
         "pr.DESIGNATION AS PRODUIT, "
-        "NVL(p.QUANTITE, 0) AS QTE_PLANIF, "
         "emp.NOM || ' ' || emp.PRENOM AS EMPLOYE, "
         "e.ETAPE_ACTUELLE, "
         "e.TEMPS_REEL_PASSE, "
@@ -131,23 +130,7 @@ QSqlQueryModel* Etape::afficher()
 // =============================================
 bool Etape::genererEtapesCommande(int idPlanification, int idEmploye)
 {
-    return genererEtapesCommandeMulti(idPlanification, QVector<int>{idEmploye}, nullptr);
-}
-
-bool Etape::genererEtapesCommandeMulti(int idPlanification,
-                                       const QVector<int> &idEmployesFallback,
-                                       const QHash<QString, QVector<int>> *manuelParEtape)
-{
     QStringList etapes = {"Coupe", "Assemblage", "Couture", "Finition"};
-    QVector<int> employesRotation;
-    employesRotation.reserve(idEmployesFallback.size());
-    for (int id : idEmployesFallback) {
-        if (id <= 0)
-            continue;
-        employesRotation.push_back(id);
-    }
-    if (employesRotation.isEmpty())
-        employesRotation.push_back(1);
 
     // Vérifier si les étapes existent déjà pour cette commande
     QSqlQuery qCheck;
@@ -160,35 +143,25 @@ bool Etape::genererEtapesCommandeMulti(int idPlanification,
         }
     }
 
-    for (int i = 0; i < etapes.size(); ++i) {
-        const QString &etape = etapes.at(i);
-        QVector<int> idsPourEtape;
-        if (manuelParEtape && manuelParEtape->contains(etape) && !manuelParEtape->value(etape).isEmpty()) {
-            idsPourEtape = manuelParEtape->value(etape);
-        } else {
-            idsPourEtape.append(employesRotation.at(i % employesRotation.size()));
-        }
+    for (const QString &etape : etapes) {
+        QSqlQuery query;
+        query.prepare("INSERT INTO ETAPES "
+                      "(ID_SUIVI, ID_PLANIFICATION, ID_EMPLOYE, ETAPE_ACTUELLE, "
+                      "TEMPS_REEL_PASSE, DELTA, ALERTE_ACTIVE) "
+                      "VALUES (SEQ_ETAPE.NEXTVAL, :idp, :ide, :etape, 0, 0, 0)");
 
-        for (int idEmployeEtape : idsPourEtape) {
-            QSqlQuery query;
-            query.prepare("INSERT INTO ETAPES "
-                          "(ID_SUIVI, ID_PLANIFICATION, ID_EMPLOYE, ETAPE_ACTUELLE, "
-                          "TEMPS_REEL_PASSE, DELTA, ALERTE_ACTIVE) "
-                          "VALUES (SEQ_ETAPE.NEXTVAL, :idp, :ide, :etape, 0, 0, 0)");
+        query.bindValue(":idp", idPlanification);
+        query.bindValue(":ide", idEmploye);
+        query.bindValue(":etape", etape);
 
-            query.bindValue(":idp", idPlanification);
-            query.bindValue(":ide", idEmployeEtape);
-            query.bindValue(":etape", etape);
-
-            if (!query.exec()) {
-                qDebug() << "Erreur génération étape" << etape << ":" << query.lastError().text();
-                return false;
-            }
+        if (!query.exec()) {
+            qDebug() << "Erreur génération étape" << etape << ":" << query.lastError().text();
+            return false;
         }
     }
 
     QSqlQuery().exec("COMMIT");
-    qDebug() << "✅ Étapes générées pour commande" << idPlanification;
+    qDebug() << "✅ 4 étapes générées pour commande" << idPlanification;
     return true;
 }
 
@@ -232,7 +205,6 @@ QSqlQueryModel* Etape::rechercherParCommande(int idPlanification)
     query.prepare(
         "SELECT e.ID_SUIVI, e.ID_PLANIFICATION, "
         "pr.DESIGNATION AS PRODUIT, "
-        "NVL(p.QUANTITE, 0) AS QTE_PLANIF, "
         "emp.NOM || ' ' || emp.PRENOM AS EMPLOYE, "
         "e.ETAPE_ACTUELLE, e.TEMPS_REEL_PASSE, e.DELTA, e.ALERTE_ACTIVE "
         "FROM ETAPES e "
@@ -260,7 +232,6 @@ QSqlQueryModel* Etape::rechercherParEtape(const QString &etape)
     query.prepare(
         "SELECT e.ID_SUIVI, e.ID_PLANIFICATION, "
         "pr.DESIGNATION AS PRODUIT, "
-        "NVL(p.QUANTITE, 0) AS QTE_PLANIF, "
         "emp.NOM || ' ' || emp.PRENOM AS EMPLOYE, "
         "e.ETAPE_ACTUELLE, e.TEMPS_REEL_PASSE, e.DELTA, e.ALERTE_ACTIVE "
         "FROM ETAPES e "
@@ -285,7 +256,6 @@ QSqlQueryModel* Etape::trierParCommande()
     model->setQuery(
         "SELECT e.ID_SUIVI, e.ID_PLANIFICATION, "
         "pr.DESIGNATION AS PRODUIT, "
-        "NVL(p.QUANTITE, 0) AS QTE_PLANIF, "
         "emp.NOM || ' ' || emp.PRENOM AS EMPLOYE, "
         "e.ETAPE_ACTUELLE, e.TEMPS_REEL_PASSE, e.DELTA, e.ALERTE_ACTIVE "
         "FROM ETAPES e "
@@ -309,7 +279,6 @@ QSqlQueryModel* Etape::afficherAlertes()
     model->setQuery(
         "SELECT e.ID_SUIVI, e.ID_PLANIFICATION, "
         "pr.DESIGNATION AS PRODUIT, "
-        "NVL(p.QUANTITE, 0) AS QTE_PLANIF, "
         "emp.NOM || ' ' || emp.PRENOM AS EMPLOYE, "
         "e.ETAPE_ACTUELLE, e.TEMPS_REEL_PASSE, e.DELTA, e.ALERTE_ACTIVE "
         "FROM ETAPES e "

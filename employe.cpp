@@ -1,13 +1,6 @@
 #include "employe.h"
-#include "connexion.h"
 #include <QSqlError>
 #include <QSqlDatabase>
-
-static QSqlDatabase employeDatabase()
-{
-    Connexion *cx = Connexion::getInstance();
-    return cx ? cx->getDatabase() : QSqlDatabase();
-}
 
 employe::employe() {}
 
@@ -30,10 +23,13 @@ employe::employe(int id_employe, QString nom, QString prenom, QString poste,
 // ✅ AJOUTER
 bool employe::ajouter()
 {
-    QSqlDatabase db = employeDatabase();
-    if (!db.isOpen()) {
-        qDebug() << "employe::ajouter: base non ouverte";
-        return false;
+    QSqlDatabase db = QSqlDatabase::database();
+
+    if(!db.isOpen()){
+        if(!db.open()){
+            qDebug() << "DB OPEN ERROR:" << db.lastError().text();
+            return false;
+        }
     }
 
     const QStringList insertSqls = {
@@ -57,7 +53,7 @@ bool employe::ajouter()
 
     QString lastErr;
     for (const QString &sql : insertSqls) {
-        QSqlQuery query(db);
+        QSqlQuery query;
         query.prepare(sql);
         query.bindValue(":nom", nom);
         query.bindValue(":prenom", prenom);
@@ -84,17 +80,12 @@ bool employe::ajouter()
 QSqlQueryModel * employe::afficher()
 {
     QSqlQueryModel *model = new QSqlQueryModel();
-    QSqlDatabase db = employeDatabase();
-    if (!db.isOpen()) {
-        qDebug() << "employe::afficher: base non ouverte";
-        return model;
-    }
     // Inclure tous les champs nécessaires à l'édition dans l'UI (email/tel/RFID).
     model->setQuery(
         "SELECT ID_EMPLOYE, NOM, PRENOM, POSTE, EMAIL, TELEPHONE, DEPARTEMENT, DATE_EMBAUCHE, SALAIRE, RFID_TAG "
         "FROM EMPLOYES "
-        "ORDER BY ID_EMPLOYE DESC",
-        db);
+        "ORDER BY ID_EMPLOYE DESC"
+    );
     if(model->lastError().isValid()){
         qDebug() << "Erreur afficher employe:" << model->lastError().text();
     }
@@ -104,10 +95,7 @@ QSqlQueryModel * employe::afficher()
 // ✅ SUPPRIMER
 bool employe::supprimer(int id)
 {
-    QSqlDatabase db = employeDatabase();
-    if (!db.isOpen())
-        return false;
-    QSqlQuery query(db);
+    QSqlQuery query;
     query.prepare("DELETE FROM EMPLOYES WHERE ID_EMPLOYE = :id");
     query.bindValue(":id", id);
 
@@ -121,10 +109,7 @@ bool employe::supprimer(int id)
 // ✅ MODIFIER  (هذا هو اللي ناقص عندك وسبب undefined reference)
 bool employe::modifier(int id)
 {
-    QSqlDatabase db = employeDatabase();
-    if (!db.isOpen())
-        return false;
-    QSqlQuery query(db);
+    QSqlQuery query;
     query.prepare(
         "UPDATE EMPLOYES SET "
         "NOM=:nom, PRENOM=:prenom, POSTE=:poste, EMAIL=:email, "
