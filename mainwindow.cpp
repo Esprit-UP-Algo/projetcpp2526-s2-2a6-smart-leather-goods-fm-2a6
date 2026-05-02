@@ -13890,47 +13890,140 @@ void MainWindow::showDepotOptimizeTab() {
         qteLine->setStyleSheet("font-size:10px;color:#64748b;");
         tauxL->addWidget(qteLine);
         recLayout->addWidget(tauxFrame);
-        // Actions recommandees
-        QFrame *recsFrame = new QFrame();
-        recsFrame->setStyleSheet(QString("QFrame{background:%1;border:1px solid %2;border-radius:8px;}").arg(badge.bg, badge.color));
-        QVBoxLayout *recsL = new QVBoxLayout(recsFrame); recsL->setContentsMargins(10,8,10,8); recsL->setSpacing(5);
-        QLabel *recsH = new QLabel("Actions Recommandees");
-        recsH->setStyleSheet(QString("font-size:11px;font-weight:700;color:%1;").arg(badge.color));
-        recsL->addWidget(recsH);
-        QStringList actions;
+        // ── 3 Choix de strategies
+        QLabel *choicesHdr = new QLabel("Choisissez votre strategie d'optimisation :");
+        choicesHdr->setStyleSheet("font-size:12px;color:#94a3b8;font-weight:600;margin-top:4px;");
+        recLayout->addWidget(choicesHdr);
+        // Define 3 strategies based on occupancy
+        struct Strat { QString name, color, bg, desc, effort, impact; QStringList actions; };
+        QVector<Strat> strategies;
         if (taux > 90) {
-            actions << "Degorgemment immediat (priorite absolue)"
-                    << "Appliquer rotation FIFO stricte"
-                    << "Transferer surplus vers zone froide"
-                    << "Alerter le responsable logistique"
-                    << "Bloquer nouvelles entrees de stock"
-                    << "Audit d'urgence sous 2h";
+            strategies = {
+                {"Intervention Minimale", "#f59e0b", "#2a1e08",
+                 "Actions conservatrices pour stabiliser sans perturber les operations en cours.",
+                 "Effort: Faible", "Impact: Moyen",
+                 {"Alerter le responsable logistique", "Surveiller flux en temps reel", "Preparer zone de debordement"}},
+                {"Action Urgente (Recommandee)", "#ef4444", "#2a1020",
+                 "Plan d'urgence standard pour eviter la saturation critique et securiser la zone.",
+                 "Effort: Moyen", "Impact: Eleve",
+                 {"Degorgemment immediat (priorite absolue)", "Appliquer rotation FIFO stricte", "Transferer surplus vers zone froide", "Bloquer nouvelles entrees de stock", "Audit d'urgence sous 2h"}},
+                {"Reorganisation Totale", "#7c3aed", "#1e1040",
+                 "Refonte complete de la zone pour une optimisation maximale et durable.",
+                 "Effort: Eleve", "Impact: Maximum",
+                 {"Evacuation totale et reinventaire complet", "Reclassification complete des lots", "Mise en place surveillance 24/7", "Revision du plan logistique global", "Formation equipe nouvelles procedures"}},
+            };
         } else if (taux > 70) {
-            actions << "Rotation FIFO/FEFO sous 24h"
-                    << "Surveiller flux picking en temps reel"
-                    << "Planifier consolidation maintenance prochaine"
-                    << "Preparer zone de reception alternative"
-                    << "Reviser les seuils d'alerte gaz";
+            strategies = {
+                {"Surveillance Renforcee", "#22c55e", "#0a1e14",
+                 "Monitoring accru sans intervention physique immediate sur la zone.",
+                 "Effort: Faible", "Impact: Faible",
+                 {"Surveiller flux picking en temps reel", "Reviser seuils d'alerte gaz", "Planifier maintenance preventive"}},
+                {"Rotation Standard (Recommandee)", "#f59e0b", "#2a1e08",
+                 "Rotation FIFO/FEFO pour reduire la pression moderee et securiser la zone.",
+                 "Effort: Moyen", "Impact: Eleve",
+                 {"Rotation FIFO/FEFO sous 24h", "Surveiller flux picking en temps reel", "Planifier consolidation maintenance", "Preparer zone de reception alternative", "Reviser les seuils d'alerte gaz"}},
+                {"Optimisation Aggressive", "#3b82f6", "#0f1e3a",
+                 "Reorganisation proactive et complete pour prevenir tout risque futur.",
+                 "Effort: Eleve", "Impact: Maximum",
+                 {"Rotation FIFO/FEFO immediate", "Fusion des petits lots", "Depalettisation et reemballage", "Revision complete du plan de stockage", "Formation equipe sur nouvelles procedures"}},
+            };
         } else if (taux > 40) {
-            actions << "Surveillance hebdomadaire standard"
-                    << "Consolidation des lots sous-utilises"
-                    << "Reorganisation lors prochaine maintenance"
-                    << "Optimiser disposition interne";
+            strategies = {
+                {"Monitoring Basique", "#22c55e", "#0a1e14",
+                 "Surveillance standard sans intervention specifique requise.",
+                 "Effort: Minimal", "Impact: Faible",
+                 {"Surveillance hebdomadaire standard", "Rapport de situation mensuel"}},
+                {"Consolidation Selective (Recommandee)", "#3b82f6", "#0f1e3a",
+                 "Optimisation ciblee des lots sous-utilises pour liberer de l'espace disponible.",
+                 "Effort: Moyen", "Impact: Moyen",
+                 {"Consolidation des lots sous-utilises", "Reorganisation lors prochaine maintenance", "Optimiser disposition interne", "Rapport de suivi bi-mensuel"}},
+                {"Optimisation Complete", "#7c3aed", "#1e1040",
+                 "Refonte de l'organisation pour maximiser l'efficacite logistique globale.",
+                 "Effort: Eleve", "Impact: Eleve",
+                 {"Audit complet de la zone", "Fusion et reemballage des lots", "Reorganisation par categorie et date", "Mise en place plan FIFO preventif", "Documentation et traçabilite complete"}},
+            };
         } else {
-            actions << "Zone stable: monitoring automatique"
-                    << "Verifier integrite des structures"
-                    << "Opportunite d'accueil nouveaux stocks"
-                    << "Rapport mensuel suffisant";
+            strategies = {
+                {"Surveillance Passive (Recommandee)", "#22c55e", "#0a1e14",
+                 "Zone stable: monitoring automatique, aucune action physique requise.",
+                 "Effort: Minimal", "Impact: Minimal",
+                 {"Monitoring automatique continu", "Rapport mensuel suffisant", "Verifier integrite des structures"}},
+                {"Optimisation Preventive", "#3b82f6", "#0f1e3a",
+                 "Preparation pro-active pour accueillir de nouveaux stocks efficacement.",
+                 "Effort: Faible", "Impact: Moyen",
+                 {"Verifier integrite des structures", "Reorganiser disposition pour faciliter acces", "Planifier accueil nouveaux stocks", "Optimiser signalisation interne"}},
+                {"Expansion Capacite", "#7c3aed", "#1e1040",
+                 "Maximiser l'utilisation de la zone sous-exploitee pour gain logistique maximal.",
+                 "Effort: Moyen", "Impact: Eleve",
+                 {"Audit complet structure et capacite", "Planifier reception nouveaux produits", "Optimiser disposition pour debit maximum", "Mise en place zone tampon", "Renegocier allocations logistiques"}},
+            };
         }
-        for (const QString &a : actions) {
-            QHBoxLayout *aRow = new QHBoxLayout();
-            QLabel *ico = new QLabel("•"); ico->setStyleSheet(QString("color:%1;font-size:16px;font-weight:900;").arg(badge.color)); ico->setFixedWidth(14);
-            QLabel *aLbl = new QLabel(a); aLbl->setStyleSheet("font-size:12px;color:white;"); aLbl->setWordWrap(true);
-            aRow->addWidget(ico,0,Qt::AlignTop); aRow->addWidget(aLbl,1);
-            QWidget *aW = new QWidget(); aW->setLayout(aRow); recsL->addWidget(aW);
+        QString depId = d.id;
+        QString depEt = d.etagere;
+        auto sharedFrames = QSharedPointer<QVector<QFrame*>>(new QVector<QFrame*>());
+        auto sharedBgs    = QSharedPointer<QStringList>(new QStringList());
+        auto sharedColors = QSharedPointer<QStringList>(new QStringList());
+        for (const auto &s : strategies) { sharedBgs->append(s.bg); sharedColors->append(s.color); }
+        QPushButton *applyBtn = new QPushButton("Selectionnez une strategie pour l'appliquer");
+        applyBtn->setEnabled(false);
+        applyBtn->setStyleSheet("QPushButton{background:#334155;color:#64748b;padding:10px 16px;border-radius:8px;font-weight:700;font-size:12px;border:none;}");
+        for (int i = 0; i < strategies.size(); i++) {
+            const Strat &s = strategies[i];
+            QFrame *sf = new QFrame();
+            sf->setStyleSheet(QString("QFrame{background:%1;border:2px solid #334155;border-radius:10px;}").arg(s.bg));
+            QVBoxLayout *sfL = new QVBoxLayout(sf); sfL->setContentsMargins(10,10,10,10); sfL->setSpacing(5);
+            QHBoxLayout *sfH = new QHBoxLayout();
+            QLabel *numLbl = new QLabel(QString("Choix %1").arg(i+1));
+            numLbl->setStyleSheet(QString("background:%1;color:white;padding:3px 8px;border-radius:8px;font-size:11px;font-weight:700;").arg(s.color));
+            QLabel *nameLbl = new QLabel(s.name);
+            nameLbl->setStyleSheet("font-size:12px;font-weight:700;color:white;");
+            sfH->addWidget(numLbl); sfH->addSpacing(6); sfH->addWidget(nameLbl,1);
+            sfL->addLayout(sfH);
+            QLabel *descLbl = new QLabel(s.desc);
+            descLbl->setStyleSheet("font-size:11px;color:#94a3b8;"); descLbl->setWordWrap(true);
+            sfL->addWidget(descLbl);
+            for (const QString &a : s.actions) {
+                QHBoxLayout *aRow = new QHBoxLayout(); aRow->setContentsMargins(0,0,0,0);
+                QLabel *ico = new QLabel("•"); ico->setStyleSheet(QString("color:%1;font-size:14px;").arg(s.color)); ico->setFixedWidth(12);
+                QLabel *aLbl = new QLabel(a); aLbl->setStyleSheet("font-size:11px;color:white;"); aLbl->setWordWrap(true);
+                aRow->addWidget(ico,0,Qt::AlignTop); aRow->addWidget(aLbl,1);
+                QWidget *aW = new QWidget(); aW->setLayout(aRow); sfL->addWidget(aW);
+            }
+            QHBoxLayout *fiRow = new QHBoxLayout();
+            QLabel *eff = new QLabel(s.effort);
+            eff->setStyleSheet(QString("font-size:10px;color:%1;background:#1a2e42;padding:2px 6px;border-radius:4px;").arg(s.color));
+            QLabel *imp = new QLabel(s.impact);
+            imp->setStyleSheet(QString("font-size:10px;color:%1;background:#1a2e42;padding:2px 6px;border-radius:4px;").arg(s.color));
+            fiRow->addWidget(eff); fiRow->addSpacing(4); fiRow->addWidget(imp); fiRow->addStretch();
+            sfL->addLayout(fiRow);
+            QPushButton *selBtn = new QPushButton(QString("  Selectionner Choix %1").arg(i+1));
+            selBtn->setCursor(Qt::PointingHandCursor);
+            selBtn->setStyleSheet(QString("QPushButton{background:#243447;color:%1;border:1px solid %1;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:600;} QPushButton:hover{background:%1;color:white;}").arg(s.color));
+            sfL->addWidget(selBtn);
+            sharedFrames->append(sf);
+            recLayout->addWidget(sf);
+            int idx = i;
+            QString sc = s.color;
+            QString sname = s.name;
+            QStringList sactions = s.actions;
+            connect(selBtn, &QPushButton::clicked, [=](){
+                for (int j = 0; j < sharedFrames->size(); j++) {
+                    if (j == idx)
+                        (*sharedFrames)[j]->setStyleSheet(QString("QFrame{background:%1;border:3px solid %2;border-radius:10px;}").arg((*sharedBgs)[j],(*sharedColors)[j]));
+                    else
+                        (*sharedFrames)[j]->setStyleSheet(QString("QFrame{background:%1;border:2px solid #334155;border-radius:10px;}").arg((*sharedBgs)[j]));
+                }
+                applyBtn->setEnabled(true);
+                applyBtn->setText(QString("  Appliquer Choix %1 : %2").arg(idx+1).arg(sname));
+                applyBtn->setStyleSheet(QString("QPushButton{background:%1;color:white;padding:10px 16px;border-radius:8px;font-weight:700;font-size:12px;border:none;} QPushButton:hover{background:%1;}").arg(sc));
+                QObject::disconnect(applyBtn, &QPushButton::clicked, nullptr, nullptr);
+                connect(applyBtn, &QPushButton::clicked, [=](){
+                    QMessageBox::information(nullptr, "Strategie Appliquee",
+                        QString("La strategie \"%1\" a ete appliquee pour :\nEmpl. %2 / %3\n\nActions executees :\n• %4")
+                        .arg(sname, depId, depEt, sactions.join("\n• ")));
+                });
+            });
         }
-        recLayout->addWidget(recsFrame);
-        // Gaz alert if elevated
         if (d.valeurGaz > 50) {
             QFrame *gazAlert = new QFrame(); gazAlert->setStyleSheet("QFrame{background:#2a1020;border:1px solid #ef4444;border-radius:8px;}");
             QHBoxLayout *gal = new QHBoxLayout(gazAlert); gal->setContentsMargins(10,6,10,6); gal->setSpacing(8);
@@ -13940,9 +14033,6 @@ void MainWindow::showDepotOptimizeTab() {
             gal->addWidget(gazIco); gal->addWidget(gazTxt,1);
             recLayout->addWidget(gazAlert);
         }
-        // Apply button
-        QPushButton *applyBtn = new QPushButton("  Appliquer les Recommandations IA");
-        applyBtn->setStyleSheet(QString("background:%1;color:white;padding:8px 16px;border-radius:8px;font-weight:700;font-size:12px;border:none;").arg(badge.color));
         recLayout->addWidget(applyBtn);
         recLayout->addStretch();
     });
@@ -14245,17 +14335,17 @@ void MainWindow::showDepotRavitaillementTab() {
     QComboBox *cbPrio    = mkComboCol("Priorite",    {"P1 - Critique","P2 - Haute","P3 - Normale","P4 - Basse"});
     fl->addLayout(r1);
 
-    // Row 2: display fields + emplacement combo
+    // Row 2: editable fields + emplacement combo
     QHBoxLayout *r2 = new QHBoxLayout(); r2->setSpacing(12);
-    auto mkDisplayCol = [&](const QString &label, const QString &initVal) -> QLabel* {
+    auto mkInputCol = [&](const QString &label, const QString &initVal) -> QLineEdit* {
         QVBoxLayout *cv = new QVBoxLayout(); cv->addWidget(new QLabel(label));
-        QLabel *lbl = new QLabel(initVal);
-        lbl->setStyleSheet("background:#f5f5f5;border:1px solid #e0e0e0;border-radius:6px;padding:8px;font-weight:600;");
-        cv->addWidget(lbl); r2->addLayout(cv); return lbl;
+        QLineEdit *le = new QLineEdit(initVal);
+        le->setStyleSheet("background:white;border:1px solid #b0bec5;border-radius:6px;padding:8px;font-weight:600;");
+        cv->addWidget(le); r2->addLayout(cv); return le;
     };
-    QLabel *lblQte   = mkDisplayCol("Quantite choisie","380.0 U");
-    QLabel *lblDuree = mkDisplayCol("Duree choisie","60 min");
-    QLabel *lblDist  = mkDisplayCol("Distance","48.0 km");
+    QLineEdit *lblQte   = mkInputCol("Quantite choisie","380.0 U");
+    QLineEdit *lblDuree = mkInputCol("Duree choisie","60 min");
+    QLineEdit *lblDist  = mkInputCol("Distance","48.0 km");
     QVBoxLayout *emplCol = new QVBoxLayout(); emplCol->addWidget(new QLabel("Emplacement"));
     QComboBox *cbEmpl = new QComboBox();
     for (const auto &d : mesDepots) cbEmpl->addItem(QString::number(d.id.toInt())+" - Empl. "+d.id+" ("+d.etagere+")");
@@ -14265,8 +14355,8 @@ void MainWindow::showDepotRavitaillementTab() {
 
     // Prix unitaire
     QVBoxLayout *prixCol = new QVBoxLayout(); prixCol->addWidget(new QLabel("Prix unitaire"));
-    QLabel *lblPrix = new QLabel("18.500 DT");
-    lblPrix->setStyleSheet("background:#f5f5f5;border:1px solid #e0e0e0;border-radius:6px;padding:8px;font-weight:600;max-width:180px;");
+    QLineEdit *lblPrix = new QLineEdit("18.500 DT");
+    lblPrix->setStyleSheet("background:white;border:1px solid #b0bec5;border-radius:6px;padding:8px;font-weight:600;max-width:180px;");
     prixCol->addWidget(lblPrix); fl->addLayout(prixCol);
 
     // Scenario summary
@@ -14309,6 +14399,10 @@ void MainWindow::showDepotRavitaillementTab() {
         }
         updateScenario();
     });
+    connect(lblQte,   &QLineEdit::textChanged, updateScenario);
+    connect(lblDuree, &QLineEdit::textChanged, updateScenario);
+    connect(lblDist,  &QLineEdit::textChanged, updateScenario);
+    connect(lblPrix,  &QLineEdit::textChanged, updateScenario);
     updateScenario();
 
     // ── Map placeholder
