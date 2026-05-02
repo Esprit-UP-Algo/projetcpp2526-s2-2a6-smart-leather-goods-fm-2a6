@@ -7,7 +7,6 @@
 #include "depot.h"
 #include "employe.h"
 #include "client.h"
-
 #include "arduino.h"
 
 #include <QSqlRecord>
@@ -1813,7 +1812,7 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
     arduino = new Arduino(this);
-    if (!arduino->connectToBoard("COM6")) { 
+    if (!arduino->connectToBoard("COM7")) {
         qDebug() << "Could not connect to Arduino. Buzzer will not work.";
     }
     qRegisterMetaType<QVector<double>>("QVector<double>");
