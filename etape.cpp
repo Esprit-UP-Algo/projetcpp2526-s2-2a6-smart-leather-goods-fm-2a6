@@ -166,6 +166,71 @@ bool Etape::genererEtapesCommande(int idPlanification, int idEmploye)
 }
 
 // =============================================
+// GÉNÉRER LES 4 ÉTAPES POUR UNE COMMANDE (MULTI-EMPLOYÉS)
+// =============================================
+bool Etape::genererEtapesCommandeMulti(int idPlanification,
+                                       const QVector<int> &idEmployesFallback,
+                                       const QHash<QString, QVector<int>> *manuelParEtape)
+{
+    QStringList etapes = {"Coupe", "Assemblage", "Couture", "Finition"};
+
+    // Vérifier si les étapes existent déjà pour cette commande
+    QSqlQuery qCheck;
+    qCheck.prepare("SELECT COUNT(*) FROM ETAPES WHERE ID_PLANIFICATION = :id");
+    qCheck.bindValue(":id", idPlanification);
+    if (qCheck.exec() && qCheck.next()) {
+        if (qCheck.value(0).toInt() > 0) {
+            qDebug() << "⚠️ Étapes déjà générées pour la commande" << idPlanification;
+            return false; // Déjà générées
+        }
+    }
+
+    int fallbackIdx = 0;
+    for (const QString &etape : etapes) {
+        int idEmploye = -1;
+
+        // Chercher un employé pour cette étape dans le hash manuel
+        if (manuelParEtape && manuelParEtape->contains(etape)) {
+            const QVector<int> &employes = manuelParEtape->value(etape);
+            if (!employes.isEmpty()) {
+                idEmploye = employes.first();
+            }
+        }
+
+        // Fallback si pas d'employé assigné à cette étape
+        if (idEmploye <= 0 && fallbackIdx < idEmployesFallback.size()) {
+            idEmploye = idEmployesFallback.at(fallbackIdx);
+            fallbackIdx++;
+        }
+
+        // Si pas d'employé du tout, passer cette étape
+        if (idEmploye <= 0) {
+            qDebug() << "⚠️ Pas d'employé assigné pour l'étape" << etape;
+            continue;
+        }
+
+        QSqlQuery query;
+        query.prepare("INSERT INTO ETAPES "
+                      "(ID_SUIVI, ID_PLANIFICATION, ID_EMPLOYE, ETAPE_ACTUELLE, "
+                      "TEMPS_REEL_PASSE, DELTA, ALERTE_ACTIVE) "
+                      "VALUES (SEQ_ETAPE.NEXTVAL, :idp, :ide, :etape, 0, 0, 0)");
+
+        query.bindValue(":idp", idPlanification);
+        query.bindValue(":ide", idEmploye);
+        query.bindValue(":etape", etape);
+
+        if (!query.exec()) {
+            qDebug() << "Erreur génération étape" << etape << ":" << query.lastError().text();
+            return false;
+        }
+    }
+
+    QSqlQuery().exec("COMMIT");
+    qDebug() << "✅ 4 étapes multi-employés générées pour commande" << idPlanification;
+    return true;
+}
+
+// =============================================
 // SAISIR TEMPS RÉEL + CALCUL DELTA + ALERTE
 // =============================================
 bool Etape::saisirTempsReel(int idSuivi, double tempsReel, double tempsPrevue)

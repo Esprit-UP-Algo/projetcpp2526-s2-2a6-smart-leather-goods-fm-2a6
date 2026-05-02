@@ -4008,13 +4008,30 @@ QTabBar::tab:hover:!selected { background: #d7ccc8; }</string>
                 </widget>
                </item>
                <item row="5" column="0">
+                <widget class="QLabel" name="ld_gaz">
+                 <property name="text">
+                  <string>Valeur Gaz :</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="5" column="1">
+                <widget class="QDoubleSpinBox" name="sb_depot_gaz">
+                 <property name="maximum">
+                  <double>9999.990000000000000</double>
+                 </property>
+                 <property name="decimals">
+                  <number>2</number>
+                 </property>
+                </widget>
+               </item>
+               <item row="6" column="0">
                 <widget class="QLabel" name="ld6">
                  <property name="text">
                   <string>Type Stockage :</string>
                  </property>
                 </widget>
                </item>
-               <item row="5" column="1">
+               <item row="6" column="1">
                 <widget class="QComboBox" name="cb_depot_type">
                  <item>
                   <property name="text">
@@ -4028,7 +4045,7 @@ QTabBar::tab:hover:!selected { background: #d7ccc8; }</string>
                  </item>
                 </widget>
                </item>
-               <item row="6" column="1">
+               <item row="7" column="1">
                 <widget class="QPushButton" name="btn_valider_depot">
                  <property name="text">
                   <string>Ajouter l'emplacement</string>
@@ -4126,13 +4143,30 @@ QTabBar::tab:hover:!selected { background: #d7ccc8; }</string>
                 </widget>
                </item>
                <item row="5" column="0">
+                <widget class="QLabel" name="ld_gaz_m">
+                 <property name="text">
+                  <string>Valeur Gaz :</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="5" column="1">
+                <widget class="QDoubleSpinBox" name="sb_depot_gaz_modif">
+                 <property name="maximum">
+                  <double>9999.990000000000000</double>
+                 </property>
+                 <property name="decimals">
+                  <number>2</number>
+                 </property>
+                </widget>
+               </item>
+               <item row="6" column="0">
                 <widget class="QLabel" name="ld6_m">
                  <property name="text">
                   <string>Type Stockage :</string>
                  </property>
                 </widget>
                </item>
-               <item row="5" column="1">
+               <item row="6" column="1">
                 <widget class="QComboBox" name="cb_depot_type_modif">
                  <item>
                   <property name="text">
@@ -4146,7 +4180,7 @@ QTabBar::tab:hover:!selected { background: #d7ccc8; }</string>
                  </item>
                 </widget>
                </item>
-               <item row="6" column="1">
+               <item row="7" column="1">
                 <widget class="QPushButton" name="btn_valider_modif_depot">
                  <property name="text">
                   <string>Mettre à jour</string>
@@ -4183,7 +4217,12 @@ QTabBar::tab:hover:!selected { background: #d7ccc8; }</string>
           </widget>
           <widget class="QWidget" name="tab_depot_ravit">
            <attribute name="title">
-            <string>🚚 Ravitaillement</string>
+            <string>🚚 Livraison</string>
+           </attribute>
+          </widget>
+          <widget class="QWidget" name="tab_depot_valeur_gaz">
+           <attribute name="title">
+            <string>⛽ Valeur Gaz</string>
            </attribute>
           </widget>
          </widget>

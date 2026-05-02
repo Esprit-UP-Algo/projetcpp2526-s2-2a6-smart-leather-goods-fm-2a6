@@ -1,9 +1,20 @@
 #include "arduino.h"
+#include <QSerialPortInfo>
 #include <QDebug>
 
 Arduino::Arduino(QObject *parent) : QObject(parent)
 {
     serial = new QSerialPort(this);
+
+    connect(serial, &QSerialPort::readyRead, this, [=]() {
+        while (serial->canReadLine()) {
+            QString data = QString(serial->readLine()).trimmed();
+            if (!data.isEmpty()) {
+                qDebug() << "Arduino:" << data;
+                emit dataReceived(data);
+            }
+        }
+    });
 }
 
 Arduino::~Arduino()
@@ -23,13 +34,12 @@ bool Arduino::connectToBoard(const QString &portName)
     serial->setStopBits(QSerialPort::OneStop);
     serial->setFlowControl(QSerialPort::NoFlowControl);
 
-    if (serial->open(QIODevice::WriteOnly)) {
+    if (serial->open(QIODevice::ReadWrite)) {
         qDebug() << "Arduino connected on" << portName;
         return true;
-    } else {
-        qDebug() << "Failed to open" << portName << ":" << serial->errorString();
-        return false;
     }
+    qDebug() << "Failed to open" << portName << ":" << serial->errorString();
+    return false;
 }
 
 void Arduino::disconnectFromBoard()
@@ -41,6 +51,16 @@ void Arduino::disconnectFromBoard()
 bool Arduino::isConnected() const
 {
     return serial->isOpen();
+}
+
+bool Arduino::connectArduino()
+{
+    return connectToBoard("COM7");
+}
+
+void Arduino::disconnectArduino()
+{
+    disconnectFromBoard();
 }
 
 void Arduino::beep()

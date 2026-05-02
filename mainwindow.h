@@ -37,6 +37,11 @@
 #include <functional>
 #include <QtCharts/QChartView>
 #include <QNetworkAccessManager>
+#include <QJsonArray>
+#include <QPointer>
+#include <QTextBrowser>
+#include <QEvent>
+#include <QTextToSpeech>
 
 /// Résultat du dialog d'affectation multi-employés (partagé entre .h et .cpp)
 struct AffectationEquipeResult {
@@ -45,6 +50,11 @@ struct AffectationEquipeResult {
     QVector<int> equipeOrdre;
     QMap<QString, QVector<int>> manuelParEtape;
 };
+
+class QNetworkReply;
+class QProcess;
+class QTimer;
+class AssistantVoiceController;
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -70,7 +80,8 @@ struct CommandeInfo { QString id; QString idProduit; int quantite; QString idMat
 struct EmployeInfo { QString id; QString nom; QString prenom; QString poste; QString email; QString telephone; QString departement; QDate dateEmbauche; double salaire; QString rfid; };
 struct MatiereInfo { QString id; QString code; QString categorie; QString numLot; QString etat; QString couleur; double quantite; QString typeStockage; QString qualite; };
 struct ClientInfo { QString id; QString nom; QString telephone; QString adresse; QString email; int pointsFidelite; };
-struct DepotInfo { QString id; QString emplacement; QString etagere; double capaciteMax; double quantiteActuelle; QString typeStockage; };
+struct DepotInfo { QString id; QString emplacement; QString etagere; double capaciteMax; double quantiteActuelle; double valeurGaz; QString typeStockage; };
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -78,6 +89,9 @@ class MainWindow : public QMainWindow
 public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private slots:
     // === Slots CRUD Employés ===
@@ -102,6 +116,7 @@ private slots:
     void on_btn_valider_modif_client_clicked();
 
     void on_btn_test_buzzer_clicked();
+    void onAssistantTtsStateChanged(QTextToSpeech::State state);
 
 private:
     Arduino *arduino;
@@ -111,7 +126,6 @@ private:
     Produit tmpProduit;
     Depot tmpDepot;
     Etape tmpEtape;
-
 
     QVector<CommandeInfo> mesCommandes;
     QVector<ProduitInfo> mesProduits;
@@ -140,7 +154,7 @@ private:
     bool modeModifClient = false; int indexModifClient = -1;
     bool modeModifDepot = false; int indexModifDepot = -1;
 
-    /// Évite la réentrance (currentChanged + setCurrentIndex) pendant la reconstruction de l’onglet stats.
+    /// Évite la réentrance (currentChanged + setCurrentIndex) pendant la reconstruction de l'onglet stats.
     bool m_statsProduitsEnCours = false;
 
     /// Dernière ligne sélectionnée dans la timeline fabrication (OF + produit + qté pour prévu IA).
@@ -154,23 +168,23 @@ private:
     QChartView *m_iaChartView   = nullptr;
     QChartView *m_mlCurveView   = nullptr;
     QMap<QString, double> m_baseHUnit;
-    /// Empêche de ré-entraîner le ML et de relire l’historique à chaque ouverture de l’onglet IA.
+    /// Empêche de ré-entraîner le ML et de relire l'historique à chaque ouverture de l'onglet IA.
     qint64 m_mlTrainDataCount = -1;
     qint64 m_mlTrainMaxSuivi = -1;
     double m_mlTrainSumTempsReel = -1.0;
-    /// Incrémenter lors d’un changement de features ML pour invalider le cache disque logique.
+    /// Incrémenter lors d'un changement de features ML pour invalider le cache disque logique.
     int m_mlTrainFeatureRev = 0;
     // Modèles ML par étape (COUPE / ASSEMBLAGE / COUTURE / FINITION)
-    QMap<QString, QVector<double>> m_mlWeightsPerEtape;  // étape → poids (biais + 5 features)
-    QMap<QString, QVector<double>> m_mlNormMinPerEtape;  // étape → min normalisation (5 features)
-    QMap<QString, QVector<double>> m_mlNormMaxPerEtape;  // étape → max normalisation (5 features)
-    QMap<QString, double>          m_mlMaePerEtape;      // étape → MAE (h/unité)
-    QMap<QString, double>          m_mlR2PerEtape;       // étape → R²
-    QMap<QString, double>          m_mlStdPerEtape;      // étape → σ résidus (h/unité)
+    QMap<QString, QVector<double>> m_mlWeightsPerEtape;
+    QMap<QString, QVector<double>> m_mlNormMinPerEtape;
+    QMap<QString, QVector<double>> m_mlNormMaxPerEtape;
+    QMap<QString, double>          m_mlMaePerEtape;
+    QMap<QString, double>          m_mlR2PerEtape;
+    QMap<QString, double>          m_mlStdPerEtape;
     qint64 m_baseHCalibRowCount = -1;
     qint64 m_baseHCalibMaxSuivi = -1;
     double m_baseHCalibSumTempsRatio = -1.0;
-    /// Contexte courant pour les boutons « what-if » (évite re-création de widgets à chaque rendu).
+    /// Contexte courant pour les boutons « what-if »
     struct IaSessionContext {
         int idCmd = -1;
         QString produitNom;
@@ -204,9 +218,9 @@ private:
         int qty = 1;
         bool canRotate = true;
         QColor color = QColor(80, 140, 220);
-        QString preferredZone;   // DB: ZONE_PREFEREE (ex: DOSSET/CROUPON/FLANC/COLLET)
-        int grainDir = 0;        // DB: SENS_GRAIN (0:any, 1:vertical, 2:horizontal)
-        int qualityLevel = 1;    // DB: NIVEAU_QUALITE (1 standard, 2 eleve, 3 premium)
+        QString preferredZone;
+        int grainDir = 0;
+        int qualityLevel = 1;
     };
 
     struct PlacedPiece {
@@ -233,7 +247,6 @@ private:
         double totalAreaMm2 = 0.0;
         double wasteAreaMm2 = 0.0;
         double wastePct = 0.0;
-        /// Perte % pour chaque heuristique (max côté, aire, min côté) ; -1 si échec.
         double wastePctHeuristic[3] = { -1.0, -1.0, -1.0 };
         int bestHeuristicIndex = 0;
         bool ok = false;
@@ -267,8 +280,8 @@ private:
     void dessinerBarre(int ligne, int colDebut, int duree, QString texte, QColor bgCol, QColor textCol);
     void calculerEtAfficherStats();
 
-    int selectedEtapeId;       // ID_SUIVI sélectionné
-    int selectedEtapePlanifId; // ID_PLANIFICATION sélectionné
+    int selectedEtapeId;
+    int selectedEtapePlanifId;
 
     // Utilisé pour la modification d'un employé (lecture depuis Oracle).
     int idEmployeAModifier = -1;
@@ -288,21 +301,21 @@ private:
     Qt::SortOrder employeTriAlphaOrdre = Qt::AscendingOrder;
     bool employeTriAlphaActif = false;
 
-
     void rafraichirListeEtapes();
     void remplirTableEtapes(QSqlQueryModel *model);
     /// Remplit un QTableWidget (9 col.) : prévu IA + réel + delta affiché vs prévu IA.
     void peuplerTableEtapesStandard(QTableWidget *tbl, QSqlQueryModel *model);
     void construirePageEtapes();
     void verifierFinFabrication(int idPlanification);
+
     // Module Produits
     void rafraichirListeProduits(const QString &filtreCollection = QString());
     void remplirCombosProduitClientEmplacement();
     void calculerStatsProduits();
-    void showProdSimDialog(); // (déjà existant)
+    void showProdSimDialog();
     void showProduitCoutDialog();
     void showHistoriqueModeDialog();
-    void showPlanifIaDialog(); // [NOUVEAU] Pop-up IA Planification
+    void showPlanifIaDialog();
 
     // Module RH
     void rafraichirListeEmployes();
@@ -327,29 +340,29 @@ private:
     void showClientFideliteTab();
     void showClientIaTab();
 
-
     // Module Dépôt
     void rafraichirListeDepots();
     void calculerStatsDepots();
     void preparerFormulaireDepot(bool estModif, int idx = -1);
     void showDepotOptimizeTab();
     void showDepotRavitaillementTab();
+    void showDepotRavitaillementMapTab();
+    void showDepotValeurGazTab();
     void setupDepotExpertUI();
 
-    // Module Stock (NOUVEAU - SPA avec onglets)
+    // Module Stock
     bool validerMatiereAjout();
     void rafraichirListeMatieres();
     void calculerStatsStock();
     void preparerFormulaireStock(bool estModif, int idx = -1);
     void showStockRavitaillementTab();
     void showStockCalculTab();
+    void setupStockExpertUI();
     void preparerFormulairePlanif(bool estModification);
     void preparerFormulaireProduit(bool estModif, int idx = -1);
     void ouvrirDialogueClient(bool estModif);
 
-    // ... (vos variables existantes) ...
-
-    // AJOUTER CES LIGNES POUR LES STATS POP-UP :
+    // Stats Pop-up
     void ouvrirStatsProduits();
     void ouvrirStatsRH();
     void ouvrirStatsStock();
@@ -358,6 +371,7 @@ private:
     void ouvrirStatsPlanification();
     void preparerFormulaireModif(int idx);
     void ouvrirIAPrediction();
+
     bool trainLinearModelFromDB(bool forceRetrain = false);
     double predictStepHours(int etapeCode,
                             double qte,
@@ -487,6 +501,44 @@ private:
 
     // Une petite fonction utilitaire pour le design des cartes KPI
     QFrame* creerCarteStat(QString icone, QString val, QString titre, QString couleurFond);
+
+    // --- Assistant RH IA (OpenRouter) ---
+    QNetworkAccessManager *m_namOpenRouter = nullptr;
+    QNetworkReply *m_classificationReply = nullptr;
+    QNetworkReply *m_assistantChatReply = nullptr;
+    QJsonArray m_assistantChatMessages;
+    QString m_assistantSchemaMetaOracle;
+
+    QString construireResumeSchemaOracleMeta() const;
+    QString construirePromptSystemeAssistant(const QString &schemaMeta) const;
+    QString contexteDonneesEmployesPourQuestion(const QString &question) const;
+    QString contextePlanificationsPourQuestion(const QString &question) const;
+    QString contexteClientsPourQuestion(const QString &question) const;
+    QString contexteProduitsPourQuestion(const QString &question) const;
+    QString contexteMatieresPourQuestion(const QString &question) const;
+    QString contexteEtapesPourQuestion(const QString &question) const;
+    QString contexteDonneesMetierPourQuestion(const QString &question) const;
+
+    QString m_openRouterKeyImportee;
+    void rafraichirCleOpenRouterDisque();
+
+    QPushButton *m_fabAssistant = nullptr;
+    QDialog *m_dialogAssistant = nullptr;
+    QPointer<QTextBrowser> m_ptrAssistantChatView;
+    QPointer<QLineEdit> m_ptrAssistantInput;
+    bool m_assistantUiConstruit = false;
+    bool m_assistantVoixActive = false;
+    QTextToSpeech *m_ttsAssistant = nullptr;
+    QProcess *m_ttsSpeakProcess = nullptr;
+    AssistantVoiceController *m_assistantVoice = nullptr;
+
+    void installerBulleAssistantFlottant();
+    void positionnerBulleAssistant();
+    void ouvrirFenetreAssistantRh();
+    void construireInterfaceAssistantSiBesoin();
+    void rafraichirAssistantVueChat();
+    void parlerTexteAssistant(const QString &texte);
+    void programmerReecouteMicroAssistantSiBesoin();
 };
 
 #endif // MAINWINDOW_H

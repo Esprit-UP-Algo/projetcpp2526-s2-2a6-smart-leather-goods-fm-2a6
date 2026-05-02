@@ -12,12 +12,20 @@ public:
     explicit Arduino(QObject *parent = nullptr);
     ~Arduino();
 
-    bool connectToBoard(const QString &portName = "COM3");
+    // Connexion avec nom de port explicite (utilisé dans mainwindow)
+    bool connectToBoard(const QString &portName = "COM7");
     void disconnectFromBoard();
     bool isConnected() const;
 
+    // Connexion simplifiée port fixe (COM7)
+    bool connectArduino();
+    void disconnectArduino();
+
 public slots:
     void beep();
+
+signals:
+    void dataReceived(QString data);
 
 private:
     QSerialPort *serial;
