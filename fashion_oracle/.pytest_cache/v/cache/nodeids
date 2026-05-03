@@ -1,0 +1,11 @@
+[
+  "tests/test_image_generation_pipeline.py::ImageGenerationPipelineTests::test_cache_key_uniqueness",
+  "tests/test_image_generation_pipeline.py::ImageGenerationPipelineTests::test_deterministic_concept_mapping_12",
+  "tests/test_image_generation_pipeline.py::ImageGenerationPipelineTests::test_generate_visuals_uses_local_pipeline",
+  "tests/test_image_generation_pipeline.py::ImageGenerationPipelineTests::test_route_contract_local_url_and_required_fields",
+  "tests/test_replicate_adapters.py::ReplicateAdaptersTests::test_classify_flux",
+  "tests/test_replicate_adapters.py::ReplicateAdaptersTests::test_classify_lightning",
+  "tests/test_replicate_adapters.py::ReplicateAdaptersTests::test_classify_stability_sdxl",
+  "tests/test_replicate_adapters.py::ReplicateAdaptersTests::test_lightning_input_no_scheduler",
+  "tests/test_replicate_adapters.py::ReplicateAdaptersTests::test_stability_input_exact_schema"
+]
