@@ -8,6 +8,20 @@
 #include "employe.h"
 #include "client.h"
 #include "arduino.h"
+#include "serialmanager.h"
+#include "costintelligenceengine.h"
+#include "decisionengine.h"
+#include "costengine.h"
+#include "optimizationengine.h"
+#include "insightengine.h"
+#include "scoreengine.h"
+#include "productanalyzer.h"
+#include "tensionevaluator.h"
+#include "simulationengine.h"
+#include "sensitivityengine.h"
+#include "breakpointengine.h"
+#include "uianimator.h"
+#include "smartmotorcontroller.h"
 
 #include <QSqlRecord>
 #include <QSqlDatabase>
@@ -95,6 +109,56 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QJsonParseError>
+#include <QUrlQuery>
+#include <QProcess>
+#include <QProcessEnvironment>
+#include <QTcpSocket>
+#include <QSerialPortInfo>
+#include <QSettings>
+#include <QInputDialog>
+#include <QThread>
+#include <QNetworkAccessManager>
+#include <QNetworkRequest>
+#include <QPropertyAnimation>
+#include <QSequentialAnimationGroup>
+#include <QParallelAnimationGroup>
+#include <QAbstractAnimation>
+#include <QVariantAnimation>
+#include <QRandomGenerator>
+#include <QPauseAnimation>
+#include <QScreen>
+#include <limits>
+#include <functional>
+#include <tuple>
+#include <array>
+#include <QSlider>
+#include <QGraphicsDropShadowEffect>
+#include <QGraphicsOpacityEffect>
+#include <QScrollArea>
+#include <QMouseEvent>
+#include <QPainterPath>
+#include <QSpinBox>
+#include <QRadioButton>
+#include <QFormLayout>
+#include <numeric>
+#include <QImageReader>
+#include <QToolTip>
+
+static int fashionOracleListenPort()
+{
+    const QByteArray p = qgetenv("FASHION_ORACLE_PORT");
+    bool ok = false;
+    const int v = QString::fromUtf8(p).trimmed().toInt(&ok);
+    if (ok && v > 0 && v < 65536)
+        return v;
+    return 8010;
+}
+
+static QString fashionOracleBaseUrl()
+{
+    return QStringLiteral("http://127.0.0.1:%1").arg(fashionOracleListenPort());
+}
 
 namespace {
 
@@ -1800,6 +1864,248 @@ static void setVerticalBarChart(QWidget *container, const QString &title, const 
 }
 
 // =========================================================
+// ===           MOTEUR SMART (ARDUINO / SERIAL)         ===
+// =========================================================
+
+static QString filDorEnv(const char *name, const QString &defaultValue = QString())
+{
+    const QString v = QString::fromLocal8Bit(qgetenv(name)).trimmed();
+    return v.isEmpty() ? defaultValue : v;
+}
+
+void MainWindow::installerChoixMoteurProduitUi()
+{
+    auto makeGroup = [this](bool isModif) -> QGroupBox* {
+        QGroupBox *grp = new QGroupBox(QStringLiteral("Moteur chaîne (Arduino)"), this);
+        QVBoxLayout *lay = new QVBoxLayout(grp);
+        lay->setContentsMargins(8, 6, 8, 6);
+        lay->setSpacing(4);
+        QRadioButton *rb0 = new QRadioButton(QStringLiteral("3ème choix — séquence"), grp);
+        QRadioButton *rb1 = new QRadioButton(QStringLiteral("1er choix — séquence"), grp);
+        QRadioButton *rb2 = new QRadioButton(QStringLiteral("2ème choix — séquence"), grp);
+        rb1->setStyleSheet("QRadioButton{color:#27ae60;font-weight:bold;}");
+        rb2->setStyleSheet("QRadioButton{color:#e67e22;font-weight:bold;}");
+        rb0->setStyleSheet("QRadioButton{color:#7f8c8d;}");
+        rb0->setChecked(true);
+        lay->addWidget(rb0);
+        lay->addWidget(rb1);
+        lay->addWidget(rb2);
+        if (isModif) {
+            m_rbChoixMod0 = rb0; m_rbChoixMod1 = rb1; m_rbChoixMod2 = rb2;
+        } else {
+            m_rbChoixNew0 = rb0; m_rbChoixNew1 = rb1; m_rbChoixNew2 = rb2;
+        }
+        return grp;
+    };
+    if (QFormLayout *flNew = ui->gb_prod_new ? ui->gb_prod_new->findChild<QFormLayout*>("fl_prod_new") : nullptr)
+        flNew->addRow(QStringLiteral("Choix Moteur :"), makeGroup(false));
+    if (QFormLayout *flMod = ui->gb_prod_edit ? ui->gb_prod_edit->findChild<QFormLayout*>("fl_prod_edit") : nullptr)
+        flMod->addRow(QStringLiteral("Choix Moteur :"), makeGroup(true));
+}
+
+int MainWindow::choixMoteurDepuisFormulaireNouveau() const
+{
+    if (m_rbChoixNew1 && m_rbChoixNew1->isChecked()) return 1;
+    if (m_rbChoixNew2 && m_rbChoixNew2->isChecked()) return 2;
+    return 0;
+}
+
+int MainWindow::choixMoteurDepuisFormulaireModif() const
+{
+    if (m_rbChoixMod1 && m_rbChoixMod1->isChecked()) return 1;
+    if (m_rbChoixMod2 && m_rbChoixMod2->isChecked()) return 2;
+    return 0;
+}
+
+void MainWindow::journaliserMoteurSmart(int idProduit, int idCommande, const QString &actionCode, const QString &detail) const
+{
+    Connexion *cnx = Connexion::getInstance();
+    if (!cnx || !cnx->estConnecte())
+        return;
+    QSqlDatabase db = cnx->getDatabase();
+    if (!db.isOpen() && !db.open())
+        return;
+    if (filDorEnv("FIL_DOR_LOG_MOTEUR", QStringLiteral("1")) != QStringLiteral("1"))
+        return;
+    QSqlQuery ins(db);
+    ins.setForwardOnly(true);
+    const QString table = filDorEnv("FIL_DOR_MOTEUR_TABLE", QStringLiteral("SMART_MOTEUR_LOG"));
+    ins.prepare(QStringLiteral("INSERT INTO %1 (ID_PRODUIT, ID_COMMANDE, ACTION_CODE, DETAIL) VALUES (:p, :c, :a, :d)").arg(table));
+    ins.bindValue(QStringLiteral(":p"), idProduit);
+    if (idCommande > 0)
+        ins.bindValue(QStringLiteral(":c"), idCommande);
+    else
+        ins.bindValue(QStringLiteral(":c"), QVariant(QMetaType(QMetaType::Int)));
+    ins.bindValue(QStringLiteral(":a"), actionCode);
+    ins.bindValue(QStringLiteral(":d"), detail);
+    if (!ins.exec())
+        qDebug() << "[SmartMoteur] log ignore:" << ins.lastError().text();
+}
+
+int MainWindow::declencherMoteurProduit(int idProduit, int idCommande)
+{
+    if (idProduit <= 0) {
+        journaliserMoteurSmart(idProduit, idCommande, QStringLiteral("SKIP"),
+                               QStringLiteral("Aucun produit (ID invalide)"));
+        return -2;
+    }
+    const int choix = Produit::getProductChoix(idProduit);
+    const QString configuredPort = getArduinoPort();
+    if (choix < 0 || choix > 2) {
+        journaliserMoteurSmart(idProduit, idCommande, QStringLiteral("SKIP"),
+                               QStringLiteral("Choix invalide en base"));
+        return -2;
+    }
+    if (configuredPort.isEmpty()) {
+        journaliserMoteurSmart(idProduit, idCommande, QStringLiteral("SKIP"), QStringLiteral("Port serie non configure"));
+        return -1;
+    }
+    if (!m_serialManager.isConnected()) {
+        if (!m_serialManager.connectPort(configuredPort)) {
+            journaliserMoteurSmart(idProduit, idCommande, QStringLiteral("SKIP"),
+                                   QStringLiteral("Connexion serie impossible"));
+            return -1;
+        }
+    }
+    const int choixSerie = (choix == 0) ? 2 : choix;
+    const QString cmd = QStringLiteral("MOTOR:%1").arg(choixSerie);
+    Produit::logMoteurAction(idProduit, choix, QString(), cmd, configuredPort,
+                             QStringLiteral("PENDING"), -1, idCommande);
+    m_pendingMoteurProductId = idProduit;
+    m_pendingMoteurCommande = idCommande;
+    m_pendingMoteurCmd = cmd;
+    m_pendingMoteurPort = configuredPort;
+    m_pendingMoteurDbChoix = choix;
+    m_pendingMoteurStartedMs = QDateTime::currentMSecsSinceEpoch();
+    m_serialManager.sendCommand(cmd);
+    const QString origine = (idCommande > 0)
+        ? QStringLiteral("commande %1").arg(idCommande)
+        : QStringLiteral("module produit (choix en base)");
+    QString d;
+    if (choixSerie == 1)
+        d = QStringLiteral("Choix=1 (base) -> %1, MOTOR:1").arg(origine);
+    else if (choixSerie == 2)
+        d = QStringLiteral("Choix=2 (base) -> %1, MOTOR:2").arg(origine);
+    else
+        d = QStringLiteral("Choix=3ème/0 (base) -> %1, MOTOR:2").arg(origine);
+    journaliserMoteurSmart(idProduit, idCommande, cmd, d);
+    return choix;
+}
+
+QString MainWindow::getArduinoPort() const
+{
+    const QString fromDb = Produit::getArduinoConfig(QStringLiteral("PORT_COM"),
+                                                     Produit::getArduinoConfig(QStringLiteral("port_com"), QString()));
+    if (!fromDb.trimmed().isEmpty())
+        return fromDb.trimmed();
+    QSettings s(QStringLiteral("MetierSmart"), QStringLiteral("config"));
+    const QString fromSettings = s.value(QStringLiteral("arduino/port"), QString()).toString().trimmed();
+    if (!fromSettings.isEmpty())
+        return fromSettings;
+    const auto ports = QSerialPortInfo::availablePorts();
+    for (const QSerialPortInfo &info : ports) {
+        const QString d = info.description();
+        if (d.contains(QStringLiteral("Arduino"), Qt::CaseInsensitive)
+            || d.contains(QStringLiteral("CH340"), Qt::CaseInsensitive)
+            || d.contains(QStringLiteral("USB Serial"), Qt::CaseInsensitive))
+            return info.portName();
+    }
+    return QStringLiteral("COM5");
+}
+
+void MainWindow::traiterReponseArduino(const QString &reponse,
+                                       int idProduit,
+                                       int choix,
+                                       int idCommande,
+                                       const QString &commande,
+                                       const QString &portCom,
+                                       int dureeMs)
+{
+    const QString r = reponse.trimmed().toUpper();
+    QString statut = QStringLiteral("DONE");
+    if (r == QStringLiteral("TIMEOUT")) {
+        statut = QStringLiteral("ERROR");
+    } else if (r.startsWith(QStringLiteral("SKIP"))) {
+        statut = QStringLiteral("SKIP");
+    } else if (r == QStringLiteral("READY") || r == QStringLiteral("PONG")) {
+        statut = QStringLiteral("INFO");
+    } else if (!r.isEmpty()
+               && r != QStringLiteral("DONE:1")
+               && r != QStringLiteral("DONE:2")) {
+        statut = QStringLiteral("ERROR");
+    }
+    if (!r.isEmpty())
+        journaliserMoteurSmart(idProduit, idCommande, QStringLiteral("RX"), r);
+    const bool tryUpdatePending = !commande.isEmpty() && idProduit > 0
+        && (statut == QStringLiteral("DONE") || statut == QStringLiteral("ERROR"))
+        && (r == QStringLiteral("DONE:1") || r == QStringLiteral("DONE:2") || r == QStringLiteral("TIMEOUT"));
+    const bool updated = tryUpdatePending
+        && Produit::updateLatestPendingMoteurLog(idProduit, commande, r, statut, dureeMs);
+    if (!updated)
+        Produit::logMoteurAction(idProduit, choix, r, commande, portCom, statut, dureeMs, idCommande);
+}
+
+void MainWindow::autoDetectArduino()
+{
+    auto listHasPort = [](const QStringList &list, const QString &port) -> bool {
+        for (const QString &p : list) {
+            if (p.compare(port, Qt::CaseInsensitive) == 0)
+                return true;
+        }
+        return false;
+    };
+    QStringList tryPorts;
+    const QString fromOra = Produit::getArduinoConfig(QStringLiteral("PORT_COM"),
+                                                      Produit::getArduinoConfig(QStringLiteral("port_com"), QString()))
+                              .trimmed();
+    if (!fromOra.isEmpty())
+        tryPorts << fromOra;
+    for (int i = 1; i <= 9; ++i) {
+        const QString com = QStringLiteral("COM%1").arg(i);
+        if (!listHasPort(tryPorts, com))
+            tryPorts << com;
+    }
+    auto pingPort = [this](const QString &port) -> bool {
+        if (!m_serialManager.connectPort(port))
+            return false;
+        QEventLoop loop;
+        QTimer t;
+        t.setSingleShot(true);
+        t.start(2000);
+        bool gotPong = false;
+        QMetaObject::Connection c1 = QObject::connect(&t, &QTimer::timeout, &loop, &QEventLoop::quit);
+        QMetaObject::Connection c2 = QObject::connect(&m_serialManager, &SerialManager::pongReceived, &loop, [&gotPong, &loop]() {
+            gotPong = true;
+            loop.quit();
+        });
+        m_serialManager.sendCommand(QStringLiteral("PING"));
+        loop.exec();
+        QObject::disconnect(c1);
+        QObject::disconnect(c2);
+        return gotPong;
+    };
+    for (const QString &port : tryPorts) {
+        qDebug() << "[AutoDetect] Essai port:" << port;
+        if (!pingPort(port))
+            continue;
+        Produit::setArduinoConfig(QStringLiteral("PORT_COM"), port);
+        Produit::setArduinoConfig(QStringLiteral("port_com"), port);
+        return;
+    }
+    QStringList lines;
+    const QList<QSerialPortInfo> infos = QSerialPortInfo::availablePorts();
+    for (const QSerialPortInfo &info : infos)
+        lines << QStringLiteral("%1 — %2").arg(info.portName(), info.description());
+    QMessageBox::warning(
+        this,
+        QStringLiteral("Moteur chaîne — Arduino"),
+        QStringLiteral("Aucune réponse PONG (délai 2 s).\n\n"
+                       "Ports série détectés sur ce PC :\n%1\n\n"
+                       "Fermez le Serial Monitor Arduino IDE si le port est occupé.")
+            .arg(lines.isEmpty() ? QStringLiteral("(aucun)") : lines.join(QStringLiteral("\n"))));
+}
+
+// =========================================================
 // ===                  MAIN WINDOW                      ===
 // =========================================================
 void MainWindow::on_btn_test_buzzer_clicked()
@@ -1810,8 +2116,79 @@ void MainWindow::on_btn_test_buzzer_clicked()
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
+    , m_namCostSim(this)
+    , m_serialManager(this)
 {
     ui->setupUi(this);
+    installerChoixMoteurProduitUi();
+    setStatusBar(nullptr);
+
+    connect(&m_serialManager, &SerialManager::arduinoReady, this, [this]() {
+        if (ui->btn_moteur_prod)
+            ui->btn_moteur_prod->setEnabled(true);
+        qDebug() << "[MainWindow] Arduino READY";
+    });
+
+    connect(&m_serialManager, &SerialManager::motorMoving, this, [this](int canal) {
+        if (ui->btn_moteur_prod) {
+            ui->btn_moteur_prod->setEnabled(false);
+            ui->btn_moteur_prod->setText(QStringLiteral("⚙ Moteur chaîne…"));
+        }
+        qDebug() << "[MainWindow] MOVING:" << canal;
+    });
+
+    connect(&m_serialManager, &SerialManager::motorTimedOut, this, [this]() {
+        if (m_pendingMoteurProductId <= 0 || !m_pendingMoteurCmd.startsWith(QStringLiteral("MOTOR:")))
+            return;
+        const int idProd = m_pendingMoteurProductId;
+        const int idCmd = m_pendingMoteurCommande;
+        const int dbCh = m_pendingMoteurDbChoix;
+        const QString cmd = m_pendingMoteurCmd;
+        const QString port = m_pendingMoteurPort;
+        const int dureeMs = m_pendingMoteurStartedMs > 0
+            ? static_cast<int>(QDateTime::currentMSecsSinceEpoch() - m_pendingMoteurStartedMs)
+            : -1;
+        traiterReponseArduino(QStringLiteral("TIMEOUT"), idProd, dbCh >= 0 ? dbCh : 0, idCmd, cmd, port, dureeMs);
+        m_pendingMoteurProductId = -1;
+        m_pendingMoteurCommande = -1;
+        m_pendingMoteurCmd.clear();
+        m_pendingMoteurPort.clear();
+        m_pendingMoteurDbChoix = -1;
+        m_pendingMoteurStartedMs = 0;
+        if (ui->btn_moteur_prod) {
+            ui->btn_moteur_prod->setEnabled(true);
+            ui->btn_moteur_prod->setText(QStringLiteral("⚙ Tourner moteur (chaîne)"));
+        }
+    });
+
+    connect(&m_serialManager, &SerialManager::motorDone, this, [this](int canal) {
+        if (m_pendingMoteurProductId <= 0)
+            return;
+        const QString attendu = (canal == 1) ? QStringLiteral("MOTOR:1") : QStringLiteral("MOTOR:2");
+        if (m_pendingMoteurCmd != attendu)
+            return;
+        if (ui->btn_moteur_prod) {
+            ui->btn_moteur_prod->setEnabled(true);
+            ui->btn_moteur_prod->setText(QStringLiteral("⚙ Tourner moteur (chaîne)"));
+        }
+        const int dureeMs = m_pendingMoteurStartedMs > 0
+            ? static_cast<int>(QDateTime::currentMSecsSinceEpoch() - m_pendingMoteurStartedMs)
+            : -1;
+        const int dbCh = m_pendingMoteurDbChoix;
+        traiterReponseArduino(QStringLiteral("DONE:%1").arg(canal), m_pendingMoteurProductId,
+                              dbCh >= 0 ? dbCh : canal,
+                              m_pendingMoteurCommande, m_pendingMoteurCmd, m_pendingMoteurPort, dureeMs);
+        m_pendingMoteurProductId = -1;
+        m_pendingMoteurCommande = -1;
+        m_pendingMoteurCmd.clear();
+        m_pendingMoteurPort.clear();
+        m_pendingMoteurDbChoix = -1;
+        m_pendingMoteurStartedMs = 0;
+        qDebug() << "[MainWindow] DONE:" << canal;
+    });
+
+    autoDetectArduino();
+
     Arduino *arduino = new Arduino(this);
 
     if (arduino->connectArduino()) {
@@ -1820,12 +2197,28 @@ MainWindow::MainWindow(QWidget *parent)
         qDebug() << "Arduino NOT connected!";
     }
 
-    connect(arduino, &Arduino::dataReceived, this, [=](QString value){
+    connect(arduino, &Arduino::dataReceived, this, [this](QString value){
         qDebug() << "Gaz value:" << value;
-        if (ui->label_2) ui->label_2->setText("Gaz: " + value + " units");
+        const QString trimmed = value.trimmed();
+        if (QLabel *gazLbl = findChild<QLabel *>(QStringLiteral("lbl_gaz_realtime"), Qt::FindChildrenRecursively))
+            gazLbl->setText(QStringLiteral("%1 units").arg(trimmed));
+        if (QLabel *stLbl = findChild<QLabel *>(QStringLiteral("lbl_gaz_status"), Qt::FindChildrenRecursively)) {
+            bool okNum = false;
+            const double gv = trimmed.toDouble(&okNum);
+            if (okNum) {
+                if (gv > 700.0)
+                    stLbl->setText(QStringLiteral("☠ DANGER — seuil dépassé (%1)").arg(trimmed));
+                else if (gv > 500.0)
+                    stLbl->setText(QStringLiteral("⚠ CRITIQUE (%1)").arg(trimmed));
+                else if (gv > 300.0)
+                    stLbl->setText(QStringLiteral("⚠ Attention (%1)").arg(trimmed));
+                else
+                    stLbl->setText(QStringLiteral("✓ Normal (%1)").arg(trimmed));
+            }
+        }
 
         bool ok;
-        double gazVal = value.trimmed().toDouble(&ok);
+        double gazVal = trimmed.toDouble(&ok);
         if (!ok) return;
 
         if (gazVal > 700.0) {
@@ -7639,81 +8032,5065 @@ void MainWindow::showPlanifIaDialog() {
     // On utilise la nouvelle navigation fluide au lieu de l'ancien pop-up
     preparerFormulairePlanif(false);
 }
+
+// ============================================================
+// Types et fonctions utilitaires pour Simulateur Coût + Historique
+// ============================================================
+
+struct ModeSeriePoint {
+    QString ym;
+    double qte = 0.0;
+};
+
+struct ModePrediction {
+    QString collection;
+    double baseMoyenne = 0.0;
+    double moyenneRecente = 0.0;
+    double penteTendance = 0.0;
+    double momentum = 0.0;
+    double saisonnalite = 0.0;
+    double volatilite = 0.0;
+    double score = 0.0;
+    double confiance = 0.0;
+    double prevision = 0.0;
+    int pointsHistoriques = 0;
+};
+
+static double clamp01(double v)
+{
+    if (v < 0.0) return 0.0;
+    if (v > 1.0) return 1.0;
+    return v;
+}
+
+static double normaliserMinMax(double v, double vMin, double vMax)
+{
+    const double d = vMax - vMin;
+    if (qFuzzyIsNull(d)) return 0.5;
+    return clamp01((v - vMin) / d);
+}
+
+static double moyenne(const QVector<double> &vals)
+{
+    if (vals.isEmpty()) return 0.0;
+    double s = 0.0;
+    for (double v : vals) s += v;
+    return s / static_cast<double>(vals.size());
+}
+
+static double ecartType(const QVector<double> &vals, double mu)
+{
+    if (vals.size() <= 1) return 0.0;
+    double acc = 0.0;
+    for (double v : vals) { const double d = v - mu; acc += d * d; }
+    return std::sqrt(acc / static_cast<double>(vals.size()));
+}
+
+static double penteRegressionLineaire(const QVector<double> &y)
+{
+    const int n = y.size();
+    if (n < 2) return 0.0;
+    double sx = 0.0, sy = 0.0, sxx = 0.0, sxy = 0.0;
+    for (int i = 0; i < n; ++i) {
+        const double x = static_cast<double>(i);
+        sx += x; sy += y[i]; sxx += x * x; sxy += x * y[i];
+    }
+    const double denom = (static_cast<double>(n) * sxx) - (sx * sx);
+    if (qFuzzyIsNull(denom)) return 0.0;
+    return ((static_cast<double>(n) * sxy) - (sx * sy)) / denom;
+}
+
+namespace {
+
+struct ForecastConceptLocal {
+    QString productName;
+    QString style;
+    QString palette;
+    QString material;
+    QString silhouette;
+    int marketFit = 0;
+    int materialFit = 0;
+    int silhouetteFit = 0;
+    int globalFit = 0;
+    QString badge;
+};
+
+struct ForecastResultLocal {
+    QString dominantTrend;
+    double confidence = 0.0;
+    QString palette;
+    QString material;
+    QString silhouette;
+    QString moteur;
+    std::array<double, 6> trendScores{};
+    int momentum = 0;
+    int riskScore = 0;
+    QString scenario;
+    std::array<ForecastConceptLocal, 3> concepts{};
+    QStringList topStyles;
+    QStringList palettes;
+    QStringList materials;
+    QStringList silhouettes;
+    QStringList conflicts;
+    std::array<QColor, 3> paletteColors{};
+    QStringList paletteNames;
+    QStringList conceptNames;
+};
+
+struct TrendCurveLocal {
+    const char* name;
+    double base2025;
+    double momentum;
+    double peakYear;
+    double peakDrop;
+    QColor color;
+};
+
+struct TrendProfileLocal {
+    const char* name;
+    const char* palette;
+    const char* matiere;
+    const char* silhouette;
+    const char* moteur;
+    std::array<QColor, 3> paletteColors;
+    std::array<const char*, 3> paletteNames;
+    std::array<const char*, 3> conceptNames;
+    std::array<std::array<const char*, 4>, 3> conceptTags;
+    std::array<const char*, 2> conflictPairs;
+    double baseConfidence;
+};
+
+static const std::array<TrendProfileLocal, 6> kTrendProfiles = {{
+    {
+        "artisan-leather", "cognac", "matte leather", "concept volume", "forecast-cockpit-competitive-balanced",
+        {QColor("#664015"), QColor("#8c6126"), QColor("#bf9959")},
+        {"cognac","caramel","sand"},
+        {"Veste premium","Veste technique","Ceinture luxe"},
+        {{{"artisan-leather","cognac","matte leather","concept volume"},
+          {"minimal-tailoring","neon-lime","nubuck","elongated precision"},
+          {"romantic-fluid","ink-blue","bio-fiber satin","clean shoulder"}}},
+        {"artisan-leather suppresses athlux","artisan-leather suppresses con"},
+        69.0
+    },
+    {
+        "minimal-tailoring", "taupe", "laine structurée", "sharp line", "forecast-cockpit-minimal-optimized",
+        {QColor("#8c8575"), QColor("#bfb399"), QColor("#e6d9bf")},
+        {"taupe","stone","ivory"},
+        {"Veste épurée","Manteau droit","Pantalon tailleur"},
+        {{{"minimal-tailoring","taupe","laine structurée","sharp line"},
+          {"athlux-utility","steel-blue","nylon premium","utility frame"},
+          {"conceptual","lavender","silk blend","drape asymmetric"}}},
+        {"minimal-tailoring suppresses romantic","minimal suppresses conceptual"},
+        72.0
+    },
+    {
+        "romantic-fluid", "blush", "soie fluide", "fluid drape", "forecast-cockpit-romantic-wave",
+        {QColor("#d99aa6"), QColor("#b3738c"), QColor("#f2ccc0")},
+        {"blush","mauve","rose poudré"},
+        {"Robe fluide","Blouse romantique","Jupe évasée"},
+        {{{"romantic-fluid","blush","soie fluide","fluid drape"},
+          {"artisan-leather","cognac","velours","structured ease"},
+          {"minimal-tailoring","ivory","georgette","soft column"}}},
+        {"romantic suppresses athlux","romantic-fluid vs minimal-tail"},
+        65.0
+    },
+    {
+        "athlux", "lavender", "soie mate", "fluid drape", "forecast-cockpit-athlux-performance",
+        {QColor("#8c73bf"), QColor("#668ca6"), QColor("#bf9966")},
+        {"lavender","cobalt","beige"},
+        {"Veste sport-luxe","Legging technique","Blouson urbain"},
+        {{{"athlux-utility","steel-blue","nylon premium","utility frame"},
+          {"artisan-leather","cognac","cuir pleine fleur","structured tote"},
+          {"minimal-tailoring","taupe","laine structurée","sharp line"}}},
+        {"athlux suppresses romantic","athlux-utility vs minimal-tail"},
+        70.0
+    },
+    {
+        "conceptual", "ink-blue", "bio-fiber satin", "clean shoulder", "forecast-cockpit-conceptual-disruptive",
+        {QColor("#263373"), QColor("#4d598c"), QColor("#8c80a6")},
+        {"ink-blue","midnight","slate"},
+        {"Manteau sculptural","Robe architecturale","Veste déstructurée"},
+        {{{"conceptual","ink-blue","bio-fiber satin","clean shoulder"},
+          {"romantic-fluid","blush","organza","cape volume"},
+          {"athlux-utility","charcoal","tech mesh","modular pocket"}}},
+        {"conceptual suppresses artisan","conceptual vs annual"},
+        63.0
+    },
+    {
+        "annual", "sand", "coton premium", "relaxed tailoring", "forecast-cockpit-annual-stable",
+        {QColor("#ccb88c"), QColor("#a68c66"), QColor("#e6d1ad")},
+        {"sand","wheat","cream"},
+        {"Chemise essentiel","Pantalon casual","Veste quotidienne"},
+        {{{"annual","sand","coton premium","relaxed tailoring"},
+          {"minimal-tailoring","stone","laine fine","straight cut"},
+          {"artisan-leather","cognac","denim premium","workwear edit"}}},
+        {"annual vs artisan-leather","annual suppresses conceptual"},
+        75.0
+    }
+}};
+
+static double computeCurveScoreLocal(const TrendCurveLocal &t, int year)
+{
+    const double y = static_cast<double>(year - 2025);
+    double s = t.base2025 + t.momentum * y;
+    if (t.peakYear > 0.0 && static_cast<double>(year) > t.peakYear) {
+        const double overPeak = static_cast<double>(year) - t.peakYear;
+        s += t.peakDrop * overPeak;
+    }
+    return std::clamp(s, 0.0, 100.0);
+}
+
+static void applyScenarioBiasLocal(std::array<double, 6> &scores, const QString &scenarioIn)
+{
+    const QString s = scenarioIn.trimmed().toLower();
+    if (s == QStringLiteral("aggressive_growth")) {
+        scores[0] += 6.0; scores[1] -= 4.0; scores[4] += 5.0;
+    } else if (s == QStringLiteral("risk_averse")) {
+        scores[5] += 5.0; scores[3] -= 3.0; scores[2] += 3.0;
+    } else if (s == QStringLiteral("disruptive")) {
+        scores[4] += 8.0; scores[5] -= 6.0; scores[3] += 4.0;
+    } else if (s == QStringLiteral("conservative")) {
+        scores[1] += 5.0; scores[5] += 3.0; scores[4] -= 4.0;
+    }
+    for (double &v : scores)
+        v = std::clamp(v, 0.0, 100.0);
+}
+
+static int argmaxLocal(const std::array<double, 6> &scores)
+{
+    int best = 0;
+    for (int i = 1; i < 6; ++i)
+        if (scores[i] > scores[best]) best = i;
+    return best;
+}
+
+static ForecastResultLocal computeFashionForecastLocal(int year, const QString &scenarioIn)
+{
+    const QString scenario = scenarioIn.trimmed().toLower();
+    double wTrend = 0.4, wMaterial = 0.3, wSil = 0.3;
+    double confidenceBias = 0.0;
+    if (scenario == QStringLiteral("aggressive_growth")) { wTrend = 0.6; wMaterial = 0.2; wSil = 0.2; confidenceBias = -6.0; }
+    else if (scenario == QStringLiteral("risk_averse")) { wTrend = 0.2; wMaterial = 0.4; wSil = 0.4; confidenceBias = 7.5; }
+    else if (scenario == QStringLiteral("disruptive")) { wTrend = 0.5; wMaterial = 0.1; wSil = 0.4; confidenceBias = -3.0; }
+    else if (scenario == QStringLiteral("conservative")) { wTrend = 0.3; wMaterial = 0.4; wSil = 0.3; confidenceBias = 4.0; }
+
+    const std::array<TrendCurveLocal, 6> curves = {{
+        {"artisan-leather",   35.0, +9.0, 2028.0, -11.0, QColor("#8c4512")},
+        {"minimal-tailoring", 62.0, -2.0,    0.0,  0.0, QColor("#597f66")},
+        {"romantic-fluid",    28.0, +3.5, 2030.0, -4.0, QColor("#a6668c")},
+        {"athlux",            42.0, +6.5, 2031.0, -8.0, QColor("#3366a6")},
+        {"conceptual",        12.0, +7.5, 2034.0, -3.0, QColor("#7f4ca6")},
+        {"annual",            78.0, -5.5,    0.0,  0.0, QColor("#bf8c40")}
+    }};
+    const QStringList trendLabels = {QStringLiteral("artisan-leather"), QStringLiteral("minimal-tailoring"),
+                                     QStringLiteral("romantic-fluid"), QStringLiteral("athlux"),
+                                     QStringLiteral("conceptual"), QStringLiteral("annual")};
+    ForecastResultLocal out;
+    out.scenario = scenario;
+    std::array<double, 6> raw{};
+    const int yr = qBound(2025, year, 2040);
+    for (int i = 0; i < 6; ++i)
+        raw[i] = computeCurveScoreLocal(curves[i], yr);
+    applyScenarioBiasLocal(raw, scenario);
+    out.trendScores = raw;
+    const int winnerIdx = argmaxLocal(raw);
+    QVector<int> order = {0, 1, 2, 3, 4, 5};
+    std::sort(order.begin(), order.end(), [&](int a, int b) { return raw[a] > raw[b]; });
+    const TrendProfileLocal &p = kTrendProfiles[winnerIdx];
+    const auto safeLatin = [](const char *txt, const QString &fallback = QString()) -> QString {
+        return (txt && txt[0] != '\0') ? QString::fromLatin1(txt) : fallback;
+    };
+    out.dominantTrend = QString::fromLatin1(p.name);
+    for (int r = 0; r < 3; ++r)
+        out.topStyles << trendLabels.value(order[r]);
+    const int yearPhase = qBound(0, (yr - 2025) % 3, 2);
+    out.palette = safeLatin(p.paletteNames[yearPhase], safeLatin(p.palette, QStringLiteral("N/A")));
+    out.material = safeLatin(p.conceptTags[yearPhase][2], safeLatin(p.matiere, QStringLiteral("N/A")));
+    out.silhouette = safeLatin(p.conceptTags[(yearPhase + 1) % 3][3], safeLatin(p.silhouette, QStringLiteral("N/A")));
+    out.moteur = QString("%1-%2")
+                     .arg(safeLatin(p.moteur, QStringLiteral("forecast-cockpit")),
+                          QStringList{QStringLiteral("phase-a"), QStringLiteral("phase-b"), QStringLiteral("phase-c")}.value(yearPhase));
+    for (int i = 0; i < 3; ++i) {
+        const int k = (yearPhase + i) % 3;
+        out.paletteColors[i] = p.paletteColors[k];
+        out.paletteNames << safeLatin(p.paletteNames[k], out.palette);
+        out.palettes << safeLatin(p.paletteNames[k], out.palette);
+        out.materials << safeLatin(p.conceptTags[k][2], out.material);
+        out.silhouettes << safeLatin(p.conceptTags[k][3], out.silhouette);
+        out.conceptNames << safeLatin(p.conceptNames[k], QStringLiteral("Concept %1").arg(i + 1));
+    }
+    const int topMomentum = int(std::lround(curves[order[0]].momentum + curves[order[1]].momentum + curves[order[2]].momentum));
+    out.momentum = qBound(0, topMomentum * 3 + 8, 99);
+    out.riskScore = qBound(8, int(std::lround(100.0 - (raw[order[0]] * 0.55 + raw[order[1]] * 0.25 + raw[order[2]] * 0.20))), 92);
+    double confMod = 1.0;
+    if (scenario == QStringLiteral("aggressive_growth")) confMod = 0.88;
+    else if (scenario == QStringLiteral("risk_averse")) confMod = 1.10;
+    else if (scenario == QStringLiteral("disruptive")) confMod = 0.80;
+    else if (scenario == QStringLiteral("conservative")) confMod = 1.05;
+    out.confidence = std::clamp((p.baseConfidence * confMod + confidenceBias) / 100.0, 0.35, 0.99);
+    out.conflicts.clear();
+    out.conflicts << QString::fromLatin1(p.conflictPairs[0]) << QString::fromLatin1(p.conflictPairs[1]);
+    for (int i = 0; i < 3; ++i) {
+        const int idx = order[i];
+        ForecastConceptLocal c;
+        c.productName = out.conceptNames.value(i, QStringLiteral("Concept %1").arg(i + 1));
+        c.style = safeLatin(p.conceptTags[i][0], out.dominantTrend);
+        c.palette = safeLatin(p.conceptTags[i][1], out.palette);
+        c.material = safeLatin(p.conceptTags[i][2], out.material);
+        c.silhouette = safeLatin(p.conceptTags[i][3], out.silhouette);
+        c.marketFit = qBound(35, int(std::lround(raw[idx] - i * 3)), 98);
+        c.materialFit = qBound(30, int(std::lround(56.0 + wMaterial * 34.0 + (idx % 3) * 6.0 - i * 2.0)), 99);
+        c.silhouetteFit = qBound(30, int(std::lround(54.0 + wSil * 33.0 + ((idx + 1) % 3) * 5.0 - i * 2.0)), 99);
+        c.globalFit = qBound(0, int(std::lround(c.marketFit * 0.45 + c.materialFit * 0.30 + c.silhouetteFit * 0.25)), 100);
+        c.badge = (i == 0) ? QStringLiteral("Peak") : (i == 1 ? QStringLiteral("Rising") : QStringLiteral("Differentiator"));
+        out.concepts[i] = c;
+    }
+    return out;
+}
+
+static QJsonObject buildFashionForecastPayloadLocal(int year, const QString &scenario)
+{
+    const ForecastResultLocal fr = computeFashionForecastLocal(year, scenario);
+    QJsonObject root;
+    root.insert(QStringLiteral("year"), year);
+    root.insert(QStringLiteral("forecast_eligible"), true);
+    root.insert(QStringLiteral("summary"),
+                QStringLiteral("Projection locale %1 : priorité %2, exécution progressive et pilotage multi-signaux.")
+                    .arg(year).arg(fr.dominantTrend));
+    root.insert(QStringLiteral("confidence"), fr.confidence);
+    root.insert(QStringLiteral("inference_mode"), fr.moteur);
+    root.insert(QStringLiteral("prediction_engine_version"), QStringLiteral("local-deterministic-v1"));
+    root.insert(QStringLiteral("from_cache"), false);
+    root.insert(QStringLiteral("dominant_direction"), fr.dominantTrend);
+    root.insert(QStringLiteral("market_posture"), QStringLiteral("Balanced selective growth"));
+    root.insert(QStringLiteral("risk_level"), fr.riskScore < 30 ? QStringLiteral("Low") : (fr.riskScore < 60 ? QStringLiteral("Medium") : QStringLiteral("High")));
+    root.insert(QStringLiteral("recommended_capsule"), QStringLiteral("Capsule %1").arg(fr.dominantTrend));
+    root.insert(QStringLiteral("strongest_signal"), QStringLiteral("Signal dominant : %1").arg(fr.dominantTrend));
+    root.insert(QStringLiteral("year_over_year_evolution"), QStringLiteral("Momentum recalibré sur %1").arg(year));
+    root.insert(QStringLiteral("source"), QStringLiteral("Fashion Oracle API"));
+    QJsonArray topStyles, palettes, mats, sils, paletteColorsHex;
+    for (int i = 0; i < 3; ++i) {
+        topStyles.append(fr.topStyles.value(i));
+        palettes.append(fr.palettes.value(i));
+        mats.append(fr.materials.value(i));
+        sils.append(fr.silhouettes.value(i));
+        paletteColorsHex.append(fr.paletteColors[i].name());
+    }
+    root.insert(QStringLiteral("top_styles"), topStyles);
+    root.insert(QStringLiteral("color_palette"), palettes);
+    root.insert(QStringLiteral("palette_colors"), paletteColorsHex);
+    root.insert(QStringLiteral("fabrics_materials"), mats);
+    root.insert(QStringLiteral("silhouettes"), sils);
+    root.insert(QStringLiteral("similar_decades"), QJsonArray{QStringLiteral("2020"), QStringLiteral("2025"), QStringLiteral("2030"), QStringLiteral("2035")});
+    QJsonObject reco;
+    reco.insert(QStringLiteral("Axe style"), fr.dominantTrend);
+    reco.insert(QStringLiteral("Niveau risque"), fr.riskScore < 30 ? QStringLiteral("faible") : (fr.riskScore < 60 ? QStringLiteral("modéré") : QStringLiteral("élevé")));
+    root.insert(QStringLiteral("recommended_product_attributes"), reco);
+    QJsonObject traj;
+    QJsonArray years;
+    for (int y = 2025; y <= 2032; ++y) years.append(y);
+    traj.insert(QStringLiteral("years"), years);
+    const std::array<TrendCurveLocal, 6> curves = {{
+        {"artisan-leather",   35.0, +9.0, 2028.0, -11.0, QColor("#8c4512")},
+        {"minimal-tailoring", 62.0, -2.0,    0.0,  0.0, QColor("#597f66")},
+        {"romantic-fluid",    28.0, +3.5, 2030.0, -4.0, QColor("#a6668c")},
+        {"athlux",            42.0, +6.5, 2031.0, -8.0, QColor("#3366a6")},
+        {"conceptual",        12.0, +7.5, 2034.0, -3.0, QColor("#7f4ca6")},
+        {"annual",            78.0, -5.5,    0.0,  0.0, QColor("#bf8c40")}
+    }};
+    std::array<double, 6> scenarioCurveBias = {0, 0, 0, 0, 0, 0};
+    applyScenarioBiasLocal(scenarioCurveBias, scenario);
+    auto mkCurve = [&](int idx) {
+        QJsonArray a;
+        for (int y = 2025; y <= 2032; ++y)
+            a.append(std::clamp(computeCurveScoreLocal(curves[idx], y) + scenarioCurveBias[idx], 0.0, 100.0));
+        return a;
+    };
+    traj.insert(QStringLiteral("artisan_leather_curve"), mkCurve(0));
+    traj.insert(QStringLiteral("romantic_fluid_curve"), mkCurve(2));
+    traj.insert(QStringLiteral("athlux_utility_curve"), mkCurve(3));
+    traj.insert(QStringLiteral("minimal_tailoring_curve"), mkCurve(1));
+    traj.insert(QStringLiteral("conceptual_futurism_curve"), mkCurve(4));
+    traj.insert(QStringLiteral("annual_curve"), mkCurve(5));
+    traj.insert(QStringLiteral("dominant_trend"), fr.topStyles.value(0));
+    traj.insert(QStringLiteral("next_dominant_trend"), fr.topStyles.value(1));
+    traj.insert(QStringLiteral("dominance_shifts"), QJsonArray{QStringLiteral("rank flip"), QStringLiteral("momentum shift")});
+    traj.insert(QStringLiteral("shock_events"), QJsonArray{QJsonObject{{QStringLiteral("label"), QStringLiteral("supply tension")}}});
+    QJsonArray conflictNotes;
+    for (const QString &c : fr.conflicts) conflictNotes.append(c);
+    traj.insert(QStringLiteral("conflict_notes"), conflictNotes);
+    traj.insert(QStringLiteral("overtakes"), QJsonArray{QStringLiteral("artisan > minimal")});
+    root.insert(QStringLiteral("trend_trajectory"), traj);
+    QJsonObject raw;
+    raw.insert(QStringLiteral("scenario_mode"), scenario);
+    raw.insert(QStringLiteral("volatility_proxy"), fr.riskScore * 0.8);
+    raw.insert(QStringLiteral("uncertainty_penalty"), std::max(0, fr.riskScore - 25));
+    raw.insert(QStringLiteral("temporal_certainty"), fr.confidence * 100.0);
+    raw.insert(QStringLiteral("signal_coherence"), fr.confidence * 95.0);
+    raw.insert(QStringLiteral("ranking_gap"), fr.trendScores[0] - fr.trendScores[1]);
+    raw.insert(QStringLiteral("commercial_index"), fr.trendScores[0]);
+    raw.insert(QStringLiteral("score_artisan_leather"), fr.trendScores[0]);
+    raw.insert(QStringLiteral("score_minimal_tailoring"), fr.trendScores[1]);
+    raw.insert(QStringLiteral("score_romantic_fluid"), fr.trendScores[2]);
+    raw.insert(QStringLiteral("score_athlux"), fr.trendScores[3]);
+    raw.insert(QStringLiteral("score_conceptual"), fr.trendScores[4]);
+    raw.insert(QStringLiteral("score_annual"), fr.trendScores[5]);
+    raw.insert(QStringLiteral("winner_idx"), argmaxLocal(fr.trendScores));
+    raw.insert(QStringLiteral("winner_name"), fr.dominantTrend);
+    root.insert(QStringLiteral("raw_scores"), raw);
+    QJsonArray concepts;
+    for (const auto &c : fr.concepts) {
+        QJsonObject o;
+        o.insert(QStringLiteral("product_name"), c.productName);
+        o.insert(QStringLiteral("style"), c.style);
+        o.insert(QStringLiteral("palette"), c.palette);
+        o.insert(QStringLiteral("material"), c.material);
+        o.insert(QStringLiteral("silhouette"), c.silhouette);
+        o.insert(QStringLiteral("innovation_score"), c.marketFit);
+        o.insert(QStringLiteral("market_score"), c.materialFit);
+        o.insert(QStringLiteral("feasibility_score"), c.silhouetteFit);
+        o.insert(QStringLiteral("trend_timing_score"), c.globalFit);
+        o.insert(QStringLiteral("direction_badge"), c.badge);
+        concepts.append(o);
+    }
+    root.insert(QStringLiteral("concepts_projection"), concepts);
+    root.insert(QStringLiteral("rejected_concepts"), QJsonArray{QStringLiteral("Concept X - faible alignement"), QStringLiteral("Concept Y - risque élevé")});
+    return root;
+}
+
+class MiniTrendSparkline final : public QWidget {
+    QVector<double> vals;
+    QColor lineColor{QStringLiteral("#8d5524")};
+public:
+    explicit MiniTrendSparkline(QWidget *parent = nullptr) : QWidget(parent)
+    {
+        setFixedSize(60, 18);
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+    }
+    void setSeries(const QJsonArray &arr, const QColor &c)
+    {
+        vals.clear();
+        for (int i = qMax(0, arr.size() - 5); i < arr.size(); ++i)
+            vals.push_back(arr.at(i).toDouble(0.0));
+        while (vals.size() < 5)
+            vals.push_back(vals.isEmpty() ? 0.0 : vals.last());
+        lineColor = c;
+        update();
+    }
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.fillRect(rect(), Qt::transparent);
+        if (vals.size() < 2) return;
+        double mn = vals[0], mx = vals[0];
+        for (double v : vals) { mn = std::min(mn, v); mx = std::max(mx, v); }
+        if (std::abs(mx - mn) < 1e-9) { mx += 1.0; mn -= 1.0; }
+        QPainterPath path;
+        for (int i = 0; i < vals.size(); ++i) {
+            const qreal x = 2.0 + qreal(i) * (width() - 4.0) / qreal(vals.size() - 1);
+            const qreal y = height() - 2.0 - ((vals[i] - mn) / (mx - mn)) * (height() - 4.0);
+            if (i == 0) path.moveTo(x, y); else path.lineTo(x, y);
+        }
+        QPen pen(lineColor, 1.4);
+        p.setPen(pen);
+        p.drawPath(path);
+    }
+};
+
+struct CostTabAnimState {
+    double lastCost = -1.0;
+    double lastDispCost = -1.0;
+    double lastMarg = -1.0;
+    double lastRisque = -1.0;
+    int lastScore = -1;
+    int lastStab = -1;
+    int scenarioPick = 1;
+    quint32 projectionSeed = 1u;
+    QString lastDecision;
+    int aiBlockRevealGen = 0;
+    QAbstractAnimation *aiPulseAnim = nullptr;
+    QAbstractAnimation *tierShimmerAnim = nullptr;
+    QAbstractAnimation *hdrSweepAnim = nullptr;
+    QPointer<QTimer> hdrStripBreathTimer;
+    qint64 analysisT0 = 0;
+};
+
+struct CostShadowHoverLift final : QObject {
+    QWidget *w = nullptr;
+    QGraphicsDropShadowEffect *fx = nullptr;
+    int baseBlur = 14;
+    int baseDx = 0;
+    int baseDy = 3;
+    const int hoverBlur = 32;
+    const int hoverDx = 0;
+    const int hoverDy = 10;
+    CostShadowHoverLift(QWidget *target, QGraphicsDropShadowEffect *effect, QObject *parent)
+        : QObject(parent), w(target), fx(effect)
+    {
+        if (fx) {
+            baseBlur = qMax(6, static_cast<int>(fx->blurRadius()));
+            baseDx = int(fx->xOffset());
+            baseDy = int(fx->yOffset());
+        }
+        if (w) w->installEventFilter(this);
+    }
+    bool eventFilter(QObject *o, QEvent *e) override
+    {
+        if (!fx || !w || o != w) return QObject::eventFilter(o, e);
+        if (e->type() == QEvent::Enter) {
+            fx->setBlurRadius(hoverBlur); fx->setOffset(hoverDx, hoverDy);
+        } else if (e->type() == QEvent::Leave) {
+            fx->setBlurRadius(baseBlur); fx->setOffset(baseDx, baseDy);
+        }
+        return QObject::eventFilter(o, e);
+    }
+};
+
+static int costProductScoreFromKpis(double margePct, double risqueScore, int volume)
+{
+    const double x = margePct * 0.5 + (100.0 - risqueScore) * 0.3 + std::min(volume / 10.0, 20.0);
+    return qBound(0, static_cast<int>(std::lround(x)), 100);
+}
+
+static int costConfidenceFromRisk(double risqueScore)
+{
+    if (risqueScore >= 55.0) return 78;
+    if (risqueScore >= 35.0) return 85;
+    return 92;
+}
+
+static void costDecomposeFive(const ProductAnalyzerInput &din, double totalTnd, double &wMat, double &wMo, double &wCh,
+                              double &wLog, double &wReb)
+{
+    const double mat = std::max(0.01, din.coutMatiereTnd);
+    const int vol = std::max(1, din.volumeCible);
+    const double serie = std::clamp(0.88 + 0.028 * std::log(static_cast<double>(vol)), 0.82, 1.12);
+    const double finitionBump = (din.niveauFinition == QStringLiteral("élevé")) ? 1.12 : 1.0;
+    const double delaiStress = std::clamp(1.0 + (7 - din.delaiSemaines) * 0.018, 0.94, 1.14);
+    const double matLoaded = mat * 1.22 * serie * finitionBump * delaiStress;
+    const double fixedPool = std::max(0.0, totalTnd - matLoaded);
+    wMat = std::max(0.0, matLoaded);
+    wMo = fixedPool * 0.52;
+    wCh = fixedPool * 0.22;
+    wLog = fixedPool * 0.16;
+    wReb = std::max(0.0, totalTnd - wMat - wMo - wCh - wLog);
+}
+
+class CostClickFrame final : public QFrame {
+public:
+    std::function<void()> onPressed;
+protected:
+    void mousePressEvent(QMouseEvent *e) override
+    {
+        if (e->button() == Qt::LeftButton && onPressed) onPressed();
+        QFrame::mousePressEvent(e);
+    }
+};
+
+class CostAiSignalGlyphStrip final : public QWidget {
+public:
+    explicit CostAiSignalGlyphStrip(QWidget *parent = nullptr) : QWidget(parent)
+    {
+        setFixedSize(30, 16);
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+    }
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        const QColor amber(QStringLiteral("#FF9500"));
+        p.setPen(Qt::NoPen); p.setBrush(amber);
+        const qreal y0 = 3, y1 = height() - 3.0, x0 = 3.0, x1 = 11.0, xm = (x0 + x1) * 0.5;
+        QPolygonF tri;
+        tri << QPointF(x0, y0) << QPointF(x1, y0) << QPointF(xm, y1);
+        p.drawPolygon(tri);
+        p.setBrush(Qt::NoBrush);
+        QPen pen(amber.lighter(115)); pen.setWidthF(1.15); p.setPen(pen);
+        const qreal cx = 22.0, cy = (y0 + y1) * 0.5;
+        QPolygonF dia;
+        dia << QPointF(cx, cy - 4.2) << QPointF(cx + 5.0, cy) << QPointF(cx, cy + 4.2) << QPointF(cx - 5.0, cy);
+        p.drawPolygon(dia);
+    }
+};
+
+class CostMiniHBar final : public QWidget {
+    double frac = 0.0;
+    QColor fill{QStringLiteral("#d4841a")};
+public:
+    explicit CostMiniHBar(QWidget *parent = nullptr) : QWidget(parent)
+    {
+        setMinimumHeight(10);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    }
+    void setFraction(double f) { frac = std::clamp(f, 0.0, 1.0); update(); }
+    void setFill(const QColor &c) { fill = c; update(); }
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        const QRect r = rect();
+        const int trackH = 3, y = (r.height() - trackH) / 2;
+        QRect track(0, y, r.width(), trackH);
+        p.setPen(Qt::NoPen); p.setBrush(QColor(255, 255, 255, 14));
+        p.drawRoundedRect(track, 2, 2);
+        const int fw = int(std::round(double(r.width()) * frac));
+        if (fw > 0) { QRect ch(0, y, fw, trackH); p.setBrush(fill); p.drawRoundedRect(ch, 2, 2); }
+    }
+};
+
+class CostWaterfallSection final : public QFrame {
+    QVector<QLabel *> valLabs;
+    QVector<CostMiniHBar *> bars;
+public:
+    explicit CostWaterfallSection(QWidget *parent = nullptr) : QFrame(parent)
+    {
+        setStyleSheet(QStringLiteral("QFrame{background:#1a1712;border:1px solid #3a3428;border-radius:8px;}"));
+        auto *vl = new QVBoxLayout(this);
+        vl->setContentsMargins(14, 14, 14, 14); vl->setSpacing(10);
+        auto *t = new QLabel(QStringLiteral("DÉCOMPOSITION COÛT"));
+        t->setStyleSheet(QStringLiteral("QLabel{font-size:9px;font-weight:900;letter-spacing:1.5px;color:#888888;background:transparent;border:none;}"));
+        vl->addWidget(t);
+        const QStringList names = {QStringLiteral("Matière"), QStringLiteral("Main d'œuvre"),
+                                   QStringLiteral("Charges ind."), QStringLiteral("Logistique"), QStringLiteral("Rebut")};
+        for (int i = 0; i < 5; ++i) {
+            auto *row = new QWidget; auto *hl = new QHBoxLayout(row);
+            hl->setContentsMargins(0, 0, 0, 0); hl->setSpacing(10);
+            auto *lab = new QLabel(names.at(i));
+            lab->setStyleSheet(QStringLiteral("QLabel{font-size:11px;font-weight:700;color:#B0A69E;background:transparent;border:none;min-width:92px;}"));
+            lab->setAttribute(Qt::WA_TransparentForMouseEvents);
+            auto *bar = new CostMiniHBar(row);
+            auto *vlab = new QLabel(QStringLiteral("0.00 TND"));
+            vlab->setAlignment(Qt::AlignRight | Qt::AlignVCenter); vlab->setMinimumWidth(88);
+            vlab->setStyleSheet(QStringLiteral("QLabel{font-size:11px;font-weight:800;color:#F0F0F0;background:transparent;border:none;font-variant-numeric:tabular-nums;}"));
+            vlab->setAttribute(Qt::WA_TransparentForMouseEvents);
+            hl->addWidget(lab, 0); hl->addWidget(bar, 1); hl->addWidget(vlab, 0);
+            vl->addWidget(row);
+            valLabs.push_back(vlab); bars.push_back(bar);
+        }
+    }
+    void updateParts(const QVector<double> &amounts, const QVector<QColor> &colors, const QLocale &loc)
+    {
+        double sum = 0.0;
+        for (double v : amounts) sum += v;
+        if (sum < 1e-9) sum = 1e-9;
+        for (int i = 0; i < 5 && i < amounts.size(); ++i) {
+            valLabs[i]->setText(loc.toString(amounts.at(i), 'f', 2) + QStringLiteral(" TND"));
+            bars[i]->setFraction(amounts.at(i) / sum);
+            if (i < colors.size()) bars[i]->setFill(colors.at(i));
+        }
+    }
+};
+
+class CostProjection90 final : public QWidget {
+    QVector<double> sOpt, sReal, sPess;
+public:
+    explicit CostProjection90(QWidget *parent = nullptr) : QWidget(parent)
+    {
+        setMinimumHeight(80);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    }
+    void rebuild(double baseTnd, quint32 seed)
+    {
+        sOpt.resize(9); sReal.resize(9); sPess.resize(9);
+        QRandomGenerator rng(seed ? seed : 1u);
+        const double n0 = rng.generateDouble() * 0.35 - 0.175;
+        for (int i = 0; i < 9; ++i) {
+            const double n = (rng.generateDouble() * 0.28 - 0.14);
+            sReal[i] = baseTnd + 0.15 * double(i) + n * 0.4 + n0 * 0.25;
+            sOpt[i] = baseTnd - 0.2 * double(i) + n * 0.35 + n0 * 0.2;
+            sPess[i] = baseTnd + 0.5 * double(i) + n * 0.45 + n0 * 0.3;
+        }
+        update();
+    }
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        const QRect r = rect().adjusted(6, 4, -6, -18);
+        if (r.width() < 4 || r.height() < 4) return;
+        double mn = sOpt.isEmpty() ? 0.0 : sOpt.first(), mx = mn;
+        for (double v : sOpt) { mn = std::min(mn, v); mx = std::max(mx, v); }
+        for (double v : sReal) { mn = std::min(mn, v); mx = std::max(mx, v); }
+        for (double v : sPess) { mn = std::min(mn, v); mx = std::max(mx, v); }
+        if (mx - mn < 1e-6) { mn -= 1.0; mx += 1.0; }
+        const double span = mx - mn;
+        auto xAt = [&](int i) -> qreal { return r.left() + qreal(i) * qreal(r.width()) / 8.0; };
+        auto yAt = [&](double v) -> qreal { return r.bottom() - qreal((v - mn) / span) * qreal(r.height() - 1); };
+        p.setPen(QPen(QColor(255, 255, 255, 22), 1));
+        for (int g = 0; g <= 3; ++g) {
+            const int yy = r.top() + g * r.height() / 3;
+            p.drawLine(r.left(), yy, r.right(), yy);
+        }
+        auto drawSeries = [&](const QVector<double> &s, const QColor &col, bool dashed) {
+            if (s.size() < 2) return;
+            QPainterPath path;
+            path.moveTo(xAt(0), yAt(s.first()));
+            for (int i = 1; i < s.size(); ++i) path.lineTo(xAt(i), yAt(s.at(i)));
+            QPen pen(col, 1.6);
+            if (dashed) pen.setStyle(Qt::DashLine);
+            p.setPen(pen); p.drawPath(path);
+            p.setBrush(col);
+            for (int i = 0; i < s.size(); ++i) p.drawEllipse(QPointF(xAt(i), yAt(s.at(i))), 2.2, 2.2);
+        };
+        drawSeries(sOpt, QColor(QStringLiteral("#4CAF50")), true);
+        drawSeries(sReal, QColor(QStringLiteral("#FF9500")), false);
+        drawSeries(sPess, QColor(QStringLiteral("#E57373")), true);
+        p.setPen(QColor(136, 136, 136));
+        QFont f = p.font(); f.setPixelSize(8); p.setFont(f);
+        const QStringList ticks = {QStringLiteral("J+0"), QStringLiteral("J+10"), QStringLiteral("J+20"),
+                                   QStringLiteral("J+30"), QStringLiteral("J+40"), QStringLiteral("J+50"),
+                                   QStringLiteral("J+60"), QStringLiteral("J+70"), QStringLiteral("J+80")};
+        for (int i = 0; i < 9; ++i) {
+            const qreal x = xAt(i) - 14;
+            p.drawText(QRectF(x, rect().bottom() - 16, 28, 14), Qt::AlignHCenter | Qt::AlignTop, ticks.at(i));
+        }
+    }
+};
+
+} // namespace (types Simulateur Coût + Historique)
+
 void MainWindow::showProduitCoutDialog() {
-    if(ui->tabWidgetProduits->count() < 5) return; // Sécurité si l'onglet n'existe pas
+    if (ui->tabWidgetProduits->count() < 5)
+        return;
 
-    QWidget *ongletCout = ui->tabWidgetProduits->widget(4); // Index 4 = 5ème onglet
-    if (ongletCout->layout()) { clearLayout(ongletCout->layout()); delete ongletCout->layout(); }
+    if (m_costSimReply) {
+        m_costSimReply->disconnect();
+        m_costSimReply->abort();
+        m_costSimReply->deleteLater();
+        m_costSimReply.clear();
+    }
+    m_costSimHtmlOut.clear();
 
-    QVBoxLayout *l = new QVBoxLayout(ongletCout);
-    QLabel *titre = new QLabel("💰 SIMULATEUR DE COÛTS & MARGES");
-    titre->setStyleSheet("font-size: 22px; font-weight: bold; color: #2c3e50; margin-bottom: 20px;");
-    titre->setAlignment(Qt::AlignCenter); l->addWidget(titre);
+    QWidget *ongletCout = ui->tabWidgetProduits->widget(4);
+    for (CostIntelligenceEngine *e : ongletCout->findChildren<CostIntelligenceEngine *>())
+        e->deleteLater();
 
-    QLabel *desc = new QLabel();
-    const int idx = ui->tableProduits->currentRow();
-
-    if(idx >= 0 && idx < ui->tableProduits->rowCount()) {
-        // Calcul basé sur la ligne de la table (fiable après tri/filtre).
-        auto *itDes = ui->tableProduits->item(idx, 1);
-        auto *itCout = ui->tableProduits->item(idx, 2);
-        auto *itTemp = ui->tableProduits->item(idx, 5);
-
-        const QString designation = itDes ? itDes->text() : QString();
-        const double coutMP = itCout ? itCout->text().toDouble() : 0.0;
-        const int tempsFab = itTemp ? itTemp->text().toInt() : 0;
-
-        const double coutMainOeuvre = tempsFab * 15.5; // Base: 15.5 DT/h par artisan
-        const double coutTotal = coutMP + coutMainOeuvre;
-        const double prixVente = coutTotal * 2.5; // La marge Fil d'Or
-
-        QString html = QString(
-                           "<div style='background: white; border: 1px solid #d7ccc8; border-radius: 10px; padding: 20px; font-size: 15px; color: #3e2723;'>"
-                           "<h3 style='color:#8d5524; margin-top:0;'>Analyse Financière : %1</h3><hr>"
-                           "<ul>"
-                           "<li>Coût Matière Première (Cuir/Fil) : <b>%2 DT</b></li>"
-                           "<li>Coût Main d'Oeuvre estimé : <b>%3 DT</b> (%4 h)</li>"
-                           "<li>Coût de revient total : <b><span style='color:#c0392b;'>%5 DT</span></b></li>"
-                           "</ul><hr>"
-                           "Prix de vente conseillé au public (Marge x2.5) : <b><span style='color:#27ae60; font-size:22px;'>%6 DT</span></b>"
-                           "</div>"
-                           ).arg(designation).arg(coutMP).arg(coutMainOeuvre).arg(tempsFab).arg(coutTotal).arg(prixVente);
-        desc->setText(html);
-    } else {
-        // AUCUN PRODUIT SÉLECTIONNÉ
-        desc->setText("Veuillez sélectionner un produit dans l'onglet 'Liste des Produits', puis cliquez à nouveau sur le module Coût pour simuler sa marge.");
-        desc->setStyleSheet("font-size: 16px; color: #7f8c8d; font-style: italic;");
-        desc->setAlignment(Qt::AlignCenter);
+    if (ongletCout->layout()) {
+        clearLayout(ongletCout->layout());
+        delete ongletCout->layout();
     }
 
-    l->addWidget(desc);
-    l->addStretch();
+    auto *rootLay = new QVBoxLayout(ongletCout);
+    rootLay->setContentsMargins(0, 0, 0, 0);
+    rootLay->setSpacing(0);
+    ongletCout->setStyleSheet(QStringLiteral("QWidget{background:#0C0C0C;}"));
 
-    ui->tabWidgetProduits->setCurrentIndex(4); // Bascule sur l'onglet Coût
+    auto *scroll = new QScrollArea;
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setStyleSheet(QStringLiteral(
+        "QScrollArea{border:none;background:#0C0C0C;}"));
+    auto *cw = new QWidget;
+    cw->setStyleSheet(QStringLiteral("background:#121212;"));
+    auto *cwOuter = new QVBoxLayout(cw);
+    cwOuter->setContentsMargins(0, 0, 0, 0);
+    cwOuter->setSpacing(0);
+    auto *centerRail = new QHBoxLayout;
+    centerRail->setContentsMargins(0, 0, 0, 0);
+    centerRail->addStretch(1);
+    auto *contentHost = new QWidget;
+    contentHost->setMinimumWidth(560);
+    contentHost->setMaximumWidth(1440);
+    contentHost->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    centerRail->addWidget(contentHost, 0, Qt::AlignHCenter);
+    centerRail->addStretch(1);
+    cwOuter->addLayout(centerRail);
+
+    auto *v = new QVBoxLayout(contentHost);
+    v->setAlignment(Qt::AlignTop);
+    v->setContentsMargins(18, 16, 18, 22);
+    v->setSpacing(18);
+
+    auto *consoleBar = new QWidget;
+    consoleBar->setStyleSheet(QStringLiteral(
+        "QWidget{background:#141414;border:1px solid #252525;border-radius:10px;}"));
+    auto *cbLay = new QHBoxLayout(consoleBar);
+    cbLay->setContentsMargins(16, 12, 16, 12);
+    cbLay->setSpacing(16);
+    auto *lblLiveEngine = new QLabel(QStringLiteral("●  LIVE ENGINE"));
+    lblLiveEngine->setStyleSheet(QStringLiteral(
+        "QLabel{font-size:10px;font-weight:900;letter-spacing:1.4px;color:#FF9500;background:transparent;border:none;}"));
+    auto *lblConsoleTitle = new QLabel(QStringLiteral("SIMULATEUR DE COÛT — INTELLIGENCE LAYER V2"));
+    lblConsoleTitle->setAlignment(Qt::AlignCenter);
+    lblConsoleTitle->setStyleSheet(QStringLiteral(
+        "QLabel{font-size:13px;font-weight:800;letter-spacing:0.8px;color:#F0F0F0;background:transparent;border:none;}"));
+    auto *lblConsoleClock = new QLabel(QTime::currentTime().toString(QStringLiteral("HH:mm:ss")));
+    lblConsoleClock->setStyleSheet(QStringLiteral(
+        "QLabel{font-size:12px;font-weight:700;letter-spacing:0.5px;color:#888888;background:transparent;border:none;font-variant-numeric:tabular-nums;}"));
+    cbLay->addWidget(lblLiveEngine, 0, Qt::AlignVCenter);
+    cbLay->addStretch(1);
+    cbLay->addWidget(lblConsoleTitle, 0, Qt::AlignVCenter);
+    cbLay->addStretch(1);
+    cbLay->addWidget(lblConsoleClock, 0, Qt::AlignVCenter);
+    auto *clockTimer = new QTimer(consoleBar);
+    clockTimer->setInterval(1000);
+    QObject::connect(clockTimer, &QTimer::timeout, lblConsoleClock, [lblConsoleClock]() {
+        lblConsoleClock->setText(QTime::currentTime().toString(QStringLiteral("HH:mm:ss")));
+    });
+    clockTimer->start();
+
+    auto *leLib = new QLineEdit;
+    leLib->setPlaceholderText(QStringLiteral("Réf."));
+    const int prSel = ui->tableProduits->currentRow();
+    if (prSel >= 0 && prSel < ui->tableProduits->rowCount()) {
+        if (QTableWidgetItem *it0 = ui->tableProduits->item(prSel, 1)) {
+            const QString t0 = it0->text().trimmed();
+            if (!t0.isEmpty())
+                leLib->setText(t0);
+        }
+    }
+    auto *sbMat = new QDoubleSpinBox;
+    sbMat->setRange(0.01, 1e6);
+    sbMat->setDecimals(2);
+    sbMat->setSuffix(QStringLiteral(" TND"));
+    sbMat->setValue(32.0);
+    auto *sbVol = new QSpinBox;
+    sbVol->setRange(1, 1000000);
+    sbVol->setValue(200);
+
+    const QString costFieldStyle = QStringLiteral(
+        "QLineEdit,QDoubleSpinBox,QSpinBox{background:#1A1A1A;border:1px solid #2E2E2E;border-radius:8px;"
+        "padding:9px 11px;min-height:24px;font-size:13px;color:#F0F0F0;selection-background-color:#FF9500;selection-color:#0C0C0C;}"
+        "QLineEdit:focus,QDoubleSpinBox:focus,QSpinBox:focus{border:1px solid #FF9500;background:#161616;}");
+    leLib->setStyleSheet(costFieldStyle);
+    sbMat->setStyleSheet(costFieldStyle);
+    sbVol->setStyleSheet(costFieldStyle);
+
+    auto *btnAi = new QPushButton(QStringLiteral("Analyser"));
+    btnAi->setCursor(Qt::PointingHandCursor);
+    btnAi->setMinimumWidth(168);
+    btnAi->setMaximumWidth(220);
+    btnAi->setMinimumHeight(48);
+    btnAi->setStyleSheet(QStringLiteral(
+        "QPushButton{background:#FF9500;color:#0C0C0C;font-size:13px;font-weight:900;border:none;border-radius:8px;padding:11px 26px;"
+        "letter-spacing:0.5px;}"
+        "QPushButton:hover{background:#FFB340;}"
+        "QPushButton:pressed{background:#E68600;padding-top:12px;padding-bottom:10px;}"
+        "QPushButton:disabled{background:#3A3A3A;color:#666666;}"));
+    auto *btnAiPressFx = new QGraphicsOpacityEffect(btnAi);
+    btnAiPressFx->setOpacity(1.0);
+    btnAi->setGraphicsEffect(btnAiPressFx);
+    auto *btnAiPressAnim = new QPropertyAnimation(btnAiPressFx, QByteArrayLiteral("opacity"), btnAi);
+    btnAiPressAnim->setDuration(85);
+    btnAiPressAnim->setEasingCurve(QEasingCurve::OutQuad);
+
+    auto *microW = new QWidget;
+    microW->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    auto *mh = new QHBoxLayout(microW);
+    mh->setContentsMargins(0, 0, 0, 0);
+    mh->setSpacing(8);
+    auto *btnStress = new QPushButton(QStringLiteral("+10%"));
+    btnStress->setCursor(Qt::PointingHandCursor);
+    btnStress->setToolTip(QStringLiteral("+10 % matière"));
+    btnStress->setStyleSheet(QStringLiteral(
+        "QPushButton{font-size:11px;font-weight:800;padding:7px 12px;border-radius:8px;background:#1E1E1E;border:1px solid #333;color:#FF9500;}"
+        "QPushButton:hover{background:#2A2A2A;}"));
+    auto *sldSens = new QSlider(Qt::Horizontal);
+    sldSens->setRange(-15, 15);
+    sldSens->setValue(0);
+    sldSens->setToolTip(QStringLiteral("Matière ±"));
+    auto *lblSens = new QLabel(QStringLiteral("+0%"));
+    lblSens->setFixedWidth(44);
+    lblSens->setAlignment(Qt::AlignCenter);
+    lblSens->setStyleSheet(QStringLiteral("font-size:11px;font-weight:800;color:#FF9500;"));
+    auto *modeBtn = new QPushButton(QStringLiteral("⚡"));
+    modeBtn->setCheckable(true);
+    modeBtn->setFixedWidth(40);
+    modeBtn->setCursor(Qt::PointingHandCursor);
+    modeBtn->setToolTip(QStringLiteral("⚡ rapide · 🧠 détail"));
+    modeBtn->setStyleSheet(QStringLiteral(
+        "QPushButton{font-size:14px;border-radius:8px;background:#1A1A1A;border:1px solid #333;color:#E0E0E0;padding:6px;}"));
+    mh->addWidget(btnStress);
+    mh->addWidget(sldSens, 1);
+    mh->addWidget(lblSens);
+    mh->addWidget(modeBtn);
+    auto *simW = new QWidget;
+    simW->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    auto *simLay = new QHBoxLayout(simW);
+    simLay->setContentsMargins(0, 0, 0, 0);
+    simLay->setSpacing(10);
+    auto *lblCostSim = new QLabel(QStringLiteral("Simulation coût"));
+    lblCostSim->setStyleSheet(QStringLiteral("font-size:10px;font-weight:800;color:#888888;letter-spacing:0.7px;"));
+    auto *sldCostShift = new QSlider(Qt::Horizontal);
+    sldCostShift->setRange(-25, 25);
+    sldCostShift->setValue(0);
+    auto *lblCostShift = new QLabel(QStringLiteral("+0%"));
+    lblCostShift->setFixedWidth(46);
+    lblCostShift->setAlignment(Qt::AlignCenter);
+    lblCostShift->setStyleSheet(QStringLiteral("font-size:11px;font-weight:800;color:#FF9500;"));
+    auto *btnImprove = new QPushButton(QStringLiteral("Simulate improved version"));
+    btnImprove->setCursor(Qt::PointingHandCursor);
+    btnImprove->setStyleSheet(QStringLiteral(
+        "QPushButton{font-size:11px;font-weight:800;padding:7px 12px;border-radius:8px;background:#142018;border:1px solid #2E4D3A;color:#81C784;}"
+        "QPushButton:hover{background:#1A2A22;}"));
+    simLay->addWidget(lblCostSim);
+    simLay->addWidget(sldCostShift, 1);
+    simLay->addWidget(lblCostShift);
+    simLay->addWidget(btnImprove);
+
+    leLib->setMinimumWidth(160);
+    leLib->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    sbMat->setMinimumWidth(120);
+    sbVol->setMinimumWidth(100);
+
+    auto *topInputsRow = new QWidget;
+    topInputsRow->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    auto *topH = new QHBoxLayout(topInputsRow);
+    topH->setContentsMargins(0, 0, 0, 0);
+    topH->setSpacing(24);
+    const auto addLabeledField = [&topH](const QString &title, QWidget *field, int stretch) {
+        auto *col = new QWidget;
+        auto *cv = new QVBoxLayout(col);
+        cv->setContentsMargins(0, 0, 0, 0);
+        cv->setSpacing(6);
+        auto *lt = new QLabel(title);
+        lt->setStyleSheet(QStringLiteral(
+            "QLabel{font-size:9px;font-weight:800;letter-spacing:1px;color:#888888;background:transparent;border:none;}"));
+        cv->addWidget(lt);
+        cv->addWidget(field);
+        topH->addWidget(col, stretch);
+    };
+    addLabeledField(QStringLiteral("Produit"), leLib, 2);
+    addLabeledField(QStringLiteral("Coût matière"), sbMat, 1);
+    addLabeledField(QStringLiteral("Volume"), sbVol, 1);
+    topH->addStretch(1);
+    topH->addWidget(btnAi, 0, Qt::AlignBottom);
+
+    auto *secondaryControlsRow = new QWidget;
+    secondaryControlsRow->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    auto *secLay = new QHBoxLayout(secondaryControlsRow);
+    secLay->setContentsMargins(0, 4, 0, 0);
+    secLay->setSpacing(32);
+    secLay->addWidget(microW, 1);
+    secLay->addWidget(simW, 2);
+
+    const QString costSliderStyle = QStringLiteral(
+        "QSlider::groove:horizontal{background:#252525;height:4px;border-radius:2px;border:none;}"
+        "QSlider::handle:horizontal{background:#FF9500;width:14px;height:14px;margin:-5px 0;border-radius:7px;border:none;}"
+        "QSlider::sub-page:horizontal{background:#3A3A3A;border-radius:2px;}"
+        "QSlider::add-page:horizontal{background:#252525;border-radius:2px;}");
+    sldSens->setStyleSheet(costSliderStyle);
+    sldCostShift->setStyleSheet(costSliderStyle);
+
+    auto *paramsShell = new QFrame;
+    paramsShell->setStyleSheet(QStringLiteral(
+        "QFrame{background:#161616;border:1px solid #252525;border-radius:10px;}"));
+    auto *psOuter = new QVBoxLayout(paramsShell);
+    psOuter->setContentsMargins(16, 14, 16, 16);
+    psOuter->setSpacing(12);
+    auto *lblParamsTitle = new QLabel(QStringLiteral("PARAMÈTRES COÛT"));
+    lblParamsTitle->setStyleSheet(QStringLiteral(
+        "QLabel{font-size:10px;font-weight:900;letter-spacing:1.6px;color:#888888;background:transparent;border:none;}"));
+    psOuter->addWidget(lblParamsTitle);
+    psOuter->addWidget(topInputsRow);
+    psOuter->addWidget(secondaryControlsRow);
+
+    auto *preAnalysisHost = new QWidget;
+    preAnalysisHost->setObjectName(QStringLiteral("costPreAnalysisHost"));
+    preAnalysisHost->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+    preAnalysisHost->setStyleSheet(QStringLiteral(
+        "QWidget#costPreAnalysisHost{"
+        "background:#161616;"
+        "border:1px solid #252525;border-radius:10px;}"));
+    auto *phaOuter = new QVBoxLayout(preAnalysisHost);
+    phaOuter->setContentsMargins(16, 16, 16, 20);
+    phaOuter->setSpacing(0);
+
+    auto *preAnalysisCard = new QFrame;
+    preAnalysisCard->setObjectName(QStringLiteral("costPreAnalysisCard"));
+    preAnalysisCard->setMaximumWidth(620);
+    preAnalysisCard->setMinimumWidth(300);
+    preAnalysisCard->setMinimumHeight(256);
+    preAnalysisCard->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Minimum);
+    preAnalysisCard->setStyleSheet(QStringLiteral(
+        "QFrame#costPreAnalysisCard{"
+        "background:#141414;"
+        "border:1px solid #2A2A2A;border-radius:10px;}"));
+    auto *cardSh = new QGraphicsDropShadowEffect(preAnalysisCard);
+    cardSh->setBlurRadius(22);
+    cardSh->setOffset(0, 6);
+    cardSh->setColor(QColor(0, 0, 0, 26));
+    preAnalysisCard->setGraphicsEffect(cardSh);
+
+    auto *cardInner = new QVBoxLayout(preAnalysisCard);
+    cardInner->setContentsMargins(28, 24, 28, 22);
+    cardInner->setSpacing(16);
+
+    auto *headRow = new QHBoxLayout;
+    headRow->setSpacing(14);
+    auto *pulseIcon = new QLabel(QStringLiteral("✦"));
+    pulseIcon->setAttribute(Qt::WA_TransparentForMouseEvents);
+    pulseIcon->setAlignment(Qt::AlignTop | Qt::AlignHCenter);
+    pulseIcon->setStyleSheet(QStringLiteral(
+        "QLabel{font-size:26px;color:#FF9500;background:transparent;border:none;padding:4px 10px 0 0;}"));
+    auto *iconFx = new QGraphicsOpacityEffect(pulseIcon);
+    pulseIcon->setGraphicsEffect(iconFx);
+    auto *iconPulse = new QPropertyAnimation(iconFx, QByteArrayLiteral("opacity"), pulseIcon);
+    iconPulse->setDuration(1600);
+    iconPulse->setStartValue(0.42);
+    iconPulse->setEndValue(1.0);
+    iconPulse->setEasingCurve(QEasingCurve::InOutSine);
+    iconPulse->setLoopCount(-1);
+    iconPulse->start();
+
+    auto *ttlCol = new QWidget;
+    ttlCol->setAttribute(Qt::WA_TransparentForMouseEvents);
+    auto *ttlLay = new QVBoxLayout(ttlCol);
+    ttlLay->setContentsMargins(0, 0, 0, 0);
+    ttlLay->setSpacing(6);
+    auto *lblPreTitle = new QLabel(QStringLiteral("Pré-analyse"));
+    lblPreTitle->setAttribute(Qt::WA_TransparentForMouseEvents);
+    lblPreTitle->setStyleSheet(QStringLiteral(
+        "QLabel{font-size:20px;font-weight:800;color:#F5F5F5;letter-spacing:-0.2px;background:transparent;border:none;}"));
+    auto *lblPreSub = new QLabel(QStringLiteral("Le moteur IA est prêt à analyser coût, marge et risque"));
+    lblPreSub->setAttribute(Qt::WA_TransparentForMouseEvents);
+    lblPreSub->setWordWrap(true);
+    lblPreSub->setStyleSheet(QStringLiteral(
+        "QLabel{font-size:12px;font-weight:500;color:#A8A8A8;line-height:1.5;background:transparent;border:none;}"));
+    auto *lblPreReady = new QLabel(QStringLiteral("Système prêt • en attente d’analyse"));
+    lblPreReady->setAttribute(Qt::WA_TransparentForMouseEvents);
+    lblPreReady->setWordWrap(true);
+    lblPreReady->setStyleSheet(QStringLiteral(
+        "QLabel{font-size:11px;font-weight:700;letter-spacing:0.4px;color:#888888;background:transparent;border:none;}"));
+    ttlLay->addWidget(lblPreTitle);
+    ttlLay->addWidget(lblPreSub);
+    ttlLay->addWidget(lblPreReady);
+    headRow->addWidget(pulseIcon, 0, Qt::AlignTop);
+    headRow->addWidget(ttlCol, 1);
+
+    const auto mkPrevCell = [](const QString &cap, const QString &val) {
+        auto *cell = new QFrame;
+        cell->setStyleSheet(QStringLiteral(
+            "QFrame{background:#1A1A1A;border:1px solid #2A2A2A;border-radius:8px;}"));
+        auto *cl = new QVBoxLayout(cell);
+        cl->setContentsMargins(14, 12, 14, 12);
+        cl->setSpacing(4);
+        auto *c = new QLabel(cap);
+        c->setAttribute(Qt::WA_TransparentForMouseEvents);
+        c->setStyleSheet(QStringLiteral(
+            "QLabel{font-size:9px;font-weight:800;letter-spacing:0.9px;color:#888888;background:transparent;border:none;}"));
+        auto *vlab = new QLabel(val);
+        vlab->setAttribute(Qt::WA_TransparentForMouseEvents);
+        vlab->setStyleSheet(QStringLiteral(
+            "QLabel{font-size:17px;font-weight:800;color:#F0F0F0;background:transparent;border:none;}"));
+        cl->addWidget(c);
+        cl->addWidget(vlab);
+        return cell;
+    };
+    auto *metricsRow = new QHBoxLayout;
+    metricsRow->setSpacing(12);
+    metricsRow->addWidget(mkPrevCell(QStringLiteral("COÛT ESTIMÉ"), QStringLiteral("— TND")), 1);
+    metricsRow->addWidget(mkPrevCell(QStringLiteral("MARGE ESTIMÉE"), QStringLiteral("— %")), 1);
+    metricsRow->addWidget(mkPrevCell(QStringLiteral("RISQUE ESTIMÉ"), QStringLiteral("—")), 1);
+
+    auto *lblPreHint = new QLabel(QStringLiteral("Lancez l’analyse pour générer la décision IA"));
+    lblPreHint->setAttribute(Qt::WA_TransparentForMouseEvents);
+    lblPreHint->setAlignment(Qt::AlignCenter);
+    lblPreHint->setWordWrap(true);
+    lblPreHint->setStyleSheet(QStringLiteral(
+        "QLabel{font-size:11px;font-weight:600;color:#777777;background:transparent;border:none;padding:2px 0 0 0;}"));
+
+    auto *shimmerBar = new QFrame;
+    shimmerBar->setAttribute(Qt::WA_TransparentForMouseEvents);
+    shimmerBar->setFixedHeight(4);
+    shimmerBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    shimmerBar->setStyleSheet(QStringLiteral(
+        "QFrame{background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #D7CCC8, stop:0.5 #8D6E63, stop:1 #D7CCC8);"
+        "border:none;border-radius:2px;}"));
+    auto *shFx = new QGraphicsOpacityEffect(shimmerBar);
+    shimmerBar->setGraphicsEffect(shFx);
+    shFx->setOpacity(0.65);
+    auto *shAnim = new QPropertyAnimation(shFx, QByteArrayLiteral("opacity"), shimmerBar);
+    shAnim->setDuration(1800);
+    shAnim->setStartValue(0.35);
+    shAnim->setEndValue(1.0);
+    shAnim->setEasingCurve(QEasingCurve::InOutSine);
+    shAnim->setLoopCount(-1);
+    shAnim->start();
+
+    cardInner->addLayout(headRow);
+    cardInner->addLayout(metricsRow);
+    cardInner->addWidget(lblPreHint);
+    cardInner->addWidget(shimmerBar);
+
+    auto *centerRow = new QHBoxLayout;
+    centerRow->addStretch(1);
+    centerRow->addWidget(preAnalysisCard, 0, Qt::AlignHCenter);
+    centerRow->addStretch(1);
+    phaOuter->addLayout(centerRow);
+
+    v->addWidget(consoleBar);
+    v->addWidget(paramsShell);
+    v->addWidget(preAnalysisHost);
+
+    auto *resultCard = new QFrame;
+    resultCard->setMinimumWidth(520);
+    resultCard->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    resultCard->setVisible(false);
+    resultCard->setStyleSheet(QStringLiteral(
+        "QFrame#smartCostCard{"
+        "background: transparent;"
+        "border: none;}"));
+    resultCard->setObjectName(QStringLiteral("smartCostCard"));
+
+    auto *lblBadge = new QLabel(QStringLiteral("—"));
+    lblBadge->setAttribute(Qt::WA_TransparentForMouseEvents);
+    lblBadge->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    lblBadge->setWordWrap(false);
+    lblBadge->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Minimum);
+    lblBadge->setMinimumHeight(26);
+    lblBadge->setStyleSheet(QStringLiteral(
+        "font-size:9px;font-weight:800;letter-spacing:1.1px;border-radius:999px;padding:6px 14px;color:#E0E0E0;"
+        "background:rgba(255,149,0,0.18);border:1px solid rgba(255,149,0,0.35);"));
+
+    auto *lblConf = new QLabel(QStringLiteral("Confiance 0%"));
+    lblConf->setAttribute(Qt::WA_TransparentForMouseEvents);
+    lblConf->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    lblConf->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+    lblConf->setStyleSheet(QStringLiteral(
+        "font-size:11px;font-weight:800;color:#CCCCCC;letter-spacing:0.35px;background:transparent;border:none;"));
+    auto *confProgressBar = new QProgressBar;
+    confProgressBar->setAttribute(Qt::WA_TransparentForMouseEvents);
+    confProgressBar->setRange(0, 100);
+    confProgressBar->setValue(0);
+    confProgressBar->setFixedHeight(5);
+    confProgressBar->setMaximumWidth(168);
+    confProgressBar->setTextVisible(false);
+    confProgressBar->setStyleSheet(QStringLiteral(
+        "QProgressBar{border:none;border-radius:3px;background:rgba(255,255,255,0.08);height:4px;}"
+        "QProgressBar::chunk{border-radius:3px;background:qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+        "stop:0 #FF9500,stop:1 #FFB84D);}"));
+    auto *confWrap = new QWidget;
+    confWrap->setAttribute(Qt::WA_TransparentForMouseEvents);
+    auto *confVL = new QVBoxLayout(confWrap);
+    confVL->setContentsMargins(0, 0, 0, 0);
+    confVL->setSpacing(5);
+    confVL->addWidget(lblConf, 0, Qt::AlignRight);
+    confVL->addWidget(confProgressBar, 0, Qt::AlignRight);
+
+    auto *aiStatusRow = new QWidget;
+    aiStatusRow->setObjectName(QStringLiteral("costAiStatusRow"));
+    aiStatusRow->setVisible(false);
+    aiStatusRow->setStyleSheet(QStringLiteral("QWidget#costAiStatusRow{background:transparent;border:none;}"));
+    auto *aiStatusH = new QHBoxLayout(aiStatusRow);
+    aiStatusH->setContentsMargins(0, 2, 0, 4);
+    aiStatusH->setSpacing(10);
+    auto *lblAiPulseDot = new QLabel(QStringLiteral("●"));
+    lblAiPulseDot->setAttribute(Qt::WA_TransparentForMouseEvents);
+    lblAiPulseDot->setStyleSheet(QStringLiteral(
+        "QLabel{color:#FFAB40;font-size:12px;background:transparent;border:none;padding:0;}"));
+    auto *lblAiRunning = new QLabel(QStringLiteral("Analyse en cours"));
+    lblAiRunning->setAttribute(Qt::WA_TransparentForMouseEvents);
+    lblAiRunning->setStyleSheet(QStringLiteral(
+        "QLabel{font-size:12px;font-weight:700;color:#CCCCCC;letter-spacing:0.2px;"
+        "background:transparent;border:none;}"));
+    aiStatusH->addWidget(lblAiPulseDot, 0, Qt::AlignVCenter);
+    aiStatusH->addWidget(lblAiRunning, 0, Qt::AlignVCenter);
+    aiStatusH->addStretch(1);
+
+    // tier: 0=SIGNAL, 1=CONFLICT (tension), 2=DECISION (héros), 3=IMPACT — shim = shimmer avant révélation
+    const auto mkAiTierSlot = [](int tier, const QString &titleUpper, bool showLine2) {
+        auto *wrap = new QWidget;
+        wrap->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+        auto *wl = new QVBoxLayout(wrap);
+        wl->setContentsMargins(0, 0, 0, 0);
+        wl->setSpacing(3);
+
+        auto *tierCard = new QFrame;
+        tierCard->setObjectName(QStringLiteral("costAiTierCard"));
+        tierCard->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+
+        QString tierCss;
+        int outerM = 4;
+        int padH = 15;
+        int padV = 12;
+        int gapInner = 6;
+        QString titleSs = QStringLiteral(
+            "QLabel{font-size:8px;font-weight:900;letter-spacing:1.9px;color:#CFD8DC;background:transparent;"
+            "border:none;}");
+        QString l1Ss = QStringLiteral(
+            "QLabel{font-size:13px;font-weight:700;color:#EDE7E2;background:transparent;border:none;}");
+        QString l2Ss = QStringLiteral(
+            "QLabel{font-size:11px;font-weight:600;color:#B0A69E;background:transparent;border:none;}");
+        QString innerBg = QStringLiteral("rgba(26,22,20,0.94)");
+
+        QGraphicsDropShadowEffect *tierSh = nullptr;
+        if (tier == 0) {
+            tierCss = QStringLiteral(
+                "QFrame#costAiTierCard{background:rgba(0,0,0,0.11);border:none;border-radius:12px;}");
+            tierSh = new QGraphicsDropShadowEffect(tierCard);
+            tierSh->setBlurRadius(12);
+            tierSh->setOffset(0, 2);
+            tierSh->setColor(QColor(0, 0, 0, 28));
+        } else if (tier == 1) {
+            tierCss = QStringLiteral(
+                "QFrame#costAiTierCard{"
+                "background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 rgba(255,171,64,0.16),stop:1 rgba(24,18,14,0.92));"
+                "border:1px solid rgba(255,202,128,0.92);"
+                "border-radius:12px;}");
+            innerBg = QStringLiteral("rgba(22,16,12,0.97)");
+            titleSs = QStringLiteral(
+                "QLabel{font-size:8px;font-weight:900;letter-spacing:2px;color:#FFE0B2;background:transparent;"
+                "border:none;}");
+            l1Ss = QStringLiteral(
+                "QLabel{font-size:14px;font-weight:800;color:#FFF8E1;background:transparent;border:none;}");
+            tierSh = new QGraphicsDropShadowEffect(tierCard);
+            tierSh->setBlurRadius(24);
+            tierSh->setOffset(0, 5);
+            tierSh->setColor(QColor(255, 145, 0, 70));
+        } else if (tier == 2) {
+            outerM = 7;
+            padH = 24;
+            padV = 19;
+            gapInner = 11;
+            tierCss = QStringLiteral(
+                "QFrame#costAiTierCard{"
+                "background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 rgba(255,235,160,0.26),stop:1 rgba(90,60,20,0.22));"
+                "border:1px solid rgba(255,253,231,0.95);"
+                "border-radius:14px;}");
+            innerBg = QStringLiteral("rgba(22,18,28,0.98)");
+            titleSs = QStringLiteral(
+                "QLabel{font-size:9px;font-weight:900;letter-spacing:2.5px;color:#FFF176;background:transparent;"
+                "border:none;}");
+            l1Ss = QStringLiteral(
+                "QLabel{font-size:19px;font-weight:800;color:#FFFDE7;background:transparent;border:none;"
+                "line-height:1.22;}");
+            tierSh = new QGraphicsDropShadowEffect(tierCard);
+            tierSh->setBlurRadius(32);
+            tierSh->setOffset(0, 8);
+            tierSh->setColor(QColor(255, 213, 79, 88));
+        } else {
+            tierCss = QStringLiteral(
+                "QFrame#costAiTierCard{background:rgba(0,0,0,0.09);border:none;border-radius:12px;}");
+            innerBg = QStringLiteral("rgba(24,20,18,0.88)");
+            titleSs = QStringLiteral(
+                "QLabel{font-size:8px;font-weight:800;letter-spacing:1.7px;color:#A1887F;background:transparent;"
+                "border:none;}");
+            l1Ss = QStringLiteral(
+                "QLabel{font-size:12px;font-weight:600;color:rgba(236,230,224,0.74);background:transparent;"
+                "border:none;line-height:1.4;}");
+            tierSh = new QGraphicsDropShadowEffect(tierCard);
+            tierSh->setBlurRadius(9);
+            tierSh->setOffset(0, 2);
+            tierSh->setColor(QColor(0, 0, 0, 18));
+        }
+        tierCard->setStyleSheet(tierCss);
+        if (tierSh)
+            tierCard->setGraphicsEffect(tierSh);
+
+        auto *outerLay = new QVBoxLayout(tierCard);
+        outerLay->setContentsMargins(outerM, outerM, outerM, outerM);
+        outerLay->setSpacing(0);
+
+        auto *inner = new QFrame;
+        inner->setObjectName(QStringLiteral("costAiInner"));
+        inner->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+        {
+            QString innerExtra;
+            if (tier == 2) {
+                innerExtra = QStringLiteral(
+                    "border-left:6px solid #FFE082;"
+                    "background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 rgba(36,28,48,1),stop:1 rgba(10,8,14,1));");
+                innerBg.clear();
+            }
+            inner->setStyleSheet(QStringLiteral(
+                "QFrame#costAiInner{background:%1;border:none;border-radius:12px;%2}")
+                                     .arg(innerBg.isEmpty() ? QStringLiteral("transparent") : innerBg, innerExtra));
+        }
+
+        auto *vl = new QVBoxLayout(inner);
+        vl->setContentsMargins(padH, padV, padH, padV);
+        vl->setSpacing(gapInner);
+        const QString tierIcon = (tier == 0) ? QStringLiteral("⌁")
+            : (tier == 1)                      ? QStringLiteral("⚡")
+                : (tier == 2)                  ? QStringLiteral("▸")
+                                               : QStringLiteral("◇");
+        QLabel *tt = nullptr;
+        if (tier == 0) {
+            auto *titleRow = new QHBoxLayout;
+            titleRow->setContentsMargins(0, 0, 0, 0);
+            titleRow->setSpacing(8);
+            auto *glyph = new CostAiSignalGlyphStrip(inner);
+            titleRow->addWidget(glyph, 0, Qt::AlignVCenter);
+            tt = new QLabel(titleUpper);
+            tt->setAttribute(Qt::WA_TransparentForMouseEvents);
+            tt->setStyleSheet(titleSs);
+            titleRow->addWidget(tt, 1, Qt::AlignVCenter);
+            vl->addLayout(titleRow);
+        } else {
+            tt = new QLabel(QStringLiteral("%1  %2").arg(tierIcon, titleUpper));
+            tt->setAttribute(Qt::WA_TransparentForMouseEvents);
+            tt->setStyleSheet(titleSs);
+            vl->addWidget(tt);
+        }
+        auto *l1 = new QLabel(QStringLiteral("—"));
+        l1->setAttribute(Qt::WA_TransparentForMouseEvents);
+        l1->setWordWrap(true);
+        l1->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+        l1->setStyleSheet(l1Ss);
+        auto *l2 = new QLabel;
+        l2->setAttribute(Qt::WA_TransparentForMouseEvents);
+        l2->setWordWrap(true);
+        l2->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+        l2->setVisible(showLine2);
+        l2->setStyleSheet(l2Ss);
+        if (tier == 2) {
+            auto *heroRow = new QHBoxLayout;
+            heroRow->setSpacing(12);
+            heroRow->setContentsMargins(0, 0, 0, 0);
+            auto *ico = new QLabel(QStringLiteral("◆"));
+            ico->setAttribute(Qt::WA_TransparentForMouseEvents);
+            ico->setFixedWidth(24);
+            ico->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
+            ico->setStyleSheet(QStringLiteral(
+                "QLabel{font-size:17px;color:#FFE082;background:transparent;border:none;padding-top:1px;}"));
+            heroRow->addWidget(ico, 0, Qt::AlignTop);
+            heroRow->addWidget(l1, 1, Qt::AlignTop);
+            vl->addLayout(heroRow);
+        } else {
+            vl->addWidget(l1);
+        }
+        vl->addWidget(l2);
+        outerLay->addWidget(inner);
+
+        auto *liftLayer = new QWidget;
+        liftLayer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+        auto *liftLay = new QVBoxLayout(liftLayer);
+        liftLay->setContentsMargins(0, 0, 0, 0);
+        liftLay->setSpacing(0);
+        liftLay->addWidget(tierCard);
+        auto *shim = new QFrame;
+        shim->setObjectName(QStringLiteral("costAiTierShim"));
+        shim->setFixedHeight(2);
+        shim->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        shim->setStyleSheet(QStringLiteral(
+            "QFrame#costAiTierShim{border:none;border-radius:1px;"
+            "background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 transparent,stop:0.35 rgba(255,224,130,0.55),"
+            "stop:0.55 rgba(255,241,200,0.95),stop:0.75 rgba(255,224,130,0.55),stop:1 transparent);}"));
+        shim->hide();
+        wl->addWidget(shim);
+        wl->addWidget(liftLayer);
+        return std::make_tuple(wrap, l1, l2, liftLay, shim);
+    };
+    const auto sigPack = mkAiTierSlot(0, QStringLiteral("SIGNAL"), true);
+    QWidget *wrapSignal = std::get<0>(sigPack);
+    QLabel *lblAiSig1 = std::get<1>(sigPack);
+    QLabel *lblAiSig2 = std::get<2>(sigPack);
+    QVBoxLayout *liftSignal = std::get<3>(sigPack);
+    QFrame *shimSignal = std::get<4>(sigPack);
+    const auto cflPack = mkAiTierSlot(1, QStringLiteral("CONFLICT"), false);
+    QWidget *wrapConflict = std::get<0>(cflPack);
+    QLabel *lblAiCfl1 = std::get<1>(cflPack);
+    QLabel *lblAiCfl2 = std::get<2>(cflPack);
+    QVBoxLayout *liftConflict = std::get<3>(cflPack);
+    QFrame *shimConflict = std::get<4>(cflPack);
+    lblAiCfl2->setVisible(false);
+    const auto decPack = mkAiTierSlot(2, QStringLiteral("DECISION"), false);
+    QWidget *wrapDecision = std::get<0>(decPack);
+    QLabel *lblAiDec1 = std::get<1>(decPack);
+    QLabel *lblAiDec2 = std::get<2>(decPack);
+    QVBoxLayout *liftDecision = std::get<3>(decPack);
+    QFrame *shimDecision = std::get<4>(decPack);
+    lblAiDec2->setVisible(false);
+    lblAiDec1->setTextFormat(Qt::RichText);
+    const auto impPack = mkAiTierSlot(3, QStringLiteral("IMPACT"), false);
+    QWidget *wrapImpact = std::get<0>(impPack);
+    QLabel *lblAiImp1 = std::get<1>(impPack);
+    QLabel *lblAiImp2 = std::get<2>(impPack);
+    QVBoxLayout *liftImpact = std::get<3>(impPack);
+    QFrame *shimImpact = std::get<4>(impPack);
+    lblAiImp2->setVisible(false);
+
+    auto *sourceStrip = new QFrame;
+    sourceStrip->setObjectName(QStringLiteral("costSourceStrip"));
+    sourceStrip->setVisible(false);
+    sourceStrip->setStyleSheet(QStringLiteral(
+        "QFrame#costSourceStrip{background:transparent;border:none;border-radius:0;}"));
+    auto *srcLay = new QVBoxLayout(sourceStrip);
+    srcLay->setContentsMargins(0, 8, 0, 0);
+    srcLay->setSpacing(8);
+    auto *lblDataSource = new QLabel;
+    lblDataSource->setAttribute(Qt::WA_TransparentForMouseEvents);
+    lblDataSource->setAlignment(Qt::AlignCenter);
+    lblDataSource->setWordWrap(true);
+    lblDataSource->setStyleSheet(QStringLiteral(
+        "QLabel{font-size:11px;font-weight:600;color:#777777;padding:0 2px;margin:0;"
+        "background:transparent;border:none;}"));
+    srcLay->addWidget(lblDataSource);
+    auto *sourceChipRow = new QWidget;
+    sourceChipRow->setVisible(false);
+    auto *chipLay = new QHBoxLayout(sourceChipRow);
+    chipLay->setContentsMargins(0, 0, 0, 0);
+    chipLay->setSpacing(8);
+    auto mkSourceChip = [](const QString &txt) {
+        auto *lb = new QLabel(txt);
+        lb->setAlignment(Qt::AlignCenter);
+        lb->setStyleSheet(QStringLiteral(
+            "QLabel{font-size:10px;font-weight:800;color:#FF9500;background:rgba(255,149,0,0.10);"
+            "border:1px solid rgba(255,149,0,0.22);border-radius:6px;padding:4px 12px;}"));
+        return lb;
+    };
+    auto *lblSourceChipLocal = mkSourceChip(QStringLiteral("Moteur IA local"));
+    auto *lblSourceChipTech = mkSourceChip(QStringLiteral("C++ intégré · temps réel"));
+    chipLay->addStretch(1);
+    chipLay->addWidget(lblSourceChipLocal);
+    chipLay->addWidget(lblSourceChipTech);
+    chipLay->addStretch(1);
+    srcLay->addWidget(sourceChipRow);
+
+    auto mkKpi = [](const QString &titleCaps, bool withStability, int valueMinWidth, const QString &numColor,
+                    const QString &stabilityCaption) {
+        auto *box = new QFrame;
+        box->setMinimumWidth(qMax(100, valueMinWidth + 24));
+        box->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+        box->setStyleSheet(QStringLiteral(
+            "QFrame{"
+            "background:#161616;"
+            "border:1px solid #2A2A2A;border-radius:8px;}"));
+        auto *boxSh = new QGraphicsDropShadowEffect(box);
+        boxSh->setBlurRadius(18);
+        boxSh->setOffset(0, 4);
+        boxSh->setColor(QColor(0, 0, 0, 55));
+        box->setGraphicsEffect(boxSh);
+        auto *vl = new QVBoxLayout(box);
+        vl->setContentsMargins(16, 14, 16, 14);
+        vl->setSpacing(5);
+        auto *t = new QLabel(titleCaps);
+        t->setAttribute(Qt::WA_TransparentForMouseEvents);
+        t->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        t->setStyleSheet(QStringLiteral(
+            "QLabel{color:#888888;font-size:10px;font-weight:800;letter-spacing:1.1px;background:transparent;"
+            "border:none;padding:0;margin:0;}"));
+        auto *num = new QLabel(QStringLiteral("—"));
+        num->setAttribute(Qt::WA_TransparentForMouseEvents);
+        num->setWordWrap(false);
+        num->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        num->setMinimumWidth(valueMinWidth);
+        num->setMinimumHeight(44);
+        num->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        num->setStyleSheet(QStringLiteral(
+            "QLabel{color:%2;font-size:34px;font-weight:800;padding:0;margin:0;"
+            "background:transparent;min-width:%1px;}").arg(valueMinWidth).arg(numColor));
+        auto *delta = new QLabel;
+        delta->setAttribute(Qt::WA_TransparentForMouseEvents);
+        delta->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        delta->setMinimumHeight(16);
+        delta->setStyleSheet(QStringLiteral("font-size:11px;font-weight:700;color:#888888;"));
+        vl->addWidget(t, 0, Qt::AlignLeft);
+        vl->addWidget(num, 0, Qt::AlignLeft);
+        vl->addWidget(delta, 0, Qt::AlignLeft);
+        QProgressBar *stab = nullptr;
+        if (withStability) {
+            auto *sl = new QLabel(stabilityCaption.isEmpty() ? QStringLiteral("Stabilité") : stabilityCaption);
+            sl->setAttribute(Qt::WA_TransparentForMouseEvents);
+            sl->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+            sl->setStyleSheet(QStringLiteral("font-size:9px;color:#666666;font-weight:800;"));
+            stab = new QProgressBar;
+            stab->setAttribute(Qt::WA_TransparentForMouseEvents);
+            stab->setRange(0, 100);
+            stab->setFixedHeight(3);
+            stab->setTextVisible(false);
+            stab->setStyleSheet(QStringLiteral(
+                "QProgressBar{border:none;border-radius:2px;background:rgba(255,255,255,0.06);}"
+                "QProgressBar::chunk{border-radius:2px;background:#4a9060;}"));
+            vl->addWidget(sl);
+            vl->addWidget(stab);
+        }
+        return std::make_tuple(box, num, delta, stab, boxSh);
+    };
+
+    const auto kpiPackC = mkKpi(QStringLiteral("COÛT TOTAL"), false, 200, QStringLiteral("#F5F5F5"), QString());
+    const auto kpiPackM = mkKpi(QStringLiteral("MARGE"), false, 140, QStringLiteral("#FF9500"), QString());
+    const auto kpiPackR = mkKpi(QStringLiteral("RISQUE"), true, 130, QStringLiteral("#66BB6A"), QString());
+    const auto kpiPackS = mkKpi(QStringLiteral("SEUIL RENTABILITÉ"), true, 100, QStringLiteral("#F5F5F5"),
+                                QStringLiteral("Seuil volume"));
+    QFrame *frC = std::get<0>(kpiPackC);
+    QLabel *kpiCNum = std::get<1>(kpiPackC);
+    QLabel *kpiCDelta = std::get<2>(kpiPackC);
+    QFrame *frM = std::get<0>(kpiPackM);
+    QLabel *kpiMNum = std::get<1>(kpiPackM);
+    QLabel *kpiMDelta = std::get<2>(kpiPackM);
+    QFrame *frR = std::get<0>(kpiPackR);
+    QLabel *kpiRNum = std::get<1>(kpiPackR);
+    QLabel *kpiRDelta = std::get<2>(kpiPackR);
+    QProgressBar *stabBar = std::get<3>(kpiPackR);
+    QGraphicsDropShadowEffect *frRShadow = std::get<4>(kpiPackR);
+    QFrame *frS = std::get<0>(kpiPackS);
+    QLabel *kpiSNum = std::get<1>(kpiPackS);
+    QLabel *kpiSDelta = std::get<2>(kpiPackS);
+    QProgressBar *stabSeuilBar = std::get<3>(kpiPackS);
+    QGraphicsDropShadowEffect *frSShadow = std::get<4>(kpiPackS);
+
+    auto *cmpFrame = new QFrame;
+    cmpFrame->setParent(resultCard);
+    cmpFrame->hide();
+    cmpFrame->setStyleSheet(QStringLiteral(
+        "QFrame{background:#141414;border-radius:8px;border:1px solid #2A2A2A;}"));
+    auto *cmpLay = new QVBoxLayout(cmpFrame);
+    cmpLay->setContentsMargins(14, 12, 14, 12);
+    cmpLay->setSpacing(8);
+    auto *cmpTitle = new QLabel(QStringLiteral("ACTUEL  →  OPTIMISÉ"));
+    cmpTitle->setStyleSheet(QStringLiteral(
+        "color:#888888;font-size:9px;font-weight:900;letter-spacing:1.6px;"));
+    cmpLay->addWidget(cmpTitle);
+    auto *lblCmpCost = new QLabel;
+    auto *lblCmpMarg = new QLabel;
+    auto *lblCmpRisk = new QLabel;
+    lblCmpCost->setWordWrap(true);
+    lblCmpMarg->setWordWrap(true);
+    lblCmpRisk->setWordWrap(true);
+    lblCmpCost->setStyleSheet(QStringLiteral("font-size:12px;font-weight:700;color:#E8E8E8;line-height:1.4;background:transparent;"));
+    lblCmpMarg->setStyleSheet(QStringLiteral("font-size:12px;font-weight:700;color:#E8E8E8;line-height:1.4;background:transparent;"));
+    lblCmpRisk->setStyleSheet(QStringLiteral("font-size:12px;font-weight:700;color:#E8E8E8;line-height:1.4;background:transparent;"));
+    cmpLay->addWidget(lblCmpCost);
+    cmpLay->addWidget(lblCmpMarg);
+    cmpLay->addWidget(lblCmpRisk);
+
+    auto *tagRow = new QHBoxLayout;
+    tagRow->setSpacing(8);
+    QLabel *tagLabels[4];
+    const QStringList tagTexts = {QStringLiteral("Surcoté"), QStringLiteral("Montée en charge"),
+                                  QStringLiteral("Risque élevé"), QStringLiteral("Levier marge")};
+    for (int i = 0; i < 4; ++i) {
+        auto *tg = new QLabel(tagTexts.at(i));
+        tg->setAttribute(Qt::WA_TransparentForMouseEvents);
+        tg->setAlignment(Qt::AlignCenter);
+        tg->setVisible(false);
+        tg->setStyleSheet(QStringLiteral(
+            "font-size:10px;font-weight:800;color:#faf7f2;background:rgba(255,255,255,0.12);border-radius:10px;"
+            "padding:6px 10px;border:none;"));
+        tagLabels[i] = tg;
+        tagRow->addWidget(tg);
+    }
+    tagRow->addStretch(1);
+
+    auto *scoreRow = new QHBoxLayout;
+    auto *scoreLbl = new QLabel(QStringLiteral("Score produit"));
+    scoreLbl->setAttribute(Qt::WA_TransparentForMouseEvents);
+    scoreLbl->setStyleSheet(QStringLiteral("color:#888888;font-weight:900;font-size:9px;letter-spacing:1px;"));
+    auto *scoreBar = new QProgressBar;
+    scoreBar->setAttribute(Qt::WA_TransparentForMouseEvents);
+    scoreBar->setRange(0, 100);
+    scoreBar->setValue(0);
+    scoreBar->setTextVisible(true);
+    scoreBar->setFormat(QStringLiteral("%v"));
+    scoreBar->setStyleSheet(QStringLiteral(
+        "QProgressBar{border:none;border-radius:6px;height:20px;text-align:center;background:rgba(255,255,255,0.06);}"
+        "QProgressBar::chunk{background:#FF9500;border-radius:6px;}"));
+    auto *scoreNum = new QLabel(QStringLiteral("0"));
+    scoreNum->setAttribute(Qt::WA_TransparentForMouseEvents);
+    scoreNum->setStyleSheet(QStringLiteral("font-size:26px;font-weight:900;color:#F5F5F5;min-width:48px;"));
+    scoreRow->addWidget(scoreLbl);
+    scoreRow->addWidget(scoreBar, 1);
+    scoreRow->addWidget(scoreNum);
+    auto *scoreWrap = new QFrame;
+    scoreWrap->setStyleSheet(QStringLiteral(
+        "QFrame{background:#161616;border:1px solid #2A2A2A;border-radius:8px;}"));
+    auto *scoreSh = new QGraphicsDropShadowEffect(scoreWrap);
+    scoreSh->setBlurRadius(24);
+    scoreSh->setOffset(0, 6);
+    scoreSh->setColor(QColor(0, 0, 0, 12));
+    scoreWrap->setGraphicsEffect(scoreSh);
+    auto *scoreWrapLay = new QVBoxLayout(scoreWrap);
+    scoreWrapLay->setContentsMargins(16, 14, 16, 14);
+    scoreWrapLay->setSpacing(8);
+    scoreWrapLay->addLayout(scoreRow);
+
+    auto *lblAdv = new QLabel;
+    lblAdv->setAttribute(Qt::WA_TransparentForMouseEvents);
+    lblAdv->setVisible(false);
+    lblAdv->setWordWrap(true);
+    lblAdv->setStyleSheet(QStringLiteral("font-size:10px;color:#888888;font-weight:600;background:transparent;border:none;"));
+
+    auto *hdrStrip = new QFrame;
+    hdrStrip->setObjectName(QStringLiteral("costAiHeaderStrip"));
+    hdrStrip->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+    hdrStrip->setStyleSheet(QStringLiteral(
+        "QFrame#costAiHeaderStrip{"
+        "background:rgba(255,149,0,0.08);"
+        "border:none;"
+        "border-radius:8px;"
+        "border:1px solid rgba(255,149,0,0.28);}"));
+    auto *hStripLay = new QHBoxLayout(hdrStrip);
+    hStripLay->setContentsMargins(18, 13, 18, 13);
+    hStripLay->setSpacing(14);
+    auto *dotHost = new QWidget;
+    dotHost->setFixedSize(30, 30);
+    dotHost->setStyleSheet(QStringLiteral("background:transparent;border:none;"));
+    auto *lblHdrGlowDot = new QLabel(QStringLiteral("●"), dotHost);
+    lblHdrGlowDot->setGeometry(0, 0, 30, 30);
+    lblHdrGlowDot->setAlignment(Qt::AlignCenter);
+    lblHdrGlowDot->setAttribute(Qt::WA_TransparentForMouseEvents);
+    lblHdrGlowDot->setStyleSheet(QStringLiteral(
+        "QLabel{color:#FF9100;font-size:18px;font-weight:900;background:transparent;border:none;}"));
+    auto *hdrDotGlow = new QGraphicsDropShadowEffect(lblHdrGlowDot);
+    hdrDotGlow->setBlurRadius(20);
+    hdrDotGlow->setColor(QColor(255, 171, 64, 240));
+    hdrDotGlow->setOffset(0, 0);
+    lblHdrGlowDot->setGraphicsEffect(hdrDotGlow);
+    auto *lblHdrTitle = new QLabel(QStringLiteral("AI ENGINE — ANALYSE LIVE"));
+    lblHdrTitle->setAttribute(Qt::WA_TransparentForMouseEvents);
+    lblHdrTitle->setStyleSheet(QStringLiteral(
+        "QLabel{font-size:13px;font-weight:900;letter-spacing:1.2px;color:#F0F0F0;"
+        "background:transparent;border:none;}"));
+    hStripLay->addWidget(dotHost, 0, Qt::AlignVCenter);
+    hStripLay->addWidget(lblHdrTitle, 0, Qt::AlignVCenter);
+    hStripLay->addStretch(1);
+
+    auto *hdrGlowLine = new QFrame;
+    hdrGlowLine->setFixedHeight(2);
+    hdrGlowLine->setStyleSheet(QStringLiteral(
+        "QFrame{border:none;border-radius:1px;"
+        "background:qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+        "stop:0 transparent,stop:0.15 rgba(255,213,79,0.35),stop:0.5 rgba(255,224,130,0.95),"
+        "stop:0.85 rgba(255,213,79,0.35),stop:1 transparent);}"));
+
+    auto *hdrSweepHost = new QWidget;
+    hdrSweepHost->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    auto *hdrSweepLay = new QHBoxLayout(hdrSweepHost);
+    hdrSweepLay->setContentsMargins(0, 2, 0, 4);
+    hdrSweepLay->setSpacing(0);
+    auto *hdrSweepBar = new QFrame;
+    hdrSweepBar->setObjectName(QStringLiteral("costHdrSweepBar"));
+    hdrSweepBar->setFixedHeight(3);
+    hdrSweepBar->setFixedWidth(72);
+    hdrSweepBar->setStyleSheet(QStringLiteral(
+        "QFrame#costHdrSweepBar{background:rgba(255,248,210,0.92);border:none;border-radius:2px;}"));
+    hdrSweepLay->addStretch(1);
+    hdrSweepLay->addWidget(hdrSweepBar, 0, Qt::AlignHCenter);
+    hdrSweepLay->addStretch(1);
+
+    auto *decisionCore = new QFrame;
+    decisionCore->setObjectName(QStringLiteral("costDecisionCore"));
+    decisionCore->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+    decisionCore->setStyleSheet(QStringLiteral(
+        "QFrame#costDecisionCore{"
+        "background:#0E0E0E;"
+        "border:1px solid #2A2A2A;border-radius:10px;}"));
+    auto *dcSh = new QGraphicsDropShadowEffect(decisionCore);
+    dcSh->setBlurRadius(22);
+    dcSh->setOffset(0, 8);
+    dcSh->setColor(QColor(0, 0, 0, 70));
+    decisionCore->setGraphicsEffect(dcSh);
+    auto *dcLay = new QVBoxLayout(decisionCore);
+    dcLay->setContentsMargins(20, 12, 20, 20);
+    dcLay->setSpacing(16);
+    dcLay->addWidget(hdrStrip);
+    dcLay->addWidget(hdrGlowLine);
+    dcLay->addWidget(hdrSweepHost);
+    auto *dcTop = new QHBoxLayout;
+    dcTop->setSpacing(12);
+    dcTop->setContentsMargins(0, 0, 0, 0);
+    dcTop->addWidget(lblBadge, 0, Qt::AlignLeft | Qt::AlignVCenter);
+    dcTop->addStretch(1);
+    dcTop->addWidget(confWrap, 0, Qt::AlignRight | Qt::AlignTop);
+    dcLay->addLayout(dcTop);
+    dcLay->addWidget(aiStatusRow);
+    dcLay->addWidget(wrapSignal);
+    dcLay->addWidget(wrapConflict);
+    dcLay->addWidget(wrapDecision);
+    dcLay->addWidget(wrapImpact);
+    dcLay->addWidget(scoreWrap);
+
+    auto *scenarioDock = new QFrame;
+    scenarioDock->setStyleSheet(QStringLiteral(
+        "QFrame{background:#1a1712;border:1px solid #3a3428;border-radius:8px;}"));
+    auto *scenOuter = new QVBoxLayout(scenarioDock);
+    scenOuter->setContentsMargins(14, 14, 14, 14);
+    scenOuter->setSpacing(10);
+    auto *scenRow = new QHBoxLayout;
+    scenRow->setSpacing(10);
+    scenRow->setContentsMargins(0, 0, 0, 0);
+    CostClickFrame *scCards[3];
+    QLabel *scVals[3];
+    const QStringList scenTitles = {QStringLiteral("OPTIMISTE"), QStringLiteral("RÉALISTE"),
+                                    QStringLiteral("PESSIMISTE")};
+    const QStringList scenBorder = {QStringLiteral("#2a4a30"), QStringLiteral("#3a3428"),
+                                    QStringLiteral("#4a2020")};
+    const int scenProb[3] = {25, 55, 20};
+    for (int i = 0; i < 3; ++i) {
+        auto *c = new CostClickFrame;
+        c->setObjectName(QStringLiteral("costScenCard"));
+        c->setProperty("scenIdx", i);
+        c->setCursor(Qt::PointingHandCursor);
+        scCards[i] = c;
+        auto *vl = new QVBoxLayout(c);
+        vl->setContentsMargins(12, 10, 12, 10);
+        vl->setSpacing(6);
+        auto *lt = new QLabel(scenTitles.at(i));
+        lt->setStyleSheet(QStringLiteral(
+            "QLabel{font-size:9px;font-weight:900;letter-spacing:1.4px;color:#888888;background:transparent;border:none;}"));
+        auto *vv = new QLabel(QStringLiteral("— TND"));
+        vv->setStyleSheet(QStringLiteral(
+            "QLabel{font-size:14px;font-weight:800;color:#F0F0F0;background:transparent;border:none;"
+            "font-variant-numeric:tabular-nums;}"));
+        scVals[i] = vv;
+        auto *pr = new QLabel(QStringLiteral("prob. %1%").arg(scenProb[i]));
+        pr->setStyleSheet(QStringLiteral(
+            "QLabel{font-size:10px;font-weight:600;color:#777777;background:transparent;border:none;}"));
+        vl->addWidget(lt);
+        vl->addWidget(vv);
+        vl->addWidget(pr);
+        scenRow->addWidget(c, 1);
+    }
+    scenOuter->addLayout(scenRow);
+
+    auto *wfSection = new CostWaterfallSection(decisionCore);
+
+    auto *projHost = new QFrame;
+    projHost->setStyleSheet(QStringLiteral(
+        "QFrame{background:#1a1712;border:1px solid #3a3428;border-radius:8px;}"));
+    auto *projVL = new QVBoxLayout(projHost);
+    projVL->setContentsMargins(14, 14, 14, 14);
+    projVL->setSpacing(8);
+    auto *projTitle = new QLabel(QStringLiteral("PROJECTION 90J"));
+    projTitle->setStyleSheet(QStringLiteral(
+        "QLabel{font-size:9px;font-weight:900;letter-spacing:1.5px;color:#888888;background:transparent;border:none;}"));
+    auto *projChart = new CostProjection90(projHost);
+    projVL->addWidget(projTitle);
+    projVL->addWidget(projChart);
+    auto *legRow = new QHBoxLayout;
+    legRow->setSpacing(16);
+    legRow->setContentsMargins(0, 0, 0, 0);
+    legRow->addStretch(1);
+    auto mkProjLeg = [](const QString &col, const QString &txt) {
+        auto *w = new QWidget;
+        auto *h = new QHBoxLayout(w);
+        h->setContentsMargins(0, 0, 0, 0);
+        h->setSpacing(6);
+        auto *d = new QLabel(QStringLiteral("●"));
+        d->setStyleSheet(QStringLiteral("QLabel{font-size:10px;color:%1;background:transparent;border:none;}").arg(col));
+        auto *l = new QLabel(txt);
+        l->setStyleSheet(QStringLiteral(
+            "QLabel{font-size:9px;font-weight:700;color:#888888;background:transparent;border:none;}"));
+        h->addWidget(d);
+        h->addWidget(l);
+        return w;
+    };
+    legRow->addWidget(mkProjLeg(QStringLiteral("#4CAF50"), QStringLiteral("Opt")));
+    legRow->addWidget(mkProjLeg(QStringLiteral("#FF9500"), QStringLiteral("Réel")));
+    legRow->addWidget(mkProjLeg(QStringLiteral("#E57373"), QStringLiteral("Pess")));
+    legRow->addStretch(1);
+    projVL->addLayout(legRow);
+
+    dcLay->addWidget(scenarioDock);
+    dcLay->addWidget(wfSection);
+    dcLay->addWidget(projHost);
+    dcLay->addWidget(lblAdv);
+    dcLay->addLayout(tagRow);
+    dcLay->addWidget(sourceStrip);
+
+    auto *rvOuter = new QVBoxLayout(resultCard);
+    rvOuter->setContentsMargins(0, 12, 0, 0);
+    rvOuter->setSpacing(16);
+
+    auto *kpiDock = new QWidget;
+    kpiDock->setStyleSheet(QStringLiteral("background:transparent;"));
+    auto *kpiDockLay = new QHBoxLayout(kpiDock);
+    kpiDockLay->setContentsMargins(0, 0, 0, 0);
+    kpiDockLay->setSpacing(12);
+    kpiDockLay->addWidget(frC, 1);
+    kpiDockLay->addWidget(frM, 1);
+    kpiDockLay->addWidget(frR, 1);
+    kpiDockLay->addWidget(frS, 1);
+    rvOuter->addWidget(kpiDock);
+    rvOuter->addWidget(decisionCore, 0);
+
+    v->addWidget(resultCard);
+    v->addStretch(1);
+
+    auto crossfadeToResults = [=]() {
+        if (!preAnalysisHost->isVisible()) {
+            resultCard->setVisible(true);
+            preAnalysisHost->hide();
+            return;
+        }
+        preAnalysisHost->raise();
+        resultCard->raise();
+        auto *preFx = new QGraphicsOpacityEffect(preAnalysisHost);
+        preAnalysisHost->setGraphicsEffect(preFx);
+        preFx->setOpacity(1.0);
+        resultCard->setVisible(true);
+        auto *resFx = new QGraphicsOpacityEffect(resultCard);
+        resultCard->setGraphicsEffect(resFx);
+        resFx->setOpacity(0.0);
+        auto *grp = new QParallelAnimationGroup(resultCard);
+        auto *outA = new QPropertyAnimation(preFx, QByteArrayLiteral("opacity"), grp);
+        outA->setDuration(280);
+        outA->setStartValue(1.0);
+        outA->setEndValue(0.0);
+        outA->setEasingCurve(QEasingCurve::InOutQuad);
+        auto *inA = new QPropertyAnimation(resFx, QByteArrayLiteral("opacity"), grp);
+        inA->setDuration(340);
+        inA->setStartValue(0.0);
+        inA->setEndValue(1.0);
+        inA->setEasingCurve(QEasingCurve::OutCubic);
+        grp->addAnimation(outA);
+        grp->addAnimation(inA);
+        QObject::connect(grp, &QParallelAnimationGroup::finished, resultCard, [=]() {
+            preAnalysisHost->hide();
+            preAnalysisHost->setGraphicsEffect(nullptr);
+            resultCard->setGraphicsEffect(nullptr);
+        });
+        grp->start(QAbstractAnimation::DeleteWhenStopped);
+    };
+
+    new CostShadowHoverLift(decisionCore, dcSh, this);
+    new CostShadowHoverLift(preAnalysisCard, cardSh, this);
+    new CostShadowHoverLift(frC, std::get<4>(kpiPackC), this);
+    new CostShadowHoverLift(frM, std::get<4>(kpiPackM), this);
+    new CostShadowHoverLift(frR, frRShadow, this);
+    new CostShadowHoverLift(frS, frSShadow, this);
+    new CostShadowHoverLift(scoreWrap, scoreSh, this);
+
+    {
+        auto *glowFwd = new QPropertyAnimation(hdrDotGlow, QByteArrayLiteral("blurRadius"), hdrStrip);
+        glowFwd->setDuration(900);
+        glowFwd->setStartValue(8);
+        glowFwd->setEndValue(28);
+        glowFwd->setEasingCurve(QEasingCurve::OutCubic);
+        auto *glowBwd = new QPropertyAnimation(hdrDotGlow, QByteArrayLiteral("blurRadius"), hdrStrip);
+        glowBwd->setDuration(900);
+        glowBwd->setStartValue(28);
+        glowBwd->setEndValue(8);
+        glowBwd->setEasingCurve(QEasingCurve::InCubic);
+        auto *glowGrp = new QSequentialAnimationGroup(hdrStrip);
+        glowGrp->addAnimation(glowFwd);
+        glowGrp->addAnimation(glowBwd);
+        glowGrp->setLoopCount(-1);
+        glowGrp->start();
+    }
+
+    scroll->setWidget(cw);
+    rootLay->addWidget(scroll, 1);
+
+    auto animState = std::make_shared<CostTabAnimState>();
+    auto liveOutcome = std::make_shared<SimulationOutcome>();
+    auto liveDin = std::make_shared<ProductAnalyzerInput>();
+    auto liveDisp = std::make_shared<double>(0.0);
+    auto liveHas = std::make_shared<bool>(false);
+    auto hasManualAnalysis = std::make_shared<bool>(false);
+
+    auto syncSensLabel = [lblSens](int v) {
+        lblSens->setText(v > 0 ? QStringLiteral("+%1%").arg(v) : QStringLiteral("%1%").arg(v));
+    };
+    QObject::connect(sldSens, &QSlider::valueChanged, this, [syncSensLabel](int v) { syncSensLabel(v); });
+    auto syncCostShiftLabel = [lblCostShift](int v) {
+        lblCostShift->setText(v > 0 ? QStringLiteral("+%1%").arg(v) : QStringLiteral("%1%").arg(v));
+    };
+    QObject::connect(sldCostShift, &QSlider::valueChanged, this, [syncCostShiftLabel](int v) { syncCostShiftLabel(v); });
+
+    auto buildDin = [=](double matiereTnd) {
+        ProductAnalyzerInput din;
+        din.nomProduit = leLib->text().trimmed().isEmpty() ? QStringLiteral("Produit") : leLib->text().trimmed();
+        din.coutMatiereTnd = matiereTnd;
+        din.volumeCible = sbVol->value();
+        din.indiceCout = std::clamp(matiereTnd / 0.45, 8.0, 94.0);
+        din.positionnement = din.indiceCout >= 62.0 ? QStringLiteral("premium")
+                                                     : (din.indiceCout >= 38.0 ? QStringLiteral("aspirationnel")
+                                                                               : QStringLiteral("accessible"));
+        din.niveauFinition = din.indiceCout >= 68.0 ? QStringLiteral("élevé") : QStringLiteral("standard");
+        din.delaiSemaines = sbVol->value() > 600 ? 4 : 7;
+        din.risqueFournisseur = sbVol->value() > 800 ? QStringLiteral("élevé") : QStringLiteral("modéré");
+        return din;
+    };
+
+    const auto applyScenarioChrome = [=]() {
+        const int a = animState->scenarioPick;
+        for (int i = 0; i < 3; ++i) {
+            const bool on = (i == a);
+            const QString bd = scenBorder.at(i);
+            const QString bg = on ? QStringLiteral("#0a0806") : QStringLiteral("#14110e");
+            const int bw = on ? 2 : 1;
+            scCards[i]->setStyleSheet(QStringLiteral(
+                "QFrame{background:%1;border:%2px solid %3;border-radius:8px;}").arg(bg).arg(bw).arg(bd));
+        }
+    };
+
+    const auto refreshAuxPanels = [=]() {
+        if (!*liveHas)
+            return;
+        const QLocale loc = QLocale::system();
+        const SimulationOutcome &o = *liveOutcome;
+        const ProductAnalyzerInput &din = *liveDin;
+        const double disp = *liveDisp;
+        const double simCost = o.act.coutUnitaireTnd;
+        const double m0 = SensitivityEngine::materialWithDelta(sbMat->value(), static_cast<double>(sldSens->value()));
+        double K = 1.0;
+        if (m0 > 1e-9)
+            K = (simCost - 4.5) / m0;
+        K = std::max(K, 0.08);
+        const double cOpt = m0 * 0.85 * K + 4.5;
+        const double cReal = simCost;
+        const double cPess = m0 * 1.25 * K + 4.5;
+        const double flat = static_cast<double>(sldCostShift->value()) * 0.4;
+        scVals[0]->setText(loc.toString(cOpt, 'f', 2) + QStringLiteral(" TND"));
+        scVals[1]->setText(loc.toString(cReal + flat, 'f', 2) + QStringLiteral(" TND"));
+        scVals[2]->setText(loc.toString(cPess, 'f', 2) + QStringLiteral(" TND"));
+        applyScenarioChrome();
+        double wm = 0, wmo = 0, wc = 0, wl = 0, wr = 0;
+        costDecomposeFive(din, disp, wm, wmo, wc, wl, wr);
+        QVector<double> parts({wm, wmo, wc, wl, wr});
+        QVector<QColor> cols({QColor(QStringLiteral("#d4841a")), QColor(QStringLiteral("#a06818")),
+                              QColor(QStringLiteral("#785010")), QColor(QStringLiteral("#5a3c0c")),
+                              QColor(QStringLiteral("#c04040"))});
+        wfSection->updateParts(parts, cols, loc);
+        const QString projHashKey = QString::number(sbMat->value(), 'f', 2) + QLatin1Char('|')
+            + QString::number(sbVol->value()) + QLatin1Char('|') + QString::number(sldSens->value());
+        const quint32 seed = animState->projectionSeed ^ quint32(qHash(projHashKey));
+        projChart->rebuild(disp, seed ? seed : 1u);
+    };
+
+    for (int i = 0; i < 3; ++i) {
+        const int idx = i;
+        scCards[i]->onPressed = [=]() {
+            animState->scenarioPick = idx;
+            applyScenarioChrome();
+        };
+    }
+    animState->scenarioPick = 1;
+    applyScenarioChrome();
+
+    animState->projectionSeed = animState->projectionSeed + 17u;
+
+    auto setDeltaLabel = [](QLabel *lab, double delta, bool costMetric) {
+        if (std::abs(delta) < 1e-7) {
+            lab->setText(QString());
+            return;
+        }
+        const bool good = costMetric ? (delta < 0) : (delta > 0);
+        const QString arrow = delta > 0 ? QStringLiteral("▲ ") : QStringLiteral("▼ ");
+        lab->setStyleSheet(good ? QStringLiteral("font-size:11px;font-weight:800;color:#1B5E20;")
+                                : QStringLiteral("font-size:11px;font-weight:800;color:#B71C1C;"));
+        if (costMetric)
+            lab->setText(QStringLiteral("%1%2 TND").arg(arrow, QLocale::system().toString(std::abs(delta), 'f', 2)));
+        else
+            lab->setText(QStringLiteral("%1%2%").arg(arrow, QLocale::system().toString(std::abs(delta), 'f', 1)));
+    };
+    auto animateValueColor = [](QLabel *lb, const QColor &from, const QColor &to, int ms, int minW) {
+        auto *anim = new QVariantAnimation(lb);
+        anim->setDuration(ms);
+        anim->setStartValue(from);
+        anim->setEndValue(to);
+        QObject::connect(anim, &QVariantAnimation::valueChanged, lb, [lb, minW](const QVariant &v) {
+            const QColor c = v.value<QColor>();
+            lb->setStyleSheet(QStringLiteral(
+                                   "QLabel{color:%1;font-size:34px;font-weight:800;min-width:%2px;padding:0;margin:0;"
+                                   "background:transparent;}")
+                                   .arg(c.name())
+                                   .arg(minW));
+        });
+        anim->start(QAbstractAnimation::DeleteWhenStopped);
+    };
+
+    auto setTag = [](QLabel *lb, bool on, const QString &tintBg, const QString &textColor) {
+        lb->setVisible(on);
+        if (!on)
+            return;
+        lb->setStyleSheet(QStringLiteral(
+            "font-size:10px;font-weight:800;color:%1;background:%2;border:none;border-radius:10px;padding:6px 10px;")
+            .arg(textColor, tintBg));
+    };
+
+    auto animateConfidence = [=](int targetPct) {
+        const int t = qBound(0, targetPct, 100);
+        confProgressBar->setRange(0, 100);
+        auto *vAnim = new QVariantAnimation(lblConf);
+        vAnim->setDuration(520);
+        vAnim->setStartValue(0);
+        vAnim->setEndValue(t);
+        vAnim->setEasingCurve(QEasingCurve::OutCubic);
+        QObject::connect(vAnim, &QVariantAnimation::valueChanged, lblConf, [=](const QVariant &val) {
+            const int n = qBound(0, qRound(val.toDouble()), 100);
+            lblConf->setText(QStringLiteral("Confiance %1%").arg(n));
+            confProgressBar->setValue(n);
+        });
+        vAnim->start(QAbstractAnimation::DeleteWhenStopped);
+    };
+
+    const QString kPreReadyIdleText = QStringLiteral("Système prêt • en attente d’analyse");
+    const QString kPreReadyIdleStyle = QStringLiteral(
+        "QLabel{font-size:11px;font-weight:700;letter-spacing:0.4px;color:#8D6E63;background:transparent;border:none;}");
+
+    const auto stopAiRunningPulse = [=]() {
+        aiStatusRow->setVisible(false);
+        lblPreReady->setText(kPreReadyIdleText);
+        lblPreReady->setStyleSheet(kPreReadyIdleStyle);
+        lblPreReady->setGraphicsEffect(nullptr);
+        if (animState->aiPulseAnim) {
+            animState->aiPulseAnim->stop();
+            animState->aiPulseAnim->deleteLater();
+            animState->aiPulseAnim = nullptr;
+        }
+        lblAiPulseDot->setGraphicsEffect(nullptr);
+        if (animState->tierShimmerAnim) {
+            animState->tierShimmerAnim->stop();
+            animState->tierShimmerAnim->deleteLater();
+            animState->tierShimmerAnim = nullptr;
+        }
+        for (QFrame *sh : {shimSignal, shimConflict, shimDecision, shimImpact}) {
+            if (!sh)
+                continue;
+            sh->hide();
+            sh->setGraphicsEffect(nullptr);
+        }
+        if (animState->hdrStripBreathTimer) {
+            animState->hdrStripBreathTimer->stop();
+            animState->hdrStripBreathTimer->deleteLater();
+            animState->hdrStripBreathTimer.clear();
+        }
+        if (animState->hdrSweepAnim) {
+            animState->hdrSweepAnim->stop();
+            animState->hdrSweepAnim->deleteLater();
+            animState->hdrSweepAnim = nullptr;
+        }
+        hdrSweepBar->setGraphicsEffect(nullptr);
+    };
+
+    const auto startAiRunningPulse = [=]() {
+        stopAiRunningPulse();
+        if (resultCard->isVisible()) {
+            aiStatusRow->setVisible(true);
+            auto *fx = new QGraphicsOpacityEffect(lblAiPulseDot);
+            lblAiPulseDot->setGraphicsEffect(fx);
+            fx->setOpacity(1.0);
+            auto *pa = new QPropertyAnimation(fx, QByteArrayLiteral("opacity"), lblAiPulseDot);
+            pa->setDuration(650);
+            pa->setStartValue(0.35);
+            pa->setEndValue(1.0);
+            pa->setEasingCurve(QEasingCurve::InOutSine);
+            pa->setLoopCount(-1);
+            animState->aiPulseAnim = pa;
+            pa->start();
+        } else {
+            lblPreReady->setText(QStringLiteral("●  Analyse en cours"));
+            lblPreReady->setStyleSheet(QStringLiteral(
+                "QLabel{font-size:11px;font-weight:800;letter-spacing:0.35px;color:#B45309;background:transparent;"
+                "border:none;}"));
+            auto *fx = new QGraphicsOpacityEffect(lblPreReady);
+            lblPreReady->setGraphicsEffect(fx);
+            fx->setOpacity(1.0);
+            auto *pa = new QPropertyAnimation(fx, QByteArrayLiteral("opacity"), lblPreReady);
+            pa->setDuration(700);
+            pa->setStartValue(0.45);
+            pa->setEndValue(1.0);
+            pa->setEasingCurve(QEasingCurve::InOutSine);
+            pa->setLoopCount(-1);
+            animState->aiPulseAnim = pa;
+            pa->start();
+        }
+    };
+
+    auto faceFromLift = [](QVBoxLayout *liftLy) -> QWidget * {
+        return liftLy ? liftLy->parentWidget() : nullptr;
+    };
+
+    const auto staggerRevealAiBlocks = [=]() {
+        const int gen = ++animState->aiBlockRevealGen;
+        constexpr int kSlidePx = 12;
+        auto prep = [kSlidePx](QWidget *face, QVBoxLayout *lift) {
+            if (face && face->graphicsEffect())
+                face->setGraphicsEffect(nullptr);
+            if (lift)
+                lift->setContentsMargins(0, kSlidePx, 0, 0);
+        };
+        prep(faceFromLift(liftSignal), liftSignal);
+        prep(faceFromLift(liftConflict), liftConflict);
+        prep(faceFromLift(liftDecision), liftDecision);
+        prep(faceFromLift(liftImpact), liftImpact);
+        auto runReveal = [=](QWidget *face, QVBoxLayout *lift, int delayMs, bool pulseDecisionShadow) {
+            if (!face)
+                return;
+            QTimer::singleShot(delayMs, this, [=]() {
+                if (gen != animState->aiBlockRevealGen)
+                    return;
+                auto *fx = new QGraphicsOpacityEffect(face);
+                face->setGraphicsEffect(fx);
+                fx->setOpacity(0.0);
+                auto *combo = new QVariantAnimation(face);
+                combo->setDuration(340);
+                combo->setStartValue(0.0);
+                combo->setEndValue(1.0);
+                combo->setEasingCurve(QEasingCurve::OutCubic);
+                QObject::connect(combo, &QVariantAnimation::valueChanged, face, [=](const QVariant &val) {
+                    const double t = qBound(0.0, val.toDouble(), 1.0);
+                    fx->setOpacity(t);
+                    if (lift) {
+                        const int top = qRound(static_cast<double>(kSlidePx) * (1.0 - t));
+                        lift->setContentsMargins(0, top, 0, 0);
+                    }
+                });
+                QObject::connect(combo, &QVariantAnimation::finished, face, [=]() {
+                    if (lift)
+                        lift->setContentsMargins(0, 0, 0, 0);
+                    if (qobject_cast<QGraphicsOpacityEffect *>(face->graphicsEffect()))
+                        face->setGraphicsEffect(nullptr);
+                    if (pulseDecisionShadow) {
+                        QFrame *tc = face->findChild<QFrame *>(QStringLiteral("costAiTierCard"));
+                        if (!tc)
+                            return;
+                        auto *sh = qobject_cast<QGraphicsDropShadowEffect *>(tc->graphicsEffect());
+                        if (!sh)
+                            return;
+                        const qreal b0 = sh->blurRadius();
+                        const QColor c0 = sh->color();
+                        auto *up = new QPropertyAnimation(sh, QByteArrayLiteral("blurRadius"), tc);
+                        up->setDuration(140);
+                        up->setStartValue(b0);
+                        up->setEndValue(qMin(52.0, b0 + 22.0));
+                        auto *hold = new QPauseAnimation(tc);
+                        hold->setDuration(180);
+                        auto *down = new QPropertyAnimation(sh, QByteArrayLiteral("blurRadius"), tc);
+                        down->setDuration(320);
+                        down->setStartValue(qMin(52.0, b0 + 22.0));
+                        down->setEndValue(b0);
+                        auto *grp = new QSequentialAnimationGroup(tc);
+                        grp->addAnimation(up);
+                        grp->addAnimation(hold);
+                        grp->addAnimation(down);
+                        grp->start(QAbstractAnimation::DeleteWhenStopped);
+                        auto *glowPulse = new QVariantAnimation(tc);
+                        glowPulse->setDuration(520);
+                        glowPulse->setStartValue(0.0);
+                        glowPulse->setEndValue(1.0);
+                        glowPulse->setEasingCurve(QEasingCurve::OutCubic);
+                        QObject::connect(glowPulse, &QVariantAnimation::valueChanged, tc, [=](const QVariant &v) {
+                            const double u = v.toDouble();
+                            const int a = int(70 + 110 * std::sin(u * 3.141592653589793));
+                            sh->setColor(QColor(255, 224, 130, qBound(40, a, 180)));
+                        });
+                        QObject::connect(glowPulse, &QVariantAnimation::finished, tc, [=]() { sh->setColor(c0); });
+                        glowPulse->start(QAbstractAnimation::DeleteWhenStopped);
+                        auto *fs = new QVariantAnimation(lblAiDec1);
+                        fs->setDuration(260);
+                        fs->setStartValue(20.5);
+                        fs->setEndValue(19.0);
+                        fs->setEasingCurve(QEasingCurve::OutCubic);
+                        QObject::connect(fs, &QVariantAnimation::valueChanged, lblAiDec1, [=](const QVariant &sz) {
+                            const int px = qRound(sz.toDouble());
+                            lblAiDec1->setStyleSheet(QStringLiteral(
+                                "QLabel{font-size:%1px;font-weight:800;color:#FFFDE7;background:transparent;border:none;"
+                                "line-height:1.22;}")
+                                                         .arg(px));
+                        });
+                        QObject::connect(fs, &QVariantAnimation::finished, lblAiDec1, [=]() {
+                            lblAiDec1->setStyleSheet(QStringLiteral(
+                                "QLabel{font-size:19px;font-weight:800;color:#FFFDE7;background:transparent;border:none;"
+                                "line-height:1.22;"));
+                        });
+                        fs->start(QAbstractAnimation::DeleteWhenStopped);
+                    }
+                });
+                combo->start(QAbstractAnimation::DeleteWhenStopped);
+            });
+        };
+        constexpr int step = 228;
+        runReveal(faceFromLift(liftSignal), liftSignal, 0, false);
+        runReveal(faceFromLift(liftConflict), liftConflict, step, false);
+        runReveal(faceFromLift(liftDecision), liftDecision, step * 2, true);
+        runReveal(faceFromLift(liftImpact), liftImpact, step * 3, false);
+    };
+
+    const auto dimAiBlocksPending = [=]() {
+        ++animState->aiBlockRevealGen;
+        const auto ghostFace = [](QWidget *face, QVBoxLayout *lift) {
+            if (!face)
+                return;
+            if (face->graphicsEffect())
+                face->setGraphicsEffect(nullptr);
+            auto *fx = new QGraphicsOpacityEffect(face);
+            face->setGraphicsEffect(fx);
+            fx->setOpacity(0.0);
+            if (lift)
+                lift->setContentsMargins(0, 0, 0, 0);
+        };
+        ghostFace(faceFromLift(liftSignal), liftSignal);
+        ghostFace(faceFromLift(liftConflict), liftConflict);
+        ghostFace(faceFromLift(liftDecision), liftDecision);
+        ghostFace(faceFromLift(liftImpact), liftImpact);
+    };
+
+    const auto stopTierShimmers = [=]() {
+        if (animState->tierShimmerAnim) {
+            animState->tierShimmerAnim->stop();
+            animState->tierShimmerAnim->deleteLater();
+            animState->tierShimmerAnim = nullptr;
+        }
+        for (QFrame *sh : {shimSignal, shimConflict, shimDecision, shimImpact}) {
+            if (!sh)
+                continue;
+            sh->hide();
+            sh->setGraphicsEffect(nullptr);
+        }
+    };
+
+    const auto startTierShimmers = [=]() {
+        stopTierShimmers();
+        auto *grp = new QParallelAnimationGroup(decisionCore);
+        for (QFrame *sh : {shimSignal, shimConflict, shimDecision, shimImpact}) {
+            if (!sh)
+                continue;
+            sh->show();
+            auto *fx = new QGraphicsOpacityEffect(sh);
+            sh->setGraphicsEffect(fx);
+            fx->setOpacity(0.28);
+            auto *a = new QPropertyAnimation(fx, QByteArrayLiteral("opacity"), sh);
+            a->setDuration(920);
+            a->setStartValue(0.22);
+            a->setEndValue(0.82);
+            a->setEasingCurve(QEasingCurve::InOutSine);
+            a->setLoopCount(-1);
+            grp->addAnimation(a);
+        }
+        animState->tierShimmerAnim = grp;
+        grp->start();
+    };
+
+    const auto stopHeaderPremiumFx = [=]() {
+        if (animState->hdrStripBreathTimer) {
+            animState->hdrStripBreathTimer->stop();
+            animState->hdrStripBreathTimer->deleteLater();
+            animState->hdrStripBreathTimer.clear();
+        }
+        if (animState->hdrSweepAnim) {
+            animState->hdrSweepAnim->stop();
+            animState->hdrSweepAnim->deleteLater();
+            animState->hdrSweepAnim = nullptr;
+        }
+        hdrSweepBar->setGraphicsEffect(nullptr);
+    };
+
+    const auto startHeaderPremiumFx = [=]() {
+        stopHeaderPremiumFx();
+        const QString hdrBase = QStringLiteral(
+            "QFrame#costAiHeaderStrip{"
+            "background:rgba(255,149,0,0.08);"
+            "border:none;"
+            "border-radius:8px;"
+            "border:1px solid rgba(255,149,0,0.28);}");
+        const QString hdrAlt = QStringLiteral(
+            "QFrame#costAiHeaderStrip{"
+            "background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 rgba(255,149,0,0.06),stop:0.5 rgba(255,149,0,0.16),stop:1 rgba(255,149,0,0.08));"
+            "border:none;"
+            "border-radius:8px;"
+            "border:1px solid rgba(255,149,0,0.42);}");
+        auto *tm = new QTimer(decisionCore);
+        animState->hdrStripBreathTimer = tm;
+        bool tick = false;
+        QObject::connect(tm, &QTimer::timeout, hdrStrip, [=]() mutable {
+            tick = !tick;
+            hdrStrip->setStyleSheet(tick ? hdrAlt : hdrBase);
+        });
+        tm->setInterval(780);
+        tm->start();
+        auto *swFx = new QGraphicsOpacityEffect(hdrSweepBar);
+        hdrSweepBar->setGraphicsEffect(swFx);
+        swFx->setOpacity(0.45);
+        auto *swA = new QPropertyAnimation(swFx, QByteArrayLiteral("opacity"), hdrSweepBar);
+        swA->setDuration(1050);
+        swA->setStartValue(0.38);
+        swA->setEndValue(1.0);
+        swA->setEasingCurve(QEasingCurve::InOutSine);
+        swA->setLoopCount(-1);
+        swA->start();
+        animState->hdrSweepAnim = swA;
+    };
+
+    const auto fadeLabelIn = [](QLabel *lab) {
+        if (!lab || lab->text().trimmed().isEmpty())
+            return;
+        auto *fx = new QGraphicsOpacityEffect(lab);
+        lab->setGraphicsEffect(fx);
+        fx->setOpacity(0.0);
+        auto *a = new QPropertyAnimation(fx, QByteArrayLiteral("opacity"), lab);
+        a->setDuration(240);
+        a->setStartValue(0.0);
+        a->setEndValue(1.0);
+        a->setEasingCurve(QEasingCurve::OutCubic);
+        QObject::connect(a, &QPropertyAnimation::finished, lab, [lab]() {
+            if (qobject_cast<QGraphicsOpacityEffect *>(lab->graphicsEffect()))
+                lab->setGraphicsEffect(nullptr);
+        });
+        a->start(QAbstractAnimation::DeleteWhenStopped);
+    };
+
+    auto updateDecisionEngine = [=](double coutAct, double margeAct, double risqueAct, double volume, double coutOpt, double margeOpt, double risqueOpt) {
+        setTag(tagLabels[0], coutAct > coutOpt * 1.08, QStringLiteral("rgba(255,200,200,0.35)"), QStringLiteral("#ffcdd2"));
+        setTag(tagLabels[1], volume >= 500.0 && margeAct >= 55.0, QStringLiteral("rgba(200,255,210,0.30)"), QStringLiteral("#c8e6c9"));
+        setTag(tagLabels[2], risqueAct >= 60.0, QStringLiteral("rgba(255,224,178,0.35)"), QStringLiteral("#ffe0b2"));
+        setTag(tagLabels[3], (margeOpt - margeAct) >= 8.0 || (risqueAct - risqueOpt) >= 12.0, QStringLiteral("rgba(225,210,255,0.35)"), QStringLiteral("#e1bee7"));
+    };
+
+    auto updateDecisionFlow = [=](double coutAct, double margeAct, double risqueAct, double volume, double coutOpt, double margeOpt, double risqueOpt, int confPct, double seuilApiPct) {
+        Q_UNUSED(confPct);
+        const QLocale loc = QLocale::system();
+        const bool viable = (margeAct >= 58.0 && risqueAct <= 58.0 && volume >= 200.0);
+        const double costCutPct = (coutAct > 0.0) ? (100.0 * (coutAct - coutOpt) / coutAct) : 0.0;
+        const int volumeTarget = int(std::round(std::max(volume * (viable ? 1.05 : 1.20), volume + 80.0)));
+        const bool hasCostPressure = (costCutPct > 0.4);
+        const bool marginStress = (margeAct < 58.0);
+        const bool conflict = (hasCostPressure && (margeAct < 60.0 || marginStress));
+        const QString pctAbs = loc.toString(std::abs(costCutPct), 'f', 1) + QStringLiteral("%");
+
+        if (hasCostPressure)
+            lblAiSig1->setText(QStringLiteral("Coût ↑ +%1 vs baseline").arg(pctAbs));
+        else
+            lblAiSig1->setText(QStringLiteral("Coût stable vs baseline (%1 TND)")
+                                   .arg(loc.toString(coutAct, 'f', 1)));
+        lblAiSig2->setText(marginStress ? QStringLiteral("Marge sous tension vs cible 58%")
+                                        : QStringLiteral("Marge confortable vs baseline"));
+        lblAiSig2->setVisible(true);
+
+        lblAiCfl1->setText(conflict ? QStringLiteral("Déséquilibre coût vs marge détecté")
+                                    : QStringLiteral("Équilibre coût / marge — pas de conflit majeur"));
+
+        lblAiDec1->setTextFormat(Qt::PlainText);
+        if (std::abs(costCutPct) < 0.15) {
+            lblAiDec1->setText(QStringLiteral("Conserver l’enveloppe coût | Pas de levier majeur identifié"));
+        } else {
+            const QString cutS = loc.toString(std::max(0.15, std::abs(costCutPct)), 'f', 1);
+            lblAiDec1->setText(QStringLiteral("Réduire coût −%1% | Volume cible : %2").arg(cutS).arg(volumeTarget));
+        }
+
+        const double dMarg = margeOpt - margeAct;
+        const double dRisk = risqueAct - risqueOpt;
+        QString mPart;
+        if (std::abs(dMarg) < 0.2) {
+            mPart = QStringLiteral("Marge stable");
+        } else if (dMarg > 0.15) {
+            mPart = QStringLiteral("Marge +%1 %%").arg(loc.toString(dMarg, 'f', 1));
+        } else {
+            mPart = QStringLiteral("Marge %1 %%").arg(loc.toString(dMarg, 'f', 1));
+        }
+        const QString rPart = (dRisk >= 0.8) ? QStringLiteral("Risque en baisse")
+            : ((dRisk <= -0.8)                     ? QStringLiteral("Risque en hausse")
+                                                   : QStringLiteral("Risque stable"));
+        QString impCore = QStringLiteral("%1 | %2").arg(mPart, rPart);
+        if (seuilApiPct >= 0.0) {
+            impCore = QStringLiteral("Seuil matière +%1 %% | %2")
+                          .arg(loc.toString(seuilApiPct, 'f', 1), impCore);
+        }
+        lblAiImp1->setText(impCore);
+
+        kpiSNum->setText(QString::number(volumeTarget));
+        kpiSDelta->setText(QStringLiteral("unités"));
+        if (stabSeuilBar && volumeTarget > 0)
+            stabSeuilBar->setValue(qBound(0, int(std::round(100.0 * volume / double(volumeTarget))), 100));
+
+        animateConfidence(costConfidenceFromRisk(risqueAct));
+    };
+
+    auto applyFromBackend = [=](const QJsonObject &root) {
+        stopAiRunningPulse();
+        if (root.isEmpty())
+            return;
+        const QString decKey = root.value(QStringLiteral("decision")).toString().trimmed().toUpper();
+        QString badge, fg, bg;
+        if (decKey == QStringLiteral("LANCER")) {
+            badge = QStringLiteral("OPTIMISÉ");
+            fg = QStringLiteral("#1b4332");
+            bg = QStringLiteral("#f0faf3");
+        } else if (decKey == QStringLiteral("AJUSTER")) {
+            badge = QStringLiteral("AJUSTER");
+            fg = QStringLiteral("#7a4a24");
+            bg = QStringLiteral("#fffbf7");
+        } else {
+            badge = QStringLiteral("RISQUÉ");
+            fg = QStringLiteral("#7f1d1d");
+            bg = QStringLiteral("#fff8f8");
+        }
+        lblBadge->setText(badge.toUpper());
+        lblBadge->setStyleSheet(QStringLiteral(
+            "font-size:9px;font-weight:800;letter-spacing:1.35px;"
+            "border-radius:999px;padding:8px 16px;background:%1;color:%2;border:none;")
+                                    .arg(bg, fg));
+        const QString decNorm = (decKey == QStringLiteral("LANCER")) ? QStringLiteral("LANCER")
+            : (decKey == QStringLiteral("AJUSTER"))              ? QStringLiteral("AJUSTER")
+                                                                 : QStringLiteral("RISQUE");
+        if (!animState->lastDecision.isEmpty() && decNorm != animState->lastDecision)
+            UIAnimator::pulseDecisionBadge(lblBadge);
+        animState->lastDecision = decNorm;
+
+        const QJsonObject scores = root.value(QStringLiteral("scores")).toObject();
+        const int confPct = scores.value(QStringLiteral("confiance")).toInt(0);
+
+        const QJsonObject sens = root.value(QStringLiteral("sensibilite")).toObject();
+        const double seuil = sens.value(QStringLiteral("seuilCritiqueMatiere")).toDouble(0.0);
+
+        const QJsonObject bl = root.value(QStringLiteral("baseline")).toObject();
+        const double c0 = bl.value(QStringLiteral("cout")).toDouble();
+        const double m0 = bl.value(QStringLiteral("marge")).toDouble();
+        const double r0 = bl.value(QStringLiteral("risque")).toDouble();
+        const QJsonObject op = root.value(QStringLiteral("optimise")).toObject();
+        const double c1 = op.value(QStringLiteral("cout")).toDouble();
+        const double m1 = op.value(QStringLiteral("marge")).toDouble();
+        const double r1 = op.value(QStringLiteral("risque")).toDouble(qMax(0.0, r0 - 10.0));
+
+        const double flatD = static_cast<double>(sldCostShift->value()) * 0.4;
+        const double c0Disp = c0 + flatD;
+        const double prevDispSnap = (animState->lastDispCost >= 0.0) ? animState->lastDispCost : c0Disp;
+
+        const double prevCostSnap = animState->lastCost;
+        const double prevMargSnap = animState->lastMarg;
+        const double prevRisqueSnap = animState->lastRisque;
+        const int prevStabSnap = animState->lastStab;
+        const int prevScoreSnap = animState->lastScore;
+
+        kpiCDelta->setText(QString());
+        kpiMDelta->setText(QString());
+        kpiRDelta->setText(QString());
+        kpiCDelta->setGraphicsEffect(nullptr);
+        kpiMDelta->setGraphicsEffect(nullptr);
+        kpiRDelta->setGraphicsEffect(nullptr);
+
+        const QString kMutedKpi = QStringLiteral(
+            "QLabel{color:#4A4A4A;font-size:34px;font-weight:800;padding:0;margin:0;background:transparent;");
+        kpiCNum->setStyleSheet(kMutedKpi + QStringLiteral("min-width:200px;"));
+        kpiMNum->setStyleSheet(kMutedKpi + QStringLiteral("min-width:140px;"));
+        kpiRNum->setStyleSheet(kMutedKpi + QStringLiteral("min-width:130px;"));
+        kpiSNum->setStyleSheet(kMutedKpi + QStringLiteral("min-width:100px;"));
+        if (prevCostSnap >= 0.0) {
+            kpiCNum->setText(QStringLiteral("%1 TND").arg(QLocale::system().toString(prevDispSnap, 'f', 2)));
+            kpiMNum->setText(QStringLiteral("%1%").arg(QLocale::system().toString(prevMargSnap, 'f', 0)));
+            kpiRNum->setText(QStringLiteral("%1").arg(QLocale::system().toString(prevRisqueSnap, 'f', 0)));
+        } else {
+            kpiCNum->setText(QStringLiteral("…"));
+            kpiMNum->setText(QStringLiteral("…"));
+            kpiRNum->setText(QStringLiteral("…"));
+        }
+        kpiSNum->setText(QStringLiteral("…"));
+        kpiSDelta->setText(QString());
+        const int stabTarget = qBound(0, static_cast<int>(std::round(100.0 - r0)), 100);
+        if (stabBar)
+            stabBar->setValue(prevStabSnap >= 0 ? prevStabSnap : stabTarget);
+
+        lblCmpCost->setText(QStringLiteral("⬇️ %1 TND  →  %2 TND")
+                                .arg(QLocale::system().toString(c0, 'f', 2), QLocale::system().toString(c1, 'f', 2)));
+        lblCmpMarg->setText(QStringLiteral("⬆️ Marge %1%  →  %2%")
+                                .arg(QLocale::system().toString(m0, 'f', 0), QLocale::system().toString(m1, 'f', 0)));
+        lblCmpRisk->setText(QStringLiteral("⚠️ Risque %1  →  %2")
+                                .arg(QLocale::system().toString(r0, 'f', 0), QLocale::system().toString(r1, 'f', 0)));
+        updateDecisionEngine(c0, m0, r0, sbVol->value(), c1, m1, r1);
+        updateDecisionFlow(c0, m0, r0, sbVol->value(), c1, m1, r1, confPct, seuil);
+
+        const QJsonArray insA = root.value(QStringLiteral("insights")).toArray();
+        for (int i = 0; i < insA.size(); ++i) {
+            const QString t = insA.at(i).toString().trimmed();
+            if (t.isEmpty())
+                continue;
+            if (i == 0) {
+                if (t.contains(QLatin1Char('\n'))) {
+                    const QStringList p = t.split(QLatin1Char('\n'));
+                    lblAiSig1->setText(p.value(0).trimmed());
+                    const QString s2 = p.value(1).trimmed();
+                    if (!s2.isEmpty()) {
+                        lblAiSig2->setText(s2);
+                        lblAiSig2->setVisible(true);
+                    }
+                } else {
+                    lblAiSig1->setText(t);
+                }
+            } else if (i == 1) {
+                lblAiCfl1->setText(t);
+            } else if (i == 2) {
+                lblAiDec1->setTextFormat(Qt::PlainText);
+                lblAiDec1->setText(t);
+            } else if (i == 3) {
+                lblAiImp1->setText(t);
+            }
+        }
+
+        crossfadeToResults();
+
+        aiStatusRow->setVisible(true);
+        lblAiRunning->setText(QStringLiteral("Analyse des signaux…"));
+        if (animState->aiPulseAnim) {
+            animState->aiPulseAnim->stop();
+            animState->aiPulseAnim->deleteLater();
+            animState->aiPulseAnim = nullptr;
+        }
+        {
+            auto *fx = new QGraphicsOpacityEffect(lblAiPulseDot);
+            lblAiPulseDot->setGraphicsEffect(fx);
+            fx->setOpacity(1.0);
+            auto *pa = new QPropertyAnimation(fx, QByteArrayLiteral("opacity"), lblAiPulseDot);
+            pa->setDuration(620);
+            pa->setStartValue(0.32);
+            pa->setEndValue(1.0);
+            pa->setEasingCurve(QEasingCurve::InOutSine);
+            pa->setLoopCount(-1);
+            animState->aiPulseAnim = pa;
+            pa->start();
+        }
+        startTierShimmers();
+        startHeaderPremiumFx();
+
+        const int r0s = scores.value(QStringLiteral("rentabilite")).toInt(0);
+        const int r1s = scores.value(QStringLiteral("robustesse")).toInt(0);
+        const int r2s = scores.value(QStringLiteral("coherence")).toInt(0);
+        const int r3s = scores.value(QStringLiteral("confiance")).toInt(0);
+        const int scMoy = costProductScoreFromKpis(m0, r0, sbVol->value());
+
+        const qint64 tNow = QDateTime::currentMSecsSinceEpoch();
+        const int targetThink = 800 + QRandomGenerator::global()->bounded(401);
+        const int elapsed = int(qMax(qint64(0), tNow - animState->analysisT0));
+        const int waitMs = qMax(0, targetThink - elapsed);
+
+        QTimer::singleShot(waitMs, this, [=]() {
+            stopTierShimmers();
+            stopHeaderPremiumFx();
+
+            kpiCNum->setStyleSheet(QStringLiteral(
+                "QLabel{color:#F5F5F5;font-size:34px;font-weight:800;padding:0;margin:0;"
+                "background:transparent;min-width:200px;}"));
+            kpiMNum->setStyleSheet(QStringLiteral(
+                "QLabel{color:#FF9500;font-size:34px;font-weight:800;padding:0;margin:0;"
+                "background:transparent;min-width:140px;}"));
+            kpiRNum->setStyleSheet(QStringLiteral(
+                "QLabel{color:%1;font-size:34px;font-weight:800;padding:0;margin:0;"
+                "background:transparent;min-width:130px;}")
+                                     .arg(r0 <= 50.0 ? QStringLiteral("#66BB6A") : QStringLiteral("#FF7043")));
+            kpiSNum->setStyleSheet(QStringLiteral(
+                "QLabel{color:#F5F5F5;font-size:34px;font-weight:800;padding:0;margin:0;"
+                "background:transparent;min-width:100px;}"));
+
+            if (prevCostSnap >= 0.0) {
+                UIAnimator::animateLabelDouble(kpiCNum, prevDispSnap, c0Disp, 2, QStringLiteral(" TND"), 340);
+                UIAnimator::animateLabelDouble(kpiMNum, prevMargSnap, m0, 0, QStringLiteral("%"), 340);
+            } else {
+                kpiCNum->setText(QStringLiteral("%1 TND").arg(QLocale::system().toString(c0Disp, 'f', 2)));
+                kpiMNum->setText(QStringLiteral("%1%").arg(QLocale::system().toString(m0, 'f', 0)));
+            }
+            animState->lastCost = c0;
+            animState->lastDispCost = c0Disp;
+            animState->lastMarg = m0;
+
+            if (prevRisqueSnap >= 0.0)
+                UIAnimator::animateLabelDouble(kpiRNum, prevRisqueSnap, r0, 0, QString(), 340);
+            else
+                kpiRNum->setText(QStringLiteral("%1").arg(QLocale::system().toString(r0, 'f', 0)));
+            animState->lastRisque = r0;
+
+            const int stabVal = stabTarget;
+            if (prevStabSnap >= 0 && stabBar)
+                UIAnimator::animateProgress(stabBar, prevStabSnap, stabVal, 300);
+            else if (stabBar)
+                stabBar->setValue(stabVal);
+            animState->lastStab = stabVal;
+
+            if (frRShadow) {
+                if (r0 >= 60.0) {
+                    frRShadow->setColor(QColor(211, 47, 47, 100));
+                    frRShadow->setBlurRadius(34);
+                    frRShadow->setOffset(0, 6);
+                    frR->setStyleSheet(QStringLiteral("QFrame{background:#2A1515;border:1px solid #3A2020;border-radius:8px;}"));
+                } else if (r0 >= 45.0) {
+                    frRShadow->setColor(QColor(198, 40, 40, 55));
+                    frRShadow->setBlurRadius(18);
+                    frRShadow->setOffset(0, 4);
+                    frR->setStyleSheet(QStringLiteral("QFrame{background:#161616;border:1px solid #2A2A2A;border-radius:8px;}"));
+                } else {
+                    frRShadow->setColor(QColor(0, 0, 0, 18));
+                    frRShadow->setBlurRadius(14);
+                    frRShadow->setOffset(0, 4);
+                    frR->setStyleSheet(QStringLiteral("QFrame{background:#161616;border:1px solid #2A2A2A;border-radius:8px;}"));
+                }
+            }
+
+            QTimer::singleShot(360, this, [=]() {
+                if (prevCostSnap >= 0.0) {
+                    setDeltaLabel(kpiCDelta, c0Disp - prevDispSnap, true);
+                    setDeltaLabel(kpiMDelta, m0 - prevMargSnap, false);
+                }
+                fadeLabelIn(kpiCDelta);
+                fadeLabelIn(kpiMDelta);
+            });
+
+            animateValueColor(kpiMNum, QColor("#4A4A4A"), (m0 >= 60.0 ? QColor("#2e7d32") : QColor("#FF9500")), 320, 140);
+            animateValueColor(kpiRNum, QColor("#4A4A4A"), (r0 <= 50.0 ? QColor("#66BB6A") : QColor("#FF7043")), 320, 130);
+
+            staggerRevealAiBlocks();
+
+            if (prevScoreSnap >= 0) {
+                UIAnimator::animateProgress(scoreBar, prevScoreSnap, scMoy, 300);
+                UIAnimator::animateLabelInt(scoreNum, prevScoreSnap, scMoy, 260);
+            } else {
+                scoreBar->setValue(scMoy);
+                scoreNum->setText(QString::number(scMoy));
+            }
+            animState->lastScore = scMoy;
+
+            lblAdv->setText(QStringLiteral("Rent. %1 · Rob. %2 · Coh. %3 · Conf. %4")
+                                .arg(r0s)
+                                .arg(r1s)
+                                .arg(r2s)
+                                .arg(r3s));
+            liveOutcome->act.coutUnitaireTnd = c0;
+            liveOutcome->act.margePct = m0;
+            liveOutcome->act.risqueScore = r0;
+            *liveDin = buildDin(SensitivityEngine::materialWithDelta(sbMat->value(), static_cast<double>(sldSens->value())));
+            *liveDisp = c0Disp;
+            *liveHas = true;
+            animState->projectionSeed = animState->projectionSeed + 7u;
+            refreshAuxPanels();
+            const QString ts = QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss"));
+            sourceChipRow->setVisible(false);
+            sourceStrip->setStyleSheet(QStringLiteral(
+                "QFrame#costSourceStrip{background:transparent;border:none;border-radius:0;}"));
+            lblDataSource->setText(QStringLiteral("Source : backend Python (Fashion Oracle) — %1 · mis à jour %2")
+                                       .arg(fashionOracleBaseUrl(), ts));
+            lblDataSource->setStyleSheet(QStringLiteral(
+                "QLabel{font-size:11px;font-weight:600;color:rgba(250,247,244,0.62);padding:0 2px;margin:0;"
+                "background:transparent;border:none;}"));
+            sourceStrip->setVisible(true);
+
+            QTimer::singleShot(1120, this, [=]() {
+                btnAiPressFx->setOpacity(1.0);
+                btnAi->setEnabled(true);
+                btnAi->setText(QStringLiteral("Analyser"));
+            });
+        });
+    };
+
+    std::function<void(const SimulationOutcome &, bool)> applyOutcome;
+    applyOutcome = [=](const SimulationOutcome &o, bool withBreakpoint) {
+        QString badge, fg, bg;
+        const QString dr = o.decisionRaw.trimmed();
+        const QString du = dr.toUpper();
+        if (du == QStringLiteral("LANCER") || dr == QStringLiteral("Lancer")) {
+            badge = QStringLiteral("OPTIMISÉ");
+            fg = QStringLiteral("#1b4332");
+            bg = QStringLiteral("#f0faf3");
+        } else if (du == QStringLiteral("AJUSTER") || dr == QStringLiteral("Lancer sous conditions")
+                   || dr == QStringLiteral("Reconfigurer")) {
+            badge = QStringLiteral("AJUSTER");
+            fg = QStringLiteral("#7a4a24");
+            bg = QStringLiteral("#fffbf7");
+        } else {
+            badge = QStringLiteral("RISQUÉ");
+            fg = QStringLiteral("#7f1d1d");
+            bg = QStringLiteral("#fff8f8");
+        }
+        lblBadge->setText(badge.toUpper());
+        lblBadge->setStyleSheet(QStringLiteral(
+            "font-size:9px;font-weight:800;letter-spacing:1.35px;border-radius:999px;padding:8px 16px;background:%1;"
+            "color:%2;border:none;")
+                                    .arg(bg, fg));
+
+        const QString decPulse = (du == QStringLiteral("LANCER") || dr == QStringLiteral("Lancer"))
+            ? QStringLiteral("LANCER")
+            : ((du == QStringLiteral("AJUSTER") || dr == QStringLiteral("Lancer sous conditions")
+                || dr == QStringLiteral("Reconfigurer"))
+                   ? QStringLiteral("AJUSTER")
+                   : QStringLiteral("RISQUE"));
+        if (!animState->lastDecision.isEmpty() && decPulse != animState->lastDecision)
+            UIAnimator::pulseDecisionBadge(lblBadge);
+        animState->lastDecision = decPulse;
+
+        const double flatSim = static_cast<double>(sldCostShift->value()) * 0.4;
+        const double dispNew = o.act.coutUnitaireTnd + flatSim;
+        const double dispPrev = (animState->lastDispCost >= 0.0) ? animState->lastDispCost : dispNew;
+        const ProductAnalyzerInput dinLiveLine = buildDin(SensitivityEngine::materialWithDelta(
+            sbMat->value(), static_cast<double>(sldSens->value())));
+        const int userScore = costProductScoreFromKpis(o.act.margePct, o.act.risqueScore, sbVol->value());
+
+        if (animState->lastCost >= 0.0) {
+            setDeltaLabel(kpiCDelta, dispNew - dispPrev, true);
+            setDeltaLabel(kpiMDelta, o.act.margePct - animState->lastMarg, false);
+            UIAnimator::animateLabelDouble(kpiCNum, dispPrev, dispNew, 2, QStringLiteral(" TND"), 220);
+            UIAnimator::animateLabelDouble(kpiMNum, animState->lastMarg, o.act.margePct, 0, QStringLiteral("%"), 220);
+        } else {
+            kpiCDelta->setText(QString());
+            kpiMDelta->setText(QString());
+            kpiCNum->setText(QStringLiteral("%1 TND").arg(QLocale::system().toString(dispNew, 'f', 2)));
+            kpiMNum->setText(QStringLiteral("%1%").arg(QLocale::system().toString(o.act.margePct, 'f', 0)));
+        }
+        animState->lastCost = o.act.coutUnitaireTnd;
+        animState->lastDispCost = dispNew;
+        animState->lastMarg = o.act.margePct;
+
+        if (animState->lastRisque >= 0.0)
+            UIAnimator::animateLabelDouble(kpiRNum, animState->lastRisque, o.act.risqueScore, 0, QString(), 220);
+        else
+            kpiRNum->setText(QStringLiteral("%1").arg(QLocale::system().toString(o.act.risqueScore, 'f', 0)));
+        animState->lastRisque = o.act.risqueScore;
+        kpiRDelta->setText(QString());
+        animateValueColor(kpiMNum, QColor("#4A4A4A"), (o.act.margePct >= 60.0 ? QColor("#2e7d32") : QColor("#FF9500")), 300, 140);
+        animateValueColor(kpiRNum, QColor("#4A4A4A"),
+                           (o.act.risqueScore <= 50.0 ? QColor("#66BB6A") : QColor("#FF7043")), 300, 130);
+        const int stabVal = qBound(0, static_cast<int>(std::round(100.0 - o.act.risqueScore)), 100);
+        if (animState->lastStab >= 0 && stabBar)
+            UIAnimator::animateProgress(stabBar, animState->lastStab, stabVal, 280);
+        else if (stabBar)
+            stabBar->setValue(stabVal);
+        animState->lastStab = stabVal;
+
+        {
+            const double r0 = o.act.risqueScore;
+            if (frRShadow) {
+                if (r0 >= 60.0) {
+                    frRShadow->setColor(QColor(211, 47, 47, 100));
+                    frRShadow->setBlurRadius(34);
+                    frRShadow->setOffset(0, 6);
+                    frR->setStyleSheet(QStringLiteral("QFrame{background:#2A1515;border:1px solid #3A2020;border-radius:8px;}"));
+                } else if (r0 >= 45.0) {
+                    frRShadow->setColor(QColor(198, 40, 40, 55));
+                    frRShadow->setBlurRadius(18);
+                    frRShadow->setOffset(0, 4);
+                    frR->setStyleSheet(QStringLiteral("QFrame{background:#161616;border:1px solid #2A2A2A;border-radius:8px;}"));
+                } else {
+                    frRShadow->setColor(QColor(0, 0, 0, 18));
+                    frRShadow->setBlurRadius(14);
+                    frRShadow->setOffset(0, 4);
+                    frR->setStyleSheet(QStringLiteral("QFrame{background:#161616;border:1px solid #2A2A2A;border-radius:8px;}"));
+                }
+            }
+        }
+
+        const QString down = QStringLiteral("⬇️");
+        const QString up = QStringLiteral("⬆️");
+        lblCmpCost->setText(QStringLiteral("%1 %2 %3  →  %4 TND")
+                                .arg(down,
+                                     QLocale::system().toString(o.act.coutUnitaireTnd, 'f', 2),
+                                     QStringLiteral("TND"),
+                                     QLocale::system().toString(o.opt.coutUnitaireTnd, 'f', 2)));
+        lblCmpMarg->setText(QStringLiteral("%1 Marge %2%  →  %3%")
+                                .arg(up,
+                                     QLocale::system().toString(o.act.margePct, 'f', 0),
+                                     QLocale::system().toString(o.opt.margePct, 'f', 0)));
+        lblCmpRisk->setText(QStringLiteral("⚠️ Risque %1  →  %2")
+                                .arg(QLocale::system().toString(o.act.risqueScore, 'f', 0),
+                                     QLocale::system().toString(o.opt.risqueScore, 'f', 0)));
+        updateDecisionEngine(
+            o.act.coutUnitaireTnd,
+            o.act.margePct,
+            o.act.risqueScore,
+            sbVol->value(),
+            o.opt.coutUnitaireTnd,
+            o.opt.margePct,
+            o.opt.risqueScore
+        );
+        updateDecisionFlow(
+            o.act.coutUnitaireTnd,
+            o.act.margePct,
+            o.act.risqueScore,
+            sbVol->value(),
+            o.opt.coutUnitaireTnd,
+            o.opt.margePct,
+            o.opt.risqueScore,
+            o.confidencePct,
+            -1.0
+        );
+
+        QStringList ins = InsightEngine::topInsights(o.tensions, 4);
+        const int insCap = qMin(ins.size(), 3);
+        for (int i = 0; i < insCap; ++i) {
+            const QString t = ins.value(i).trimmed();
+            if (t.isEmpty())
+                continue;
+            if (i == 0) {
+                if (t.contains(QLatin1Char('\n'))) {
+                    const QStringList p = t.split(QLatin1Char('\n'));
+                    lblAiSig1->setText(p.value(0).trimmed());
+                    const QString s2 = p.value(1).trimmed();
+                    if (!s2.isEmpty()) {
+                        lblAiSig2->setText(s2);
+                        lblAiSig2->setVisible(true);
+                    }
+                } else {
+                    lblAiSig1->setText(t);
+                }
+            } else if (i == 1) {
+                lblAiCfl1->setText(t);
+            } else if (i == 2) {
+                lblAiDec1->setTextFormat(Qt::PlainText);
+                lblAiDec1->setText(t);
+            }
+        }
+        if (withBreakpoint) {
+            const ProductAnalyzerInput ref = buildDin(SensitivityEngine::materialWithDelta(
+                sbMat->value(), static_cast<double>(sldSens->value())));
+            lblAiImp1->setText(BreakpointEngine::materialThresholdLine(ref));
+        } else if (ins.size() > 3 && !ins.value(3).trimmed().isEmpty()) {
+            lblAiImp1->setText(ins.value(3).trimmed());
+        }
+        staggerRevealAiBlocks();
+
+        if (animState->lastScore >= 0) {
+            UIAnimator::animateProgress(scoreBar, animState->lastScore, userScore, 300);
+            UIAnimator::animateLabelInt(scoreNum, animState->lastScore, userScore, 240);
+        } else {
+            scoreBar->setValue(userScore);
+            scoreNum->setText(QString::number(userScore));
+        }
+        animState->lastScore = userScore;
+
+        const QString n0 = o.tensions.isEmpty() ? QStringLiteral("—") : o.tensions.first().niveau;
+        lblAdv->setText(QStringLiteral("Coh. %1 · Risque %2 · %3")
+                            .arg(QLocale::system().toString(o.coherence, 'f', 0),
+                                 QLocale::system().toString(o.act.risqueScore, 'f', 0),
+                                 n0));
+
+        *liveOutcome = o;
+        *liveDin = dinLiveLine;
+        *liveDisp = dispNew;
+        *liveHas = true;
+        animState->projectionSeed = animState->projectionSeed + 31u;
+        refreshAuxPanels();
+
+        sourceChipRow->setVisible(true);
+        sourceStrip->setStyleSheet(QStringLiteral(
+            "QFrame#costSourceStrip{background:transparent;border:none;border-radius:0;}"));
+        lblDataSource->setText(QStringLiteral(
+            "Source : moteur local C++ intégré (temps réel, sans appel externe)"));
+        lblDataSource->setStyleSheet(QStringLiteral(
+            "QLabel{font-size:11px;font-weight:600;color:rgba(250,247,244,0.62);padding:0 2px;margin:0;"
+            "background:transparent;border:none;}"));
+        sourceStrip->setVisible(true);
+        crossfadeToResults();
+    };
+
+    auto runSim = [=](bool withBreakpoint) {
+        if (!*hasManualAnalysis)
+            return;
+        const double m = SensitivityEngine::materialWithDelta(sbMat->value(), static_cast<double>(sldSens->value()));
+        const ProductAnalyzerInput din = buildDin(m);
+        const SimulationOutcome o = SimulationEngine::compute(din);
+        applyOutcome(o, withBreakpoint);
+    };
+
+    QObject::connect(sldSens, &QSlider::valueChanged, this, [=](int) { runSim(false); });
+    QObject::connect(sldCostShift, &QSlider::valueChanged, this, [=](int) { runSim(false); });
+    QObject::connect(sbMat, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [=](double) { runSim(false); });
+    QObject::connect(sbVol, QOverload<int>::of(&QSpinBox::valueChanged), this, [=](int) { runSim(false); });
+    QObject::connect(leLib, &QLineEdit::textChanged, this, [=] { runSim(false); });
+    QObject::connect(btnStress, &QPushButton::clicked, this, [=]() {
+        sldSens->setValue(qMin(15, sldSens->value() + 10));
+    });
+    QObject::connect(modeBtn, &QPushButton::toggled, lblAdv, [=](bool on) {
+        modeBtn->setText(on ? QStringLiteral("🧠") : QStringLiteral("⚡"));
+        lblAdv->setVisible(on);
+    });
+    QObject::connect(btnImprove, &QPushButton::clicked, this, [=]() {
+        if (!*hasManualAnalysis)
+            return;
+        const int shift = sldCostShift->value();
+        const double baseMat = SensitivityEngine::materialWithDelta(sbMat->value(), static_cast<double>(sldSens->value()));
+        const double matAdjusted = baseMat * (1.0 + static_cast<double>(shift) / 100.0);
+        const ProductAnalyzerInput din = buildDin(matAdjusted);
+        const SimulationOutcome o = SimulationEngine::compute(din);
+        applyOutcome(o, true);
+    });
+
+    QObject::connect(btnAi, &QAbstractButton::pressed, this, [=]() {
+        if (!btnAi->isEnabled())
+            return;
+        btnAiPressAnim->stop();
+        btnAiPressAnim->setStartValue(btnAiPressFx->opacity());
+        btnAiPressAnim->setEndValue(0.86);
+        btnAiPressAnim->start();
+    });
+    QObject::connect(btnAi, &QAbstractButton::released, this, [=]() {
+        btnAiPressAnim->stop();
+        btnAiPressAnim->setStartValue(btnAiPressFx->opacity());
+        btnAiPressAnim->setEndValue(1.0);
+        btnAiPressAnim->start();
+    });
+
+    QObject::connect(btnAi, &QPushButton::clicked, this, [=]() {
+        *hasManualAnalysis = true;
+        btnAiPressAnim->stop();
+        btnAiPressFx->setOpacity(1.0);
+        btnAi->setEnabled(false);
+        btnAi->setText(QStringLiteral("…"));
+        lblPreSub->setText(QStringLiteral("Analyse en cours — connexion au moteur IA…"));
+        animState->lastCost = -1.0;
+        animState->lastMarg = -1.0;
+        animState->lastRisque = -1.0;
+        animState->lastScore = -1;
+        animState->lastStab = -1;
+        animState->lastDecision.clear();
+        animState->analysisT0 = QDateTime::currentMSecsSinceEpoch();
+
+        if (m_costSimReply) {
+            m_costSimReply->disconnect();
+            m_costSimReply->abort();
+            m_costSimReply->deleteLater();
+            m_costSimReply.clear();
+        }
+
+        // --- calcul local (pas de backend Python requis) ---
+        {
+            const double mat  = sbMat->value();
+            const int    vol  = sbVol->value();
+            const QString nom = leLib->text().trimmed().isEmpty()
+                                    ? QStringLiteral("Produit") : leLib->text().trimmed();
+
+            // Économie d’échelle : facteur série
+            const double serie  = std::clamp(0.88 + 0.028 * std::log(std::max(1.0, double(vol))), 0.82, 1.12);
+            // Coût chargé matière + overhead + MO + charges
+            const double coutBase = mat * 1.22 * serie;
+            const double overhead = mat * 0.35;
+            const double mainOeuvre = mat * 0.52 * serie;
+            const double cout0 = coutBase + overhead + mainOeuvre * 0.3;
+
+            // Prix de vente estimé = coût × marge cible 35 %
+            const double prixVente = cout0 * 1.35;
+            const double marge0 = ((prixVente - cout0) / prixVente) * 100.0;
+            // Risque : élevé si marge < 15 %, faible si > 30 %
+            const double risque0 = std::clamp(120.0 - marge0 * 2.5, 8.0, 90.0);
+
+            // Version optimisée : -8 % coût, +5 % marge
+            const double cout1   = cout0 * 0.92;
+            const double marge1  = std::min(marge0 + 5.0, 55.0);
+            const double risque1 = std::max(risque0 - 10.0, 5.0);
+
+            const QString decision = marge0 >= 28.0 ? QStringLiteral("LANCER")
+                                   : marge0 >= 15.0 ? QStringLiteral("AJUSTER")
+                                                    : QStringLiteral("RISQUE");
+            const int confiance = marge0 >= 28.0 ? 88 : marge0 >= 15.0 ? 75 : 62;
+            const double seuil  = mat * 1.18;
+
+            const QString insDecision = QStringLiteral(
+                "Décision moteur local : %1 — marge estimée %2% sur volume %3 pièces.")
+                .arg(decision, QString::number(marge0, 'f', 1), QString::number(vol));
+            const QString insConflict = QStringLiteral(
+                "Sensibilité matière : seuil critique à %1 TND (hausse +18%).")
+                .arg(QLocale::system().toString(seuil, 'f', 2));
+            const QString insDec = QStringLiteral(
+                "Optimisation possible : réduction coût MO et charges → coût %1 TND.")
+                .arg(QLocale::system().toString(cout1, 'f', 2));
+            const QString insImp = QStringLiteral(
+                "Impact volume : chaque doublement du lot réduit le coût unitaire d’environ 2,8%.");
+
+            QJsonObject bl, op, scores, sens;
+            bl.insert(QStringLiteral("cout"),   cout0);
+            bl.insert(QStringLiteral("marge"),  marge0);
+            bl.insert(QStringLiteral("risque"), risque0);
+            op.insert(QStringLiteral("cout"),   cout1);
+            op.insert(QStringLiteral("marge"),  marge1);
+            op.insert(QStringLiteral("risque"), risque1);
+            scores.insert(QStringLiteral("confiance"), confiance);
+            sens.insert(QStringLiteral("seuilCritiqueMatiere"), seuil);
+
+            QJsonObject local;
+            local.insert(QStringLiteral("decision"),    decision);
+            local.insert(QStringLiteral("scores"),      scores);
+            local.insert(QStringLiteral("sensibilite"), sens);
+            local.insert(QStringLiteral("baseline"),    bl);
+            local.insert(QStringLiteral("optimise"),    op);
+            local.insert(QStringLiteral("insights"),    QJsonArray{insDecision, insConflict, insDec, insImp});
+            local.insert(QStringLiteral("produit"),     nom);
+            local.insert(QStringLiteral("source"),      QStringLiteral("local"));
+
+            qDebug() << "[SimulateurCout] calcul local nom=" << nom
+                     << "mat=" << mat << "vol=" << vol
+                     << "cout=" << cout0 << "marge=" << marge0 << "dec=" << decision;
+
+            QTimer::singleShot(400, this, [=]() {
+                applyFromBackend(local);
+                btnAiPressFx->setOpacity(1.0);
+                btnAi->setEnabled(true);
+                btnAi->setText(QStringLiteral("Analyser"));
+                lblPreSub->setText(QStringLiteral("Analyse locale terminée — moteur embarqué"));
+            });
+            return;
+        }
+        // --- fin calcul local ---
+
+        QUrl u(fashionOracleBaseUrl() + QStringLiteral("/api/simulateur-cout/analyser"));
+        QJsonObject body;
+        body.insert(QStringLiteral("produit"),
+                    leLib->text().trimmed().isEmpty() ? QStringLiteral("Produit") : leLib->text().trimmed());
+        body.insert(QStringLiteral("coutMatiere"), sbMat->value());
+        body.insert(QStringLiteral("volume"), sbVol->value());
+        body.insert(QStringLiteral("objectif"), QStringLiteral("equilibre"));
+        const QByteArray payload = QJsonDocument(body).toJson(QJsonDocument::Compact);
+
+        const std::shared_ptr<int> attempt = std::make_shared<int>(0);
+        const auto launch = std::make_shared<std::function<void()>>();
+        *launch = [=]() {
+            QNetworkRequest req(u);
+            req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
+            req.setTransferTimeout(120000);
+#endif
+            QNetworkReply *rep = m_namCostSim.post(req, payload);
+            m_costSimReply = rep;
+            QObject::connect(rep, &QNetworkReply::finished, this, [=]() {
+                QNetworkReply *r = m_costSimReply.data();
+                if (!r || r != rep)
+                    return;
+                const QNetworkReply::NetworkError nerr = r->error();
+                const QVariant httpAttr = r->attribute(QNetworkRequest::HttpStatusCodeAttribute);
+                const int httpSt = httpAttr.isValid() ? httpAttr.toInt() : -1;
+                const QByteArray raw = r->readAll();
+                r->deleteLater();
+                m_costSimReply.clear();
+
+                const bool httpOk = (nerr == QNetworkReply::NoError && httpSt >= 200 && httpSt < 300);
+                QJsonParseError pe{};
+                const QJsonDocument jd = QJsonDocument::fromJson(raw, &pe);
+                if (httpOk && pe.error == QJsonParseError::NoError && jd.isObject()) {
+                    applyFromBackend(jd.object());
+                    qDebug() << "[SimulateurCout] OK API" << u.toString() << "marge="
+                             << jd.object().value(QStringLiteral("baseline")).toObject().value(QStringLiteral("marge")).toDouble();
+                    return;
+                }
+                qDebug() << "[SimulateurCout] API erreur tentative=" << (*attempt)
+                         << "url=" << u.toString() << "err=" << nerr << "http=" << httpSt << "corps=" << raw.left(160);
+                if (*attempt < 2) {
+                    (*attempt) += 1;
+                    QTimer::singleShot(1500, this, [launch]() { (*launch)(); });
+                    return;
+                }
+                lblPreSub->setText(QStringLiteral("Le moteur IA est prêt à analyser coût, marge et risque"));
+                btnAiPressFx->setOpacity(1.0);
+                btnAi->setEnabled(true);
+                btnAi->setText(QStringLiteral("Analyser"));
+                stopAiRunningPulse();
+                const auto restoreFace = [=](QVBoxLayout *liftLy) {
+                    QWidget *f = faceFromLift(liftLy);
+                    if (f && f->graphicsEffect())
+                        f->setGraphicsEffect(nullptr);
+                };
+                restoreFace(liftSignal);
+                restoreFace(liftConflict);
+                restoreFace(liftDecision);
+                restoreFace(liftImpact);
+                stopTierShimmers();
+            });
+        };
+        startAiRunningPulse();
+        dimAiBlocksPending();
+        (*launch)();
+    });
+
+    {
+        QSignalBlocker blocker(ui->tabWidgetProduits);
+        ui->tabWidgetProduits->setCurrentIndex(4);
+    }
 }
 
 void MainWindow::showHistoriqueModeDialog() {
-    if(ui->tabWidgetProduits->count() < 6) return; // Sécurité
+    if (ui->tabWidgetProduits->count() < 6)
+        return;
+    if (m_histCapsuleReply) {
+        m_histCapsuleReply->disconnect();
+        m_histCapsuleReply->abort();
+        m_histCapsuleReply->deleteLater();
+        m_histCapsuleReply.clear();
+    }
+    ui->tabWidgetProduits->setCurrentIndex(5);
 
-    QWidget *ongletHist = ui->tabWidgetProduits->widget(5); // Index 5 = 6ème onglet
-    if (ongletHist->layout()) { clearLayout(ongletHist->layout()); delete ongletHist->layout(); }
+    QWidget *ongletHist = ui->tabWidgetProduits->widget(5);
+    if (!ongletHist)
+        return;
+    if (ongletHist->layout()) {
+        clearLayout(ongletHist->layout());
+        delete ongletHist->layout();
+    }
 
-    QVBoxLayout *l = new QVBoxLayout(ongletHist);
-    QLabel *titre = new QLabel("📜 HISTORIQUE DU CYCLE DE VIE");
-    titre->setStyleSheet("font-size: 22px; font-weight: bold; color: #5d4037; margin-bottom: 20px;");
+    QVBoxLayout *root = new QVBoxLayout(ongletHist);
+    root->setContentsMargins(0, 0, 0, 0);
+    root->setSpacing(0);
+
+    QScrollArea *scroll = new QScrollArea(ongletHist);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    root->addWidget(scroll);
+
+    QWidget *content = new QWidget();
+    scroll->setWidget(content);
+
+    QVBoxLayout *l = new QVBoxLayout(content);
+    l->setSpacing(18);
+    l->setContentsMargins(22, 20, 22, 22);
+    content->setStyleSheet(
+        "QWidget {"
+        "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+        "    stop:0 #f7f3ee, stop:0.55 #f4efe8, stop:1 #efe8df);"
+        "}");
+
+    const int targetYearDefault = QDate::currentDate().year() + 1;
+    const QVariant vYear = ui->tabWidgetProduits->property("fashionOracleTargetYear");
+    const int targetYear = vYear.isValid() ? vYear.toInt() : targetYearDefault;
+    const QString storedScenario = ui->tabWidgetProduits->property("fashionOracleScenario").toString();
+    const QString scenarioModeUi = storedScenario.isEmpty() ? QStringLiteral("balanced") : storedScenario.toLower();
+    const bool hasComputed = ui->tabWidgetProduits->property("fashionOracleHasComputed").toBool();
+    const qint64 predictRequestId = QDateTime::currentMSecsSinceEpoch();
+    ui->tabWidgetProduits->setProperty("fashionOracleActiveYear", targetYear);
+    ui->tabWidgetProduits->setProperty("fashionOraclePredictRequestId", predictRequestId);
+    qDebug() << "[FashionOracle] predict selected year=" << targetYear << " requestId=" << predictRequestId;
+
+    QLabel *titre = new QLabel("HISTORIQUE DE MODE - FASHION ORACLE");
+    titre->setStyleSheet("font-size: 27px; font-weight: 900; color: #4b2f2a; margin-bottom: 1px; letter-spacing: 1.3px;");
+    titre->setAlignment(Qt::AlignCenter);
+    l->addWidget(titre);
+
+    QLabel *sub = new QLabel("Cockpit décisionnel de prospective mode au service de la stratégie produit.");
+    sub->setStyleSheet("font-size: 12px; color: #766657; margin-bottom: 10px; letter-spacing: 0.2px;");
+    sub->setAlignment(Qt::AlignCenter);
+    l->addWidget(sub);
+
+    QFrame *controls = new QFrame();
+    controls->setStyleSheet("QFrame { background: rgba(255,255,255,0.94); border: none; border-radius: 12px; }");
+    QHBoxLayout *ctl = new QHBoxLayout(controls);
+    ctl->setContentsMargins(16, 12, 16, 12);
+    ctl->setSpacing(14);
+    QLabel *lblYear = new QLabel("Année cible");
+    lblYear->setStyleSheet("font-size: 12px; font-weight: 800; color: #5d4037; letter-spacing: 0.4px;");
+    QSpinBox *sbYear = new QSpinBox();
+    sbYear->setRange(2025, 2040);
+    sbYear->setValue(targetYear);
+    sbYear->setStyleSheet("QSpinBox { background: #fdfaf6; border: 1px solid #ddcfc0; border-radius: 9px; padding: 7px 8px; min-width: 98px; font-weight: 600; color: #4e342e; }");
+    QPushButton *btnPredict = new QPushButton("Prédire");
+    btnPredict->setStyleSheet(
+        "QPushButton { background-color: #8B4513; color: white; border-radius: 6px; min-height: 36px; padding: 0 24px; font-size:13px; font-weight: 800; letter-spacing: 0.3px; }"
+        "QPushButton:hover { background-color: #a0521a; }");
+    ctl->addWidget(lblYear);
+    ctl->addWidget(sbYear);
+    ctl->addWidget(btnPredict);
+    ctl->addStretch();
+    l->addWidget(controls);
+
+    connect(btnPredict, &QPushButton::clicked, this, [this, sbYear]() {
+        ui->tabWidgetProduits->setProperty("fashionOracleTargetYear", sbYear->value());
+        ui->tabWidgetProduits->setProperty("fashionOracleActiveYear", sbYear->value());
+        ui->tabWidgetProduits->setProperty("fashionOracleScenario", QStringLiteral("balanced"));
+        ui->tabWidgetProduits->setProperty("fashionOracleHasComputed", true);
+        ui->tabWidgetProduits->setProperty("fashionOracleDirty", true);
+        ui->tabWidgetProduits->setCurrentIndex(5);
+        showHistoriqueModeDialog();
+    });
+    connect(sbYear, QOverload<int>::of(&QSpinBox::valueChanged), this, [this, sbYear](int) {
+        ui->tabWidgetProduits->setProperty("fashionOracleTargetYear", sbYear->value());
+        ui->tabWidgetProduits->setProperty("fashionOracleActiveYear", sbYear->value());
+    });
+
+    if (!hasComputed) {
+        l->addSpacing(40);
+        QLabel *placeholder = new QLabel(QStringLiteral("Sélectionnez une année et cliquez sur Prédire"));
+        placeholder->setAlignment(Qt::AlignCenter);
+        placeholder->setStyleSheet("font-size: 14px; color: #9a8a70; font-weight: 600;");
+        l->addWidget(placeholder);
+        l->addStretch();
+        return;
+    }
+
+    QFrame *loadingBox = new QFrame();
+    loadingBox->setStyleSheet("QFrame { background: rgba(255,248,225,0.9); border: none; border-radius: 10px; }");
+    QHBoxLayout *loadingLay = new QHBoxLayout(loadingBox);
+    loadingLay->setContentsMargins(12, 9, 12, 9);
+    QLabel *loadingLbl = new QLabel("Analyse IA en cours... collecte des signaux mode et projection stratégique.");
+    loadingLbl->setStyleSheet("color: #6d4c41; font-size: 12px; font-weight: 700;");
+    QProgressBar *loadingBar = new QProgressBar();
+    loadingBar->setRange(0, 100);
+    loadingBar->setValue(8);
+    loadingBar->setMaximumWidth(180);
+    loadingBar->setTextVisible(false);
+    loadingLay->addWidget(loadingLbl);
+    loadingLay->addWidget(loadingBar);
+    l->addWidget(loadingBox);
+    QCoreApplication::processEvents();
+
+    auto runStep = [&](const QString &text, int value, int pauseMs) {
+        loadingLbl->setText(text);
+        loadingBar->setValue(qBound(0, value, 100));
+        QCoreApplication::processEvents();
+        QEventLoop stepLoop;
+        QTimer stepTimer;
+        stepTimer.setSingleShot(true);
+        QObject::connect(&stepTimer, &QTimer::timeout, &stepLoop, &QEventLoop::quit);
+        stepTimer.start(pauseMs);
+        stepLoop.exec();
+    };
+    runStep("Étape 1/3 - scanning signals...", 24, 220);
+    runStep("Étape 2/3 - simulating scenarios...", 46, 220);
+    runStep("Étape 3/3 - resolving conflicts...", 66, 180);
+    runStep("Compilation des hypothèses IA...", 78, 140);
+
+    {
+        const bool dirty = ui->tabWidgetProduits->property("fashionOracleDirty").toBool();
+        QJsonObject obj = ui->tabWidgetProduits->property("fashionOracleCachedPayload").toJsonObject();
+        if (dirty && hasComputed) {
+            obj = buildFashionForecastPayloadLocal(targetYear, scenarioModeUi);
+            ui->tabWidgetProduits->setProperty("fashionOracleCachedPayload", obj);
+            ui->tabWidgetProduits->setProperty("fashionOracleDirty", false);
+        }
+        QNetworkReply *reply = nullptr;
+        if (!obj.isEmpty()) {
+            if (!obj.isEmpty() && obj.contains(QStringLiteral("top_styles"))) {
+                const int responseYear = obj.value(QStringLiteral("year")).toInt(targetYear);
+                const int activeYear = ui->tabWidgetProduits->property("fashionOracleActiveYear").toInt();
+                qDebug() << "[FashionOracle] predict response year=" << responseYear << " activeYear=" << activeYear;
+                if (responseYear != activeYear) {
+                    qDebug() << "[FashionOracle] stale predict response ignored";
+                    if (reply)
+                        reply->deleteLater();
+                    return;
+                }
+                const bool forecastEligible = obj.value(QStringLiteral("forecast_eligible")).toBool(true);
+                const QString businessNotice = obj.value(QStringLiteral("business_notice")).toString();
+                if (!forecastEligible) {
+                    loadingBox->hide();
+                    QFrame *noticeFrame = new QFrame();
+                    noticeFrame->setStyleSheet(
+                        "QFrame { background: rgba(255,255,255,0.97); border: none; border-radius: 14px; }");
+                    QVBoxLayout *nLay = new QVBoxLayout(noticeFrame);
+                    nLay->setContentsMargins(20, 18, 20, 18);
+                    nLay->setSpacing(10);
+                    QLabel *nh = new QLabel("Périmètre prévision Fashion Oracle");
+                    nh->setStyleSheet("font-size: 17px; font-weight: 900; color: #4a2f29;");
+                    nh->setAlignment(Qt::AlignCenter);
+                    const QString nbText = businessNotice.isEmpty()
+                        ? QStringLiteral("La prédiction avancée est disponible uniquement à partir de 2026.")
+                        : businessNotice;
+                    QLabel *nb = new QLabel(nbText);
+                    nb->setWordWrap(true);
+                    nb->setAlignment(Qt::AlignCenter);
+                    nb->setStyleSheet("font-size: 13px; color: #5d4037; line-height: 1.55;");
+                    nLay->addWidget(nh);
+                    nLay->addWidget(nb);
+                    l->addWidget(noticeFrame);
+                    auto *nFx = new QGraphicsDropShadowEffect(noticeFrame);
+                    nFx->setBlurRadius(26);
+                    nFx->setOffset(0, 7);
+                    nFx->setColor(QColor(62, 39, 35, 32));
+                    noticeFrame->setGraphicsEffect(nFx);
+                    if (reply)
+                        reply->deleteLater();
+                    ui->tabWidgetProduits->setCurrentIndex(5);
+                    return;
+                }
+                const QString summary = obj.value(QStringLiteral("summary")).toString();
+                const double confidence = obj.value(QStringLiteral("confidence")).toDouble();
+                const QString inferenceMode = obj.value(QStringLiteral("inference_mode")).toString();
+                const QString engineVersion = obj.value(QStringLiteral("prediction_engine_version")).toString();
+                const bool fromServerCache = obj.value(QStringLiteral("from_cache")).toBool();
+                if (fromServerCache) {
+                    loadingLbl->setText(QStringLiteral(
+                        "Prévision instantanée (cache serveur — même année, même moteur)."));
+                    QCoreApplication::processEvents();
+                }
+                qDebug() << "[FashionOracle] engine=" << engineVersion << "mode=" << inferenceMode
+                         << "year=" << responseYear << "cache=" << fromServerCache;
+
+                QStringList topStyles;
+                const QJsonArray arrStyles = obj.value(QStringLiteral("top_styles")).toArray();
+                for (const QJsonValue &v : arrStyles)
+                    topStyles << v.toString();
+
+                QStringList palette;
+                const QJsonArray arrPalette = obj.value(QStringLiteral("color_palette")).toArray();
+                for (const QJsonValue &v : arrPalette)
+                    palette << v.toString();
+                QStringList paletteHex;
+                const QJsonArray arrPaletteHex = obj.value(QStringLiteral("palette_colors")).toArray();
+                for (const QJsonValue &v : arrPaletteHex)
+                    paletteHex << v.toString();
+
+                QStringList fabrics;
+                const QJsonArray arrFab = obj.value(QStringLiteral("fabrics_materials")).toArray();
+                for (const QJsonValue &v : arrFab)
+                    fabrics << v.toString();
+
+                QStringList sil;
+                const QJsonArray arrSil = obj.value(QStringLiteral("silhouettes")).toArray();
+                for (const QJsonValue &v : arrSil)
+                    sil << v.toString();
+
+                const QJsonArray arrDec = obj.value(QStringLiteral("similar_decades")).toArray();
+                QStringList decades;
+                for (const QJsonValue &v : arrDec)
+                    decades << v.toString();
+
+                QMap<QString, QString> recommandations;
+                const QJsonObject recoObj = obj.value(QStringLiteral("recommended_product_attributes")).toObject();
+                for (auto it = recoObj.begin(); it != recoObj.end(); ++it)
+                    recommandations[it.key()] = it.value().toString();
+
+                auto applySoftShadow = [](QWidget *w) {
+                    auto *fx = new QGraphicsDropShadowEffect(w);
+                    fx->setBlurRadius(26);
+                    fx->setOffset(0, 7);
+                    fx->setColor(QColor(62, 39, 35, 32));
+                    w->setGraphicsEffect(fx);
+                };
+
+                auto colorHex = [](const QString &name) -> QString {
+                    const QString n = name.trimmed().toLower();
+                    static const QMap<QString, QString> map = {
+                        {"cognac", "#a26a3d"}, {"espresso", "#4b2e22"}, {"sand", "#c8ad7f"},
+                        {"oxblood", "#5a1111"}, {"deep forest green", "#1f4d3a"}, {"olive", "#6b7a3f"},
+                        {"beige", "#d7c3a3"}, {"taupe", "#8d7b68"}, {"graphite", "#3d3d3d"},
+                        {"off-white", "#f5f3ee"}, {"terracotta", "#c06c4d"}, {"burnt-orange", "#b75a2a"},
+                        {"black", "#1c1c1c"}, {"charcoal", "#36454f"}, {"steel-blue", "#567a9e"},
+                        {"lavender", "#9d8ec7"}, {"sage", "#9caf88"}, {"pearl", "#e8e4df"}
+                    };
+                    return map.value(n, "#8d5524");
+                };
+
+                auto mkKpiCard = [&](const QString &title, const QString &value, const QString &accent, bool star) -> QFrame* {
+                    QFrame *f = new QFrame();
+                    f->setStyleSheet(QStringLiteral(
+                        "QFrame { background: #ffffff; border-radius: 14px; border: 1px solid #e8e0d0; }"
+                        "QFrame:hover { background: #faf6f0; }"));
+                    QVBoxLayout *vl = new QVBoxLayout(f);
+                    vl->setContentsMargins(16, 16, 16, 16);
+                    QLabel *t = new QLabel(title);
+                    t->setStyleSheet("font-size: 9px; color: #9a8a70; font-weight: 800; text-transform: uppercase; letter-spacing: 1.2px;");
+                    QLabel *v = new QLabel(value);
+                    v->setWordWrap(true);
+                    v->setStyleSheet(QString("font-size: %1px; color: #1a1208; font-weight: 900;")
+                        .arg(star ? 24 : 24));
+                    QFrame *line = new QFrame();
+                    line->setFixedSize(40, 2);
+                    line->setStyleSheet(QString("background: %1; border: none; border-radius: 1px;").arg(accent));
+                    vl->addWidget(t);
+                    vl->addSpacing(2);
+                    vl->addWidget(v);
+                    vl->addSpacing(6);
+                    vl->addWidget(line);
+                    applySoftShadow(f);
+                    return f;
+                };
+
+                auto mkSectionTitle = [](const QString &txt) -> QLabel* {
+                    QLabel *lb = new QLabel(txt);
+                    lb->setStyleSheet("font-size: 14px; font-weight: 600; color: #2c1f0e; letter-spacing: 0.3px; margin-top: 8px; margin-bottom: 2px;");
+                    return lb;
+                };
+                auto shortVisionLine = [](const QString &trend) -> QString {
+                    const QString t = trend.toLower();
+                    if (t.contains("athlux")) return QStringLiteral("Utility leads luxury future");
+                    if (t.contains("conceptual")) return QStringLiteral("Experimental codes redefine desire");
+                    if (t.contains("artisan")) return QStringLiteral("Craft returns with force");
+                    if (t.contains("minimal")) return QStringLiteral("Precision quiets visual noise");
+                    if (t.contains("romantic")) return QStringLiteral("Fluid softness regains momentum");
+                    return QStringLiteral("Signals converge toward change");
+                };
+
+                const QString dominant = topStyles.value(0, "N/A");
+                const QString confidenceTxt = QString::number(confidence * 100.0, 'f', 1) + "%";
+                const double confPct = qBound(0.0, confidence * 100.0, 100.0);
+
+                QFrame *hero = new QFrame();
+                hero->setStyleSheet(
+                    "QFrame {"
+                    "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #fffaf5, stop:0.55 #f7efe6, stop:1 #f3e6d8);"
+                    "  border-radius: 16px;"
+                    "  border: none;"
+                    "}");
+                QVBoxLayout *heroL = new QVBoxLayout(hero);
+                heroL->setContentsMargins(20, 16, 20, 16);
+                QLabel *heroTop = new QLabel(QString("Tendance dominante %1 : <b>%2</b>  |  Confiance IA : <b>%3</b>")
+                                             .arg(targetYear).arg(dominant, confidenceTxt));
+                heroTop->setTextFormat(Qt::RichText);
+                heroTop->setStyleSheet("font-size: 17px; color: #4e342e; font-weight: 850; letter-spacing: 0.2px;");
+                QLabel *heroSub = new QLabel("Cockpit décisionnel de prospective mode au service de la stratégie produit.");
+                heroSub->setStyleSheet("font-size: 12px; color: #6d4c41; letter-spacing: 0.25px;");
+                heroL->addWidget(heroTop);
+                heroL->addWidget(heroSub);
+                applySoftShadow(hero);
+                l->addWidget(hero);
+
+                QPushButton *btnVision = new QPushButton("Future Signals");
+                btnVision->setStyleSheet(
+                    "QPushButton { background-color: #2b1f1a; color: #f7e8d9; border-radius: 11px; padding: 10px 18px; font-size: 12px; font-weight: 900; letter-spacing: 0.9px; }"
+                    "QPushButton:hover { background-color: #3b2a24; }");
+                btnVision->setCursor(Qt::PointingHandCursor);
+                btnVision->hide();
+
+                auto fetchVisionFrame = [&](int y, const QString &scenario) -> QJsonObject {
+                    return buildFashionForecastPayloadLocal(y, scenario);
+                };
+                connect(btnVision, &QPushButton::clicked, this, [=]() {
+                    const QString scenario = ui->tabWidgetProduits->property("fashionOracleScenario").toString().isEmpty()
+                        ? QStringLiteral("balanced")
+                        : ui->tabWidgetProduits->property("fashionOracleScenario").toString();
+                    QVector<QJsonObject> frames;
+                    for (int y = 2035; y <= 2040; ++y) {
+                        const QJsonObject fr = fetchVisionFrame(y, scenario);
+                        if (!fr.isEmpty()) frames.append(fr);
+                    }
+                    if (frames.isEmpty()) {
+                        QToolTip::showText(QCursor::pos(), QStringLiteral("Future Signals unavailable."));
+                        return;
+                    }
+
+                    struct SignalItem {
+                        QString title;
+                        QString insight;
+                        QString micro;
+                        QString derived;
+                        QString keyword;
+                        int confidence;
+                    };
+                    auto shortWords = [](const QString &raw, int maxWords) -> QString {
+                        const QStringList parts = raw.split(' ', Qt::SkipEmptyParts);
+                        QStringList kept;
+                        for (int i = 0; i < qMin(maxWords, parts.size()); ++i) kept << parts.at(i);
+                        return kept.join(' ');
+                    };
+                    auto avgConceptScore = [](const QJsonArray &arr, const QString &key, double fallback) -> double {
+                        if (arr.isEmpty()) return fallback;
+                        double s = 0.0;
+                        int n = 0;
+                        for (const QJsonValue &v : arr) {
+                            if (!v.isObject()) continue;
+                            s += v.toObject().value(key).toDouble(fallback);
+                            ++n;
+                        }
+                        return n > 0 ? (s / double(n)) : fallback;
+                    };
+                    auto arrayDelta = [](const QJsonArray &arr) -> double {
+                        if (arr.size() < 2) return 0.0;
+                        return arr.at(arr.size() - 1).toDouble(0.0) - arr.at(0).toDouble(0.0);
+                    };
+                    auto pct = [](double v) -> QString {
+                        return QString("%1%").arg(v, 0, 'f', 1);
+                    };
+
+                    const QJsonObject f0 = frames.value(0);
+                    const QJsonObject f1 = frames.value(1);
+                    const QJsonObject fLast = frames.value(frames.size() - 1);
+                    const int c0 = qBound(0, int(f0.value(QStringLiteral("confidence")).toDouble(0.5) * 100.0), 100);
+                    const int c1 = qBound(0, int(f1.value(QStringLiteral("confidence")).toDouble(0.5) * 100.0), 100);
+                    const int cLast = qBound(0, int(fLast.value(QStringLiteral("confidence")).toDouble(0.5) * 100.0), 100);
+                    const QJsonObject trajLast = fLast.value(QStringLiteral("trend_trajectory")).toObject();
+                    const QJsonObject trajStart = f0.value(QStringLiteral("trend_trajectory")).toObject();
+                    const QJsonArray conflicts = trajLast.value(QStringLiteral("conflict_notes")).toArray();
+                    const QJsonArray shifts = trajLast.value(QStringLiteral("dominance_shifts")).toArray();
+                    const QJsonObject momenta = trajLast.value(QStringLiteral("trend_momentum")).toObject();
+                    const QJsonArray conceptStart = f0.value(QStringLiteral("concepts_projection")).toArray();
+                    const QJsonArray conceptEnd = fLast.value(QStringLiteral("concepts_projection")).toArray();
+                    const QJsonObject rawStart = f0.value(QStringLiteral("raw_scores")).toObject();
+                    const QJsonObject rawEnd = fLast.value(QStringLiteral("raw_scores")).toObject();
+
+                    double minMomentum = 0.0;
+                    bool minInit = false;
+                    for (auto it = momenta.begin(); it != momenta.end(); ++it) {
+                        const double v = it.value().toDouble(0.0);
+                        if (!minInit || v < minMomentum) {
+                            minMomentum = v;
+                            minInit = true;
+                        }
+                    }
+                    const int conflictStrength = qMin(22, conflicts.size() * 5);
+                    const int shiftStrength = qMin(20, shifts.size() * 4);
+                    const int accel = qMax(0, cLast - c0);
+                    const double silhouetteAcc = avgConceptScore(conceptEnd, QStringLiteral("trend_timing_score"), 65.0)
+                        - avgConceptScore(conceptStart, QStringLiteral("trend_timing_score"), 62.0);
+                    const double materialDelta = arrayDelta(trajLast.value(QStringLiteral("material_sophistication")).toArray())
+                        - arrayDelta(trajStart.value(QStringLiteral("material_sophistication")).toArray());
+                    const double marketDelta = rawEnd.value(QStringLiteral("commercial_index")).toDouble(62.0)
+                        - rawStart.value(QStringLiteral("commercial_index")).toDouble(62.0);
+                    const double minMom = momenta.value(QStringLiteral("minimal-tailoring")).toDouble(0.0);
+                    const double romMom = momenta.value(QStringLiteral("romantic-fluid")).toDouble(0.0);
+                    const double conflictGap = minMom - romMom;
+                    double leatherInnovation = 0.0;
+                    int leatherN = 0;
+                    for (const QJsonValue &v : conceptEnd) {
+                        if (!v.isObject()) continue;
+                        const QJsonObject o = v.toObject();
+                        const QString mat = o.value(QStringLiteral("material")).toString().toLower();
+                        if (!mat.contains("leather")) continue;
+                        leatherInnovation += o.value(QStringLiteral("innovation_score")).toDouble(68.0);
+                        ++leatherN;
+                    }
+                    leatherInnovation = leatherN > 0 ? leatherInnovation / double(leatherN) : avgConceptScore(conceptEnd, QStringLiteral("innovation_score"), 68.0);
+                    const double marketAlignShift = avgConceptScore(conceptEnd, QStringLiteral("market_score"), 70.0)
+                        - avgConceptScore(conceptStart, QStringLiteral("market_score"), 68.0);
+                    const double oppMix = 0.6 * marketAlignShift + 0.4 * shiftStrength;
+
+                    QVector<SignalItem> futureSignals;
+                    futureSignals.append(SignalItem{
+                        shortWords(QStringLiteral("Shape rupture"), 3),
+                        shortWords(QStringLiteral("Silhouettes break away from material inertia"), 8),
+                        QStringLiteral("Form language mutates faster than fabric evolution."),
+                        QString("Derived from: silhouette acceleration %1 | material variation %2 | market signal %3")
+                            .arg(pct(silhouetteAcc), pct(materialDelta), pct(marketDelta)),
+                        QStringLiteral("silhouette"),
+                        qBound(35, 58 + int(qAbs(silhouetteAcc) * 2.0), 96)
+                    });
+                    futureSignals.append(SignalItem{
+                        shortWords(QStringLiteral("Aesthetic war"), 3),
+                        shortWords(QStringLiteral("Minimal and romantic codes collide in-market"), 8),
+                        QStringLiteral("Opposed style grammars create emotional buying friction."),
+                        QString("Derived from: minimal momentum %1 | romantic momentum %2 | conflict spread %3")
+                            .arg(pct(minMom), pct(romMom), pct(conflictGap)),
+                        QStringLiteral("conflict"),
+                        qBound(34, 55 + conflictStrength, 95)
+                    });
+                    futureSignals.append(SignalItem{
+                        shortWords(QStringLiteral("Leather awakening"), 3),
+                        shortWords(QStringLiteral("Leather innovation rises while legacy demand cools"), 8),
+                        QStringLiteral("Craft material re-enters through experimental narratives."),
+                        QString("Derived from: leather innovation %1 | weakest momentum %2 | confidence gain %3")
+                            .arg(pct(leatherInnovation - 50.0), pct(minMomentum), pct(double(accel))),
+                        QStringLiteral("leather"),
+                        qBound(32, 53 + int((leatherInnovation - 50.0) * 0.7), 93)
+                    });
+                    futureSignals.append(SignalItem{
+                        shortWords(QStringLiteral("Demand realignment"), 3),
+                        shortWords(QStringLiteral("Market gravity shifts toward adaptive premium codes"), 8),
+                        QStringLiteral("Commercial center abandons static luxury archetypes."),
+                        QString("Derived from: market alignment %1 | commercial shift %2 | structure change %3")
+                            .arg(pct(marketAlignShift), pct(marketDelta), pct(double(shiftStrength))),
+                        QStringLiteral("market"),
+                        qBound(36, 57 + int(qAbs(marketAlignShift) * 1.8), 97)
+                    });
+                    futureSignals.append(SignalItem{
+                        shortWords(QStringLiteral("Critical opening"), 3),
+                        shortWords(QStringLiteral("Asymmetric signals expose a high-impact launch window"), 8),
+                        QStringLiteral("Timing asymmetry now rewards bold product positioning."),
+                        QString("Derived from: shift pressure %1 | opportunity mix %2 | market signal %3")
+                            .arg(pct(double(shiftStrength)), pct(oppMix), pct(marketDelta)),
+                        QStringLiteral("opportunity"),
+                        qBound(38, 60 + qMax(0, c1 - c0 / 2), 98)
+                    });
+
+                    QDialog *vision = new QDialog(this);
+                    vision->setWindowFlags(Qt::FramelessWindowHint | Qt::Dialog);
+                    vision->setModal(true);
+                    vision->setStyleSheet("QDialog { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #0b0d12, stop:1 #15111b); }");
+                    QVBoxLayout *rootVision = new QVBoxLayout(vision);
+                    rootVision->setContentsMargins(28, 22, 28, 26);
+                    rootVision->setSpacing(14);
+                    QHBoxLayout *hudTop = new QHBoxLayout();
+                    QLabel *liveLb = new QLabel("FUTURE SIGNALS // MACHINE INTELLIGENCE");
+                    liveLb->setStyleSheet("font-size:12px; color:#f3bf8a; font-weight:900; letter-spacing:1.5px;");
+                    QLabel *seqLb = new QLabel("dramatic inference stream");
+                    seqLb->setStyleSheet("font-size:11px; color:#bca896; font-weight:700;");
+                    hudTop->addWidget(liveLb);
+                    hudTop->addStretch();
+                    hudTop->addWidget(seqLb);
+                    rootVision->addLayout(hudTop);
+                    rootVision->addStretch();
+                    QWidget *center = new QWidget(vision);
+                    center->setStyleSheet("QWidget { background: transparent; }");
+                    QVBoxLayout *cv = new QVBoxLayout(center);
+                    cv->setSpacing(8);
+                    cv->setAlignment(Qt::AlignCenter);
+                    QLabel *titleLb = new QLabel("FUTURE SIGNAL #1");
+                    titleLb->setAlignment(Qt::AlignCenter);
+                    titleLb->setStyleSheet("font-size:18px; color:#9f8a7a; font-weight:900; letter-spacing:2.4px;");
+                    QLabel *trendLb = new QLabel("HEADLINE");
+                    trendLb->setAlignment(Qt::AlignCenter);
+                    trendLb->setStyleSheet("font-size:56px; color:#f5d7b7; font-weight:900;");
+                    QLabel *lineLb = new QLabel("Insight sentence");
+                    lineLb->setAlignment(Qt::AlignCenter);
+                    lineLb->setStyleSheet("font-size:22px; color:#e1c9b0; font-weight:800;");
+                    QLabel *microLb = new QLabel("Micro explanation line");
+                    microLb->setAlignment(Qt::AlignCenter);
+                    microLb->setStyleSheet("font-size:16px; color:#b7a495; font-weight:600;");
+                    QLabel *derivedLb = new QLabel("Derived from: metrics");
+                    derivedLb->setAlignment(Qt::AlignCenter);
+                    derivedLb->setWordWrap(true);
+                    derivedLb->setStyleSheet("font-size:13px; color:#8f8278; font-weight:600;");
+                    QLabel *confLb = new QLabel("0%");
+                    confLb->setAlignment(Qt::AlignCenter);
+                    confLb->setStyleSheet("font-size:30px; color:#f3bf8a; font-weight:900;");
+                    cv->addWidget(titleLb);
+                    cv->addWidget(trendLb);
+                    cv->addWidget(lineLb);
+                    cv->addWidget(microLb);
+                    cv->addWidget(derivedLb);
+                    cv->addSpacing(10);
+                    cv->addWidget(confLb);
+                    rootVision->addWidget(center, 0, Qt::AlignCenter);
+                    rootVision->addStretch();
+                    QPushButton *backBtn = new QPushButton("Back to dashboard");
+                    backBtn->setCursor(Qt::PointingHandCursor);
+                    backBtn->setStyleSheet("QPushButton { background: rgba(255,255,255,0.10); color:#f2dfcc; border:none; border-radius:10px; padding:9px 14px; font-weight:800; }"
+                                           "QPushButton:hover { background: rgba(255,255,255,0.18); }");
+                    rootVision->addWidget(backBtn, 0, Qt::AlignHCenter);
+                    QObject::connect(backBtn, &QPushButton::clicked, vision, &QDialog::reject);
+
+                    auto *fx = new QGraphicsOpacityEffect(center);
+                    center->setGraphicsEffect(fx);
+                    fx->setOpacity(0.0);
+                    auto *blurFx = new QGraphicsBlurEffect(trendLb);
+                    blurFx->setBlurRadius(16.0);
+                    trendLb->setGraphicsEffect(blurFx);
+                    auto *glowFx = new QGraphicsDropShadowEffect(titleLb);
+                    glowFx->setBlurRadius(18.0);
+                    glowFx->setOffset(0, 0);
+                    glowFx->setColor(QColor(243, 191, 138, 110));
+                    titleLb->setGraphicsEffect(glowFx);
+                    const int stepMs = 1650;
+                    QFrame *cutFlash = new QFrame(vision);
+                    cutFlash->setStyleSheet("QFrame { background: rgba(255,245,232,0.0); border:none; }");
+                    cutFlash->setGeometry(vision->rect());
+                    cutFlash->hide();
+                    auto *livePulse = new QVariantAnimation(liveLb);
+                    livePulse->setDuration(1400);
+                    livePulse->setStartValue(80);
+                    livePulse->setEndValue(180);
+                    livePulse->setLoopCount(-1);
+                    QObject::connect(livePulse, &QVariantAnimation::valueChanged, liveLb, [=](const QVariant &v) {
+                        const int a = qBound(70, v.toInt(), 200);
+                        liveLb->setStyleSheet(QString("font-size:12px; color: rgba(243,191,138,%1); font-weight:900; letter-spacing:1.5px;").arg(a));
+                    });
+                    livePulse->start();
+                    auto *idx = new int(0);
+                    std::function<void()> playFrame;
+                    playFrame = [=, &playFrame]() mutable {
+                        if (!vision->isVisible()) { delete idx; return; }
+                        if (*idx >= futureSignals.size()) {
+                            titleLb->setText("FUTURE SIGNAL // END");
+                            trendLb->setText("HIDDEN PATTERNS UNLOCKED");
+                            lineLb->setText("Strategic intuition now has evidence");
+                            microLb->setText("Signals converted into strategic action.");
+                            derivedLb->setText("Derived from: multi-factor temporal synthesis");
+                            confLb->setText("READY");
+                            auto *finalBlur = new QPropertyAnimation(blurFx, "blurRadius", center);
+                            finalBlur->setDuration(460);
+                            finalBlur->setStartValue(8.0);
+                            finalBlur->setEndValue(0.0);
+                            finalBlur->start(QAbstractAnimation::DeleteWhenStopped);
+                            QTimer::singleShot(1200, vision, [=]() { vision->accept(); });
+                            delete idx;
+                            return;
+                        }
+                        const SignalItem s = futureSignals.at(*idx);
+                        titleLb->setText(QString("FUTURE SIGNAL #%1").arg(*idx + 1));
+                        trendLb->setText(s.title.toUpper());
+                        lineLb->setText("");
+                        microLb->setText("");
+                        derivedLb->setText("");
+                        confLb->setText("0%");
+                        const QPoint basePos = center->pos();
+                        center->move(basePos.x(), basePos.y() + 14);
+                        blurFx->setBlurRadius(15.0);
+                        fx->setOpacity(0.0);
+
+                        auto animateText = [vision](QLabel *lb, const QString &txt, int stepMs) {
+                            lb->setText(QString());
+                            auto *pos = new int(0);
+                            QTimer *tt = new QTimer(lb);
+                            QObject::connect(tt, &QTimer::timeout, lb, [=]() {
+                                if (*pos >= txt.size()) {
+                                    tt->stop();
+                                    tt->deleteLater();
+                                    delete pos;
+                                    return;
+                                }
+                                lb->setText(txt.left(*pos + 1));
+                                ++(*pos);
+                            });
+                            tt->start(stepMs);
+                        };
+                        animateText(lineLb, s.insight, 23);
+                        QTimer::singleShot(180, vision, [=]() { animateText(microLb, s.micro, 20); });
+                        QTimer::singleShot(360, vision, [=]() { animateText(derivedLb, s.derived, 13); });
+
+                        auto *fadeIn = new QPropertyAnimation(fx, "opacity", center);
+                        fadeIn->setDuration(620);
+                        fadeIn->setStartValue(0.0);
+                        fadeIn->setEndValue(1.0);
+                        fadeIn->setEasingCurve(QEasingCurve::OutCubic);
+                        fadeIn->start(QAbstractAnimation::DeleteWhenStopped);
+
+                        auto *rise = new QPropertyAnimation(center, "pos", center);
+                        rise->setDuration(700);
+                        rise->setStartValue(QPoint(basePos.x(), basePos.y() + 14));
+                        rise->setEndValue(basePos);
+                        rise->setEasingCurve(QEasingCurve::OutCubic);
+                        rise->start(QAbstractAnimation::DeleteWhenStopped);
+
+                        auto *blurIn = new QPropertyAnimation(blurFx, "blurRadius", center);
+                        blurIn->setDuration(680);
+                        blurIn->setStartValue(15.0);
+                        blurIn->setEndValue(0.0);
+                        blurIn->setEasingCurve(QEasingCurve::OutCubic);
+                        blurIn->start(QAbstractAnimation::DeleteWhenStopped);
+
+                        auto *glowAnim = new QVariantAnimation(titleLb);
+                        glowAnim->setDuration(820);
+                        glowAnim->setStartValue(70);
+                        glowAnim->setEndValue(170);
+                        glowAnim->setLoopCount(2);
+                        QObject::connect(glowAnim, &QVariantAnimation::valueChanged, titleLb, [=](const QVariant &v) {
+                            glowFx->setColor(QColor(243, 191, 138, qBound(40, v.toInt(), 190)));
+                        });
+                        glowAnim->start(QAbstractAnimation::DeleteWhenStopped);
+
+                        auto *count = new QVariantAnimation(confLb);
+                        count->setDuration(980);
+                        count->setStartValue(0.0);
+                        count->setEndValue(double(s.confidence));
+                        QObject::connect(count, &QVariantAnimation::valueChanged, confLb, [=](const QVariant &v) {
+                            confLb->setText(QString("%1%").arg(v.toDouble(), 0, 'f', 0));
+                        });
+                        count->start(QAbstractAnimation::DeleteWhenStopped);
+
+                        QTimer::singleShot(stepMs - 360, vision, [=]() {
+                            cutFlash->show();
+                            auto *cutFx = new QGraphicsOpacityEffect(cutFlash);
+                            cutFlash->setGraphicsEffect(cutFx);
+                            cutFx->setOpacity(0.0);
+                            auto *cutIn = new QPropertyAnimation(cutFx, "opacity", cutFlash);
+                            cutIn->setDuration(120);
+                            cutIn->setStartValue(0.0);
+                            cutIn->setEndValue(0.22);
+                            QObject::connect(cutIn, &QPropertyAnimation::finished, cutFlash, [=]() {
+                                auto *cutOut = new QPropertyAnimation(cutFx, "opacity", cutFlash);
+                                cutOut->setDuration(120);
+                                cutOut->setStartValue(0.22);
+                                cutOut->setEndValue(0.0);
+                                QObject::connect(cutOut, &QPropertyAnimation::finished, cutFlash, [=]() { cutFlash->hide(); });
+                                cutOut->start(QAbstractAnimation::DeleteWhenStopped);
+                            });
+                            cutIn->start(QAbstractAnimation::DeleteWhenStopped);
+                            auto *fadeOut = new QPropertyAnimation(fx, "opacity", center);
+                            fadeOut->setDuration(360);
+                            fadeOut->setStartValue(1.0);
+                            fadeOut->setEndValue(0.0);
+                            fadeOut->setEasingCurve(QEasingCurve::InQuart);
+                            fadeOut->start(QAbstractAnimation::DeleteWhenStopped);
+                        });
+                        ++(*idx);
+                        QTimer::singleShot(stepMs, vision, playFrame);
+                    };
+                    QTimer::singleShot(90, vision, playFrame);
+                    vision->showFullScreen();
+                    vision->exec();
+                    vision->deleteLater();
+                });
+
+                QGridLayout *cards = new QGridLayout();
+                cards->setHorizontalSpacing(14);
+                cards->setVerticalSpacing(14);
+                cards->addWidget(mkKpiCard("Tendance dominante", dominant, "#8d5524", true), 0, 0);
+                QFrame *ringCard = new QFrame();
+                ringCard->setStyleSheet("QFrame { background: rgba(255,255,255,0.98); border-radius: 14px; border: none; }");
+                QVBoxLayout *ringLay = new QVBoxLayout(ringCard);
+                ringLay->setContentsMargins(16, 14, 16, 14);
+                QLabel *ringTitle = new QLabel("Confiance IA");
+                ringTitle->setStyleSheet("font-size: 10px; color: #8d6e63; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;");
+                QLabel *ringLabel = new QLabel();
+                ringLabel->setAlignment(Qt::AlignCenter);
+                QPixmap ringPx(96, 96);
+                ringPx.fill(Qt::transparent);
+                {
+                    QPainter p(&ringPx);
+                    p.setRenderHint(QPainter::Antialiasing, true);
+                    QRectF rc(8, 8, 80, 80);
+                    p.setPen(QPen(QColor("#f5f0e8"), 10));
+                    p.drawArc(rc, 0, 360 * 16);
+                    QColor ringColor = confPct >= 75.0 ? QColor("#2e7d32") : (confPct >= 50.0 ? QColor("#f9a825") : QColor("#c62828"));
+                    p.setPen(QPen(ringColor, 10, Qt::SolidLine, Qt::RoundCap));
+                    p.drawArc(rc, 90 * 16, static_cast<int>(-360.0 * 16.0 * (confPct / 100.0)));
+                    p.setPen(QColor("#3e2723"));
+                    QFont f("Segoe UI", 10, QFont::Bold);
+                    p.setFont(f);
+                    p.drawText(rc, Qt::AlignCenter, QString::number(confPct, 'f', 0) + "%");
+                }
+                ringLabel->setPixmap(ringPx);
+                QLabel *ringText = new QLabel(confidenceTxt);
+                ringText->setAlignment(Qt::AlignCenter);
+                ringText->setStyleSheet("font-size: 15px; color: #3e2723; font-weight: 850;");
+                ringLay->addWidget(ringTitle);
+                ringLay->addWidget(ringLabel);
+                ringLay->addWidget(ringText);
+                applySoftShadow(ringCard);
+                cards->addWidget(ringCard, 0, 1);
+                cards->addWidget(mkKpiCard("Année cible", QString::number(targetYear), "#795548", false), 0, 2);
+                cards->addWidget(mkKpiCard("Palette dominante", palette.value(0, "N/A"), "#6d4c41", false), 0, 3);
+                cards->addWidget(mkKpiCard("Matière clé", fabrics.value(0, "N/A"), "#5d4037", false), 1, 0);
+                cards->addWidget(mkKpiCard("Silhouette clé", sil.value(0, "N/A"), "#5d4037", false), 1, 1);
+                cards->addWidget(mkKpiCard("Moteur", inferenceMode.isEmpty() ? "api" : inferenceMode, "#3e2723", false), 1, 2);
+                cards->addWidget(mkKpiCard("Source", "Fashion Oracle API", "#3e2723", false), 1, 3);
+                l->addLayout(cards);
+
+                // DEBUG TEMPORAIRE: scores de tendance pour validation du winner.
+                {
+                    const ForecastResultLocal debugForecast = computeFashionForecastLocal(targetYear, scenarioModeUi);
+                    const std::array<double, 6> &debugScores = debugForecast.trendScores;
+                    const QStringList debugNames = {
+                        QStringLiteral("artisan-leather"),
+                        QStringLiteral("minimal-tailoring"),
+                        QStringLiteral("romantic-fluid"),
+                        QStringLiteral("athlux"),
+                        QStringLiteral("conceptual"),
+                        QStringLiteral("annual")
+                    };
+                    const int debugWinner = argmaxLocal(debugScores);
+                    const QString debugWinnerName = debugNames.value(debugWinner);
+                    QFrame *debugFrame = new QFrame();
+                    debugFrame->setStyleSheet("QFrame { background: rgba(255,255,255,0.92); border: 1px dashed #d0c2b1; border-radius: 8px; }");
+                    QVBoxLayout *debugLay = new QVBoxLayout(debugFrame);
+                    debugLay->setContentsMargins(10, 8, 10, 8);
+                    debugLay->setSpacing(3);
+                    QLabel *title = new QLabel(QString("DEBUG SCORES year=%1").arg(targetYear));
+                    title->setStyleSheet("font-size: 10px; color: #5d4037; font-weight: 800;");
+                    debugLay->addWidget(title);
+                    for (int i = 0; i < debugNames.size(); ++i) {
+                        const QString line = QString("[%1] %2 = %3 %4")
+                                                 .arg(i)
+                                                 .arg(debugNames.at(i))
+                                                 .arg(QString::number(debugScores[i], 'f', 1))
+                                                 .arg(i == debugWinner ? QStringLiteral("<-- WINNER") : QString());
+                        QLabel *lb = new QLabel(line);
+                        lb->setStyleSheet("font-size: 10px; color: #6d4c41; font-family: 'DM Mono';");
+                        debugLay->addWidget(lb);
+                    }
+                    QLabel *winnerLb = new QLabel(QString("WINNER idx=%1 name=%2").arg(debugWinner).arg(debugWinnerName));
+                    winnerLb->setStyleSheet("font-size: 10px; color: #2e7d32; font-weight: 800; font-family: 'DM Mono';");
+                    debugLay->addWidget(winnerLb);
+                    l->addWidget(debugFrame);
+                }
+
+                QFrame *swatchFrame = new QFrame();
+                swatchFrame->setStyleSheet("QFrame { background: rgba(255,255,255,0.96); border-radius: 14px; border: none; }");
+                QHBoxLayout *swatchLay = new QHBoxLayout(swatchFrame);
+                swatchLay->setContentsMargins(16, 11, 16, 11);
+                swatchLay->setSpacing(11);
+                QLabel *swTitle = new QLabel("Palette tendance");
+                swTitle->setStyleSheet("font-size: 11px; color: #8d6e63; font-weight: 800; text-transform: uppercase; letter-spacing: 0.9px;");
+                swatchLay->addWidget(swTitle);
+                const int swCount = qMin(5, qMax(1, palette.size()));
+                for (int i = 0; i < swCount; ++i) {
+                    const QString pName = palette.value(i, "N/A");
+                    const QString hex = (i < paletteHex.size() && !paletteHex.at(i).isEmpty())
+                        ? paletteHex.at(i)
+                        : colorHex(pName);
+                    QFrame *chip = new QFrame();
+                    chip->setStyleSheet(QString("background:%1; border:none; border-radius:10px;").arg(hex));
+                    chip->setFixedSize(24, 24);
+                    QLabel *name = new QLabel(pName);
+                    name->setStyleSheet("font-size: 12px; color: #4e342e; font-weight: 700;");
+                    swatchLay->addWidget(chip);
+                    swatchLay->addWidget(name);
+                    swatchLay->addSpacing(6);
+                }
+                swatchLay->addStretch();
+                applySoftShadow(swatchFrame);
+                l->addWidget(swatchFrame);
+
+                l->addWidget(mkSectionTitle("Projection Mode IA"));
+                QFrame *visualFrame = new QFrame();
+                visualFrame->setStyleSheet("QFrame { background: rgba(255,255,255,0.98); border: none; border-radius: 16px; }");
+                QVBoxLayout *visualRoot = new QVBoxLayout(visualFrame);
+                visualRoot->setContentsMargins(16, 14, 16, 14);
+                visualRoot->setSpacing(12);
+
+                auto mkScoreBar = [](int value, const QString &chunkColor, int delayMs) -> QProgressBar* {
+                    QProgressBar *pb = new QProgressBar();
+                    pb->setRange(0, 100);
+                    const int clamped = qBound(0, value, 100);
+                    pb->setValue(0);
+                    pb->setTextVisible(false);
+                    pb->setFixedHeight(8);
+                    pb->setStyleSheet(
+                        QString("QProgressBar { border: 0; border-radius: 4px; background: #f2ebe4; }"
+                                "QProgressBar::chunk { background: %1; border-radius: 4px; }")
+                            .arg(chunkColor));
+                    QTimer::singleShot(qMax(0, delayMs), pb, [pb, clamped]() {
+                        auto *anim = new QPropertyAnimation(pb, "value", pb);
+                        anim->setDuration(680);
+                        anim->setStartValue(0);
+                        anim->setEndValue(clamped);
+                        anim->setEasingCurve(QEasingCurve::OutCubic);
+                        anim->start(QAbstractAnimation::DeleteWhenStopped);
+                    });
+                    return pb;
+                };
+                auto phaseFromWindow = [](int prevV, int currV, int nextV) -> QString {
+                    const int momentum = currV - prevV;
+                    const int forward = nextV - currV;
+                    const bool flat = (qAbs(momentum) <= 1 && qAbs(forward) <= 1);
+                    if (currV >= 90 && momentum >= 0 && forward < 0) return QStringLiteral("Peak");
+                    if (currV <= 22 && momentum <= 1 && forward > 0) return QStringLiteral("Bottom");
+                    if (flat) return QStringLiteral("Stable");
+                    if (momentum > 1 || (momentum >= 0 && forward > 1)) return QStringLiteral("Rising");
+                    if (momentum < -1 || (momentum <= 0 && forward < -1)) return QStringLiteral("Declining");
+                    return QStringLiteral("Stable");
+                };
+                auto phaseIcon = [](const QString &phase) -> QString {
+                    if (phase == QStringLiteral("Peak")) return QStringLiteral("▲");
+                    if (phase == QStringLiteral("Bottom")) return QStringLiteral("▼");
+                    if (phase == QStringLiteral("Rising")) return QStringLiteral("↗");
+                    if (phase == QStringLiteral("Declining")) return QStringLiteral("↘");
+                    return QStringLiteral("■");
+                };
+                auto sparklineFor = [](const QJsonArray &arr) -> QString {
+                    static const QString bars = QStringLiteral("▁▂▃▄▅▆▇█");
+                    if (arr.isEmpty()) return QStringLiteral("▁▂▃▄");
+                    int minV = 999;
+                    int maxV = -999;
+                    for (const QJsonValue &v : arr) {
+                        const int n = qBound(0, v.toInt(0), 100);
+                        minV = qMin(minV, n);
+                        maxV = qMax(maxV, n);
+                    }
+                    if (maxV <= minV) return QStringLiteral("▄▄▄▄");
+                    QString out;
+                    for (const QJsonValue &v : arr) {
+                        const int n = qBound(0, v.toInt(0), 100);
+                        const int idx = qBound(0, ((n - minV) * 7) / qMax(1, maxV - minV), 7);
+                        out.append(bars.at(idx));
+                    }
+                    return out;
+                };
+
+                const QString dominantShift = obj.value(QStringLiteral("dominant_direction")).toString(QStringLiteral("Technical Luxury"));
+                const QString marketPosture = obj.value(QStringLiteral("market_posture")).toString(QStringLiteral("Balanced selective growth"));
+                const QString riskLevelGlobal = obj.value(QStringLiteral("risk_level")).toString(QStringLiteral("Medium"));
+                const QString recommendedCapsule = obj.value(QStringLiteral("recommended_capsule")).toString(QStringLiteral("Capsule premium"));
+                const QString strongestSignal = obj.value(QStringLiteral("strongest_signal")).toString(QStringLiteral("Signal en transition"));
+                const QString yoyEvolution = obj.value(QStringLiteral("year_over_year_evolution")).toString(
+                    QString("Signal %1 en accélération vs %2.").arg(targetYear).arg(targetYear - 1));
+                const QJsonObject rawScoresObj = obj.value(QStringLiteral("raw_scores")).toObject();
+                const QString scenarioMode = rawScoresObj.value(QStringLiteral("scenario_mode")).toString(QStringLiteral("balanced"));
+                const QString scenarioLabel =
+                    (scenarioMode == QStringLiteral("aggressive_growth")) ? QStringLiteral("Aggressive Growth")
+                    : (scenarioMode == QStringLiteral("risk_averse")) ? QStringLiteral("Risk Averse")
+                    : (scenarioMode == QStringLiteral("disruptive")) ? QStringLiteral("Disruptive")
+                    : (scenarioMode == QStringLiteral("conservative")) ? QStringLiteral("Conservative")
+                    : QStringLiteral("Balanced");
+                const double volatilityProxy = rawScoresObj.value(QStringLiteral("volatility_proxy")).toDouble(0.0);
+                const double uncertaintyPenalty = rawScoresObj.value(QStringLiteral("uncertainty_penalty")).toDouble(0.0);
+                const double temporalCertainty = rawScoresObj.value(QStringLiteral("temporal_certainty")).toDouble(0.0);
+                const double signalCoherence = rawScoresObj.value(QStringLiteral("signal_coherence")).toDouble(0.0);
+                const double rankingGap = rawScoresObj.value(QStringLiteral("ranking_gap")).toDouble(0.0);
+                const QJsonArray conceptArr = obj.value(QStringLiteral("concepts_projection")).toArray();
+
+                int innovationAvg = 72;
+                int marketAvg = 72;
+                int feasibilityAvg = 70;
+                if (!conceptArr.isEmpty()) {
+                    int sumI = 0, sumM = 0, sumF = 0, n = 0;
+                    for (const QJsonValue &v : conceptArr) {
+                        if (!v.isObject()) continue;
+                        const QJsonObject co = v.toObject();
+                        sumI += co.value(QStringLiteral("innovation_score")).toInt(70);
+                        sumM += co.value(QStringLiteral("market_score")).toInt(70);
+                        sumF += co.value(QStringLiteral("feasibility_score")).toInt(70);
+                        ++n;
+                    }
+                    if (n > 0) {
+                        innovationAvg = sumI / n;
+                        marketAvg = sumM / n;
+                        feasibilityAvg = sumF / n;
+                    }
+                }
+                const int confidenceSignal = qBound(45, static_cast<int>(confPct), 98);
+                const int momentumSignal = qBound(35, (innovationAvg + marketAvg) / 2, 96);
+                const int riskSignal = qBound(10, 100 - feasibilityAvg, 95);
+                const QString riskBg = (riskSignal >= 56) ? QStringLiteral("#8e2d2d")
+                                                          : (riskSignal <= 34) ? QStringLiteral("#2e7d32")
+                                                                               : QStringLiteral("#b26a00");
+
+                QFrame *heroFrame = new QFrame();
+                heroFrame->setStyleSheet("QFrame { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #342118, stop:1 #4e342e); border-radius: 14px; }");
+                QHBoxLayout *heroLay = new QHBoxLayout(heroFrame);
+                heroLay->setContentsMargins(14, 12, 14, 12);
+                heroLay->setSpacing(10);
+                auto mkHeroChip = [](const QString &label, const QString &value, const QString &bg) -> QLabel* {
+                    QLabel *lb = new QLabel(QString("%1  %2").arg(label, value));
+                    lb->setAlignment(Qt::AlignCenter);
+                    lb->setMinimumWidth(120);
+                    lb->setMinimumHeight(32);
+                    lb->setStyleSheet(QString("font-size:11px; font-weight:800; color:#fff; background:%1; border-radius:6px; padding:4px 10px;").arg(bg));
+                    return lb;
+                };
+                QLabel *heroTitle = new QLabel(QString("Forecast Cockpit %1").arg(targetYear));
+                heroTitle->setStyleSheet("font-size:17px; color:#fff; font-weight:900;");
+                QLabel *heroDir = new QLabel(dominantShift.toUpper());
+                heroDir->setStyleSheet("font-size:12px; color:#ffe0c2; font-weight:900; letter-spacing:0.7px;");
+                QLabel *heroWhy = new QLabel(strongestSignal);
+                heroWhy->setStyleSheet("font-size:11px; color:#f0dfd1; font-weight:700;");
+                QVBoxLayout *heroLeft = new QVBoxLayout();
+                heroLeft->setSpacing(3);
+                heroLeft->addWidget(heroTitle);
+                heroLeft->addWidget(heroDir);
+                heroLeft->addWidget(heroWhy);
+                QHBoxLayout *heroRight = new QHBoxLayout();
+                heroRight->setSpacing(6);
+                heroRight->addWidget(mkHeroChip(QStringLiteral("Confiance"), QString("%1%").arg(confidenceSignal), "#3a2a1a"));
+                heroRight->addWidget(mkHeroChip(QStringLiteral("Scenario"), scenarioLabel, "#2a3a2a"));
+                heroRight->addWidget(mkHeroChip(QStringLiteral("Momentum"), QString::number(momentumSignal), "#2a2a3a"));
+                heroRight->addWidget(mkHeroChip(QStringLiteral("Risque"), riskLevelGlobal, riskBg));
+                heroRight->addStretch();
+                heroLay->addLayout(heroLeft, 2);
+                heroLay->addLayout(heroRight, 3);
+                visualRoot->addWidget(heroFrame);
+
+                QJsonObject traj = obj.value(QStringLiteral("trend_trajectory")).toObject();
+                const QJsonArray yearsA = traj.value(QStringLiteral("years")).toArray();
+                const QJsonArray artisanA = traj.value(QStringLiteral("artisan_leather_curve")).toArray();
+                const QJsonArray romanticA = traj.value(QStringLiteral("romantic_fluid_curve")).toArray();
+                const QJsonArray athluxA = traj.value(QStringLiteral("athlux_utility_curve")).toArray();
+                const QJsonArray minimalA = traj.value(QStringLiteral("minimal_tailoring_curve")).toArray();
+                const QJsonArray conceptualA = traj.value(QStringLiteral("conceptual_futurism_curve")).toArray();
+                const QJsonArray annualA = traj.value(QStringLiteral("annual_curve")).toArray();
+                auto arrValue = [](const QJsonArray &a, int idx, int fallback) -> int {
+                    if (idx < 0 || idx >= a.size()) return fallback;
+                    return a.at(idx).toInt(fallback);
+                };
+                const int trendCenterIdx = yearsA.isEmpty() ? 0 : (yearsA.size() / 2);
+                const QString dominantTrendId = traj.value(QStringLiteral("dominant_trend")).toString();
+                const QString nextDominantTrendId = traj.value(QStringLiteral("next_dominant_trend")).toString();
+                const QJsonArray dominanceShiftsA = traj.value(QStringLiteral("dominance_shifts")).toArray();
+                const QJsonArray shockEventsA = traj.value(QStringLiteral("shock_events")).toArray();
+                const QJsonArray conflictNotesA = traj.value(QStringLiteral("conflict_notes")).toArray();
+                const QJsonArray overtakesA = traj.value(QStringLiteral("overtakes")).toArray();
+                auto momentumFrom = [&](const QJsonArray &a) -> int {
+                    if (a.size() < 2) return 0;
+                    const int idx = qBound(1, trendCenterIdx, a.size() - 1);
+                    return arrValue(a, idx, 50) - arrValue(a, idx - 1, 50);
+                };
+                auto mkTrendChip = [&](const QString &trendId, const QString &name, const QJsonArray &curve, const QString &bg) -> QWidget* {
+                    QFrame *f = new QFrame();
+                    const bool isDominant = (trendId == dominantTrendId);
+                    f->setFixedSize(120, 64);
+                    f->setStyleSheet(QString("QFrame { background:%1; border-radius:10px; border:%2 solid %3; }")
+                                         .arg(isDominant ? QStringLiteral("#fdf5e8") : bg)
+                                         .arg(isDominant ? 2 : 1)
+                                         .arg(isDominant ? QStringLiteral("#d4841a") : QStringLiteral("#eadfce")));
+                    QHBoxLayout *lay = new QHBoxLayout(f);
+                    lay->setContentsMargins(8, 6, 8, 6);
+                    lay->setSpacing(5);
+                    const int m = momentumFrom(curve);
+                    const int idx = qBound(0, trendCenterIdx, curve.size() - 1);
+                    const int prevV = arrValue(curve, qMax(0, idx - 1), arrValue(curve, idx, 50));
+                    const int currV = arrValue(curve, idx, 50);
+                    const int nextV = arrValue(curve, qMin(curve.size() - 1, idx + 1), currV);
+                    const QString phase = phaseFromWindow(prevV, currV, nextV);
+                    QLabel *n = new QLabel(name);
+                    n->setStyleSheet("font-size:11px; color:#2c1f0e; font-weight:900;");
+                    const QString phaseBg = (phase == QStringLiteral("Rising")) ? QStringLiteral("#2e7d32")
+                        : (phase == QStringLiteral("Declining")) ? QStringLiteral("#8e2d2d")
+                        : (phase == QStringLiteral("Peak")) ? QStringLiteral("#8d5524")
+                        : (phase == QStringLiteral("Bottom")) ? QStringLiteral("#4e342e")
+                        : QStringLiteral("#6d4c41");
+                    QLabel *phaseLb = new QLabel(QString("%1 %2").arg(phaseIcon(phase), phase));
+                    phaseLb->setStyleSheet(QString("font-size:10px; color:#fff; font-weight:900; background:%1; border-radius:7px; padding:2px 6px;").arg(phaseBg));
+                    QLabel *mom = new QLabel(QString("M%1%2").arg(m >= 0 ? "+" : "").arg(m));
+                    const QString momBg = (m > 0) ? QStringLiteral("#d4841a")
+                                                  : (m < 0 ? QStringLiteral("#c04040")
+                                                           : QStringLiteral("#9a8a70"));
+                    mom->setStyleSheet(QString("font-size:10px; color:#fff; font-weight:800; background:%1; border-radius:8px; padding:1px 6px;").arg(momBg));
+                    auto *spark = new MiniTrendSparkline();
+                    spark->setSeries(curve, m < 0 ? QColor("#c04040") : (m > 0 ? QColor("#d4841a") : QColor("#9a8a70")));
+                    lay->addWidget(n);
+                    lay->addWidget(phaseLb);
+                    lay->addWidget(mom);
+                    lay->addWidget(spark);
+                    if (isDominant) {
+                        QLabel *dom = new QLabel(QStringLiteral("LEAD"));
+                        dom->setStyleSheet("font-size:9px; color:#fff; font-weight:900; background:#8d5524; border-radius:6px; padding:1px 5px;");
+                        lay->addWidget(dom);
+                    }
+                    lay->addStretch();
+                    phaseLb->setToolTip(QString("phase=%1\nmomentum=%2\nvolatility=%3\nuncertainty=%4")
+                        .arg(phase)
+                        .arg(m)
+                        .arg(volatilityProxy, 0, 'f', 1)
+                        .arg(uncertaintyPenalty, 0, 'f', 1));
+                    auto *phaseFx = new QGraphicsOpacityEffect(phaseLb);
+                    phaseLb->setGraphicsEffect(phaseFx);
+                    auto *phaseAnim = new QPropertyAnimation(phaseFx, "opacity", phaseLb);
+                    phaseAnim->setDuration(860);
+                    phaseAnim->setStartValue(0.45);
+                    phaseAnim->setEndValue(1.0);
+                    phaseAnim->setLoopCount(2);
+                    phaseAnim->setEasingCurve(QEasingCurve::InOutSine);
+                    phaseAnim->start(QAbstractAnimation::DeleteWhenStopped);
+                    return f;
+                };
+                QFrame *evolutionFrame = new QFrame();
+                evolutionFrame->setStyleSheet("QFrame { background: #faf6f1; border-radius: 12px; border: 1px solid #ecdfd1; }");
+                QVBoxLayout *evoLay = new QVBoxLayout(evolutionFrame);
+                evoLay->setContentsMargins(10, 9, 10, 9);
+                QLabel *evoTitle = new QLabel(QStringLiteral("Trend Evolution Strip"));
+                evoTitle->setStyleSheet("font-size:14px; color:#2c1f0e; font-weight:600;");
+                evoLay->addWidget(evoTitle);
+                QHBoxLayout *trendStrip = new QHBoxLayout();
+                trendStrip->setSpacing(7);
+                trendStrip->addWidget(mkTrendChip(QStringLiteral("artisan-leather"), QStringLiteral("Artisan"), artisanA, "#fff8f1"));
+                trendStrip->addWidget(mkTrendChip(QStringLiteral("romantic-fluid"), QStringLiteral("Romantic"), romanticA, "#fff6fb"));
+                trendStrip->addWidget(mkTrendChip(QStringLiteral("athlux-utility"), QStringLiteral("Athlux"), athluxA, "#f4f9ff"));
+                trendStrip->addWidget(mkTrendChip(QStringLiteral("minimal-tailoring"), QStringLiteral("Minimal"), minimalA, "#f8f8f8"));
+                trendStrip->addWidget(mkTrendChip(QStringLiteral("conceptual-futurism"), QStringLiteral("Conceptual"), conceptualA, "#f8f4ff"));
+                trendStrip->addWidget(mkTrendChip(QStringLiteral("annual"), QStringLiteral("Annual"), annualA, "#fff6e8"));
+                evoLay->addLayout(trendStrip);
+                visualRoot->addWidget(evolutionFrame);
+
+                QFrame *reasoningStrip = new QFrame();
+                reasoningStrip->setStyleSheet("QFrame { background:#f2ebe4; border:1px solid #eadbc8; border-radius:10px; }");
+                QHBoxLayout *reasoningLay = new QHBoxLayout(reasoningStrip);
+                reasoningLay->setContentsMargins(10, 7, 10, 7);
+                QString shiftsTxt = QStringLiteral("no overtakes");
+                if (!dominanceShiftsA.isEmpty()) {
+                    QStringList chunks;
+                    for (int i = 0; i < qMin(2, dominanceShiftsA.size()); ++i) {
+                        chunks << dominanceShiftsA.at(i).toString().left(30);
+                    }
+                    shiftsTxt = chunks.join(QStringLiteral(" | "));
+                }
+                QString overtakeTxt = QStringLiteral("none");
+                if (!overtakesA.isEmpty()) {
+                    overtakeTxt = overtakesA.at(0).toString().left(28);
+                }
+                QLabel *reasonLbl = new QLabel(QString("▲ %1   DOM: %2 -> NEXT: %3   X: %4   OT: %5   ■ Reco: %6")
+                    .arg(yoyEvolution.left(42),
+                         dominantTrendId.left(18),
+                         nextDominantTrendId.left(18),
+                         shiftsTxt,
+                         overtakeTxt,
+                         recommendedCapsule.left(18)));
+                reasonLbl->setStyleSheet("font-size: 11px; font-weight: 800; color: #5d4037;");
+                reasoningLay->addWidget(reasonLbl);
+                visualRoot->addWidget(reasoningStrip);
+
+                QFrame *shockFrame = new QFrame();
+                shockFrame->setStyleSheet("QFrame { background:#fff8ef; border:1px solid #ecdcc8; border-radius:10px; }");
+                QHBoxLayout *shockLay = new QHBoxLayout(shockFrame);
+                shockLay->setContentsMargins(10, 6, 10, 6);
+                QLabel *shockTitle = new QLabel(QStringLiteral("Shock & Conflict"));
+                shockTitle->setStyleSheet("font-size:11px; font-weight:900; color:#c04040;");
+                shockLay->addWidget(shockTitle);
+                if (!shockEventsA.isEmpty()) {
+                    const QJsonObject evt = shockEventsA.at(0).toObject();
+                    QLabel *evtLb = new QLabel(QString("⚡ %1").arg(evt.value(QStringLiteral("label")).toString().left(28)));
+                    evtLb->setStyleSheet("font-size:11px; color:#8B4513; font-weight:700; background:#fff0e0; border:1px solid #d4841a; border-radius:12px; padding:4px 10px;");
+                    shockLay->addWidget(evtLb);
+                    auto *evtFx = new QGraphicsOpacityEffect(evtLb);
+                    evtLb->setGraphicsEffect(evtFx);
+                    auto *evtAnim = new QPropertyAnimation(evtFx, "opacity", evtLb);
+                    evtAnim->setDuration(980);
+                    evtAnim->setStartValue(0.35);
+                    evtAnim->setEndValue(1.0);
+                    evtAnim->setLoopCount(3);
+                    evtAnim->setEasingCurve(QEasingCurve::InOutSine);
+                    evtAnim->start(QAbstractAnimation::DeleteWhenStopped);
+                }
+                const int conflictShown = qMin(2, conflictNotesA.size());
+                for (int i = 0; i < conflictShown; ++i) {
+                    QLabel *cf = new QLabel(conflictNotesA.at(i).toString().left(30));
+                    cf->setStyleSheet("font-size:11px; color:#8B4513; font-weight:700; background:#fff0e0; border:1px solid #d4841a; border-radius:12px; padding:4px 10px;");
+                    shockLay->addWidget(cf);
+                }
+                shockLay->addStretch();
+                visualRoot->addWidget(shockFrame);
+
+                if (conflictNotesA.size() > 0) {
+                    QFrame *mxFrame = new QFrame();
+                    mxFrame->setStyleSheet("QFrame { background:#fff; border:1px solid #e0d8cc; border-radius:8px; }");
+                    QVBoxLayout *mxLay = new QVBoxLayout(mxFrame);
+                    mxLay->setContentsMargins(12, 10, 12, 10);
+                    mxLay->setSpacing(6);
+                    QLabel *mxTitle = new QLabel(QStringLiteral("MATRICE DE CONFLIT"));
+                    mxTitle->setStyleSheet("font-size:9px; font-weight:900; letter-spacing:1.2px; color:#8d6e63;");
+                    mxLay->addWidget(mxTitle);
+                    const QStringList mxNames = {QStringLiteral("artisan"), QStringLiteral("minimal"),
+                                                 QStringLiteral("romantic"), QStringLiteral("athlux"),
+                                                 QStringLiteral("conceptual")};
+                    const double baseConflicts[5][5] = {
+                        { 0, 27, 12, 45, 18},
+                        {15,  0, 33, 22, 41},
+                        {26, 17,  0, 38, 29},
+                        {37, 28, 19,  0, 52},
+                        {48, 39, 24, 31,  0},
+                    };
+                    double mult = 1.0;
+                    if (scenarioMode == QStringLiteral("aggressive_growth")) mult = 1.3;
+                    else if (scenarioMode == QStringLiteral("risk_averse")) mult = 0.7;
+                    else if (scenarioMode == QStringLiteral("disruptive")) mult = 1.5;
+                    else if (scenarioMode == QStringLiteral("conservative")) mult = 0.8;
+                    QGridLayout *grid = new QGridLayout();
+                    grid->setHorizontalSpacing(2);
+                    grid->setVerticalSpacing(2);
+                    for (int c = 0; c < 5; ++c) {
+                        QLabel *h = new QLabel(mxNames.at(c));
+                        h->setAlignment(Qt::AlignCenter);
+                        h->setMinimumWidth(52);
+                        h->setStyleSheet("font-size:10px; color:#7f6a58; font-weight:800; background:#f0ece4; padding:4px 2px;");
+                        grid->addWidget(h, 0, c + 1);
+                    }
+                    for (int r = 0; r < 5; ++r) {
+                        QLabel *v = new QLabel(mxNames.at(r));
+                        v->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+                        v->setMinimumWidth(90);
+                        v->setStyleSheet("font-size:10px; color:#7f6a58; font-weight:800; background:#f0ece4; padding-right:6px;");
+                        grid->addWidget(v, r + 1, 0);
+                        for (int c = 0; c < 5; ++c) {
+                            QLabel *cell = new QLabel;
+                            cell->setFixedSize(52, 26);
+                            const int val = (r == c) ? 0 : qBound(0, int(std::round(baseConflicts[r][c] * mult)), 100);
+                            cell->setText(r == c ? QStringLiteral("—") : QString::number(val));
+                            QString bg = QStringLiteral("transparent");
+                            QString fg = QStringLiteral("#8B7355");
+                            if (r == c) { bg = QStringLiteral("#e8e4dc"); fg = QStringLiteral("#8B7355"); }
+                            else if (val >= 61) { bg = QStringLiteral("#c04040"); fg = QStringLiteral("#ffffff"); }
+                            else if (val >= 31) { bg = QStringLiteral("#d4841a"); fg = QStringLiteral("#ffffff"); }
+                            else if (val >= 1) { bg = QStringLiteral("#f5e8d0"); fg = QStringLiteral("#8B4513"); }
+                            cell->setAlignment(Qt::AlignCenter);
+                            cell->setStyleSheet(QString("QLabel{background:%1; color:%2; border:1px solid #e0d8cc; border-radius:0px; font-size:10px; font-weight:800;}").arg(bg, fg));
+                            grid->addWidget(cell, r + 1, c + 1);
+                        }
+                    }
+                    mxLay->addLayout(grid);
+                    visualRoot->addWidget(mxFrame);
+                }
+
+                QFrame *trajFrame = new QFrame();
+                trajFrame->setStyleSheet("QFrame { background: #faf7f3; border-radius: 12px; border: 1px solid #ece1d6; }");
+                QVBoxLayout *trajLay = new QVBoxLayout(trajFrame);
+                trajLay->setContentsMargins(10, 10, 10, 10);
+                QLabel *trajTitle = new QLabel(QStringLiteral("Interactive Curve Panel"));
+                trajTitle->setStyleSheet("font-size: 14px; font-weight: 600; color: #2c1f0e;");
+                trajLay->addWidget(trajTitle);
+                auto mkSeries = [](const QString &name, const QColor &color) -> QLineSeries* {
+                    QLineSeries *s = new QLineSeries();
+                    s->setName(name);
+                    QPen p(color, 2.0);
+                    p.setCapStyle(Qt::RoundCap);
+                    s->setPen(p);
+                    s->setPointsVisible(false);
+                    return s;
+                };
+                QLineSeries *sArtisan = mkSeries(QStringLiteral("artisan-leather"), QColor("#6d4c41"));
+                QLineSeries *sRomantic = mkSeries(QStringLiteral("romantic-fluid"), QColor("#a45d7f"));
+                QLineSeries *sAthlux = mkSeries(QStringLiteral("athlux-utility"), QColor("#2e5d7a"));
+                QLineSeries *sMinimal = mkSeries(QStringLiteral("minimal-tailoring"), QColor("#7f6a58"));
+                QLineSeries *sConcept = mkSeries(QStringLiteral("conceptual-futurism"), QColor("#7a3f99"));
+                QLineSeries *sAnnual = mkSeries(QStringLiteral("annual"), QColor("#8d5524"));
+                auto mkGhost = [](const QString &name, const QColor &color) -> QLineSeries* {
+                    QLineSeries *g = new QLineSeries();
+                    g->setName(name);
+                    QPen p(color, 1.5, Qt::DashLine);
+                    p.setColor(QColor(color.red(), color.green(), color.blue(), 120));
+                    g->setPen(p);
+                    return g;
+                };
+                QLineSeries *gArtisan = mkGhost(QStringLiteral("artisan-leather projection"), QColor("#6d4c41"));
+                QLineSeries *gRomantic = mkGhost(QStringLiteral("romantic-fluid projection"), QColor("#a45d7f"));
+                QLineSeries *gAthlux = mkGhost(QStringLiteral("athlux-utility projection"), QColor("#2e5d7a"));
+                QLineSeries *gMinimal = mkGhost(QStringLiteral("minimal-tailoring projection"), QColor("#7f6a58"));
+                QLineSeries *gConcept = mkGhost(QStringLiteral("conceptual-futurism projection"), QColor("#7a3f99"));
+                QLineSeries *gAnnual = mkGhost(QStringLiteral("annual projection"), QColor("#8d5524"));
+                const int nPts = qMax(3, qMin(yearsA.size(), qMax(artisanA.size(), annualA.size())));
+                int minYear = targetYear - 2;
+                int maxYear = targetYear + 2;
+                QVector<QPointF> artPts, romPts, athPts, minPts, conPts, annPts;
+                artPts.reserve(nPts); romPts.reserve(nPts); athPts.reserve(nPts); minPts.reserve(nPts); conPts.reserve(nPts); annPts.reserve(nPts);
+                for (int i = 0; i < nPts; ++i) {
+                    const int x = arrValue(yearsA, i, targetYear - 2 + i);
+                    minYear = qMin(minYear, x);
+                    maxYear = qMax(maxYear, x);
+                    artPts.append(QPointF(x, arrValue(artisanA, i, 58)));
+                    romPts.append(QPointF(x, arrValue(romanticA, i, 55)));
+                    athPts.append(QPointF(x, arrValue(athluxA, i, 62)));
+                    minPts.append(QPointF(x, arrValue(minimalA, i, 60)));
+                    conPts.append(QPointF(x, arrValue(conceptualA, i, 57)));
+                    annPts.append(QPointF(x, arrValue(annualA, i, 58)));
+                }
+                const int pivotIdx = qBound(0, trendCenterIdx, qMax(0, nPts - 1));
+                for (int i = pivotIdx; i < nPts; ++i) {
+                    gArtisan->append(artPts.value(i));
+                    gRomantic->append(romPts.value(i));
+                    gAthlux->append(athPts.value(i));
+                    gMinimal->append(minPts.value(i));
+                    gConcept->append(conPts.value(i));
+                    gAnnual->append(annPts.value(i));
+                }
+                QLineSeries *yearMarker = new QLineSeries();
+                yearMarker->setName(QStringLiteral("Année cible"));
+                QPen markerPen(QColor("#c28b58"));
+                markerPen.setStyle(Qt::DashLine);
+                markerPen.setWidth(2);
+                yearMarker->setPen(markerPen);
+                yearMarker->append(targetYear, 0);
+                yearMarker->append(targetYear, 100);
+                QChart *trajChart = new QChart();
+                trajChart->addSeries(sArtisan);
+                trajChart->addSeries(sRomantic);
+                trajChart->addSeries(sAthlux);
+                trajChart->addSeries(sMinimal);
+                trajChart->addSeries(sConcept);
+                trajChart->addSeries(sAnnual);
+                trajChart->addSeries(gArtisan);
+                trajChart->addSeries(gRomantic);
+                trajChart->addSeries(gAthlux);
+                trajChart->addSeries(gMinimal);
+                trajChart->addSeries(gConcept);
+                trajChart->addSeries(gAnnual);
+                trajChart->addSeries(yearMarker);
+                styleChartBase(trajChart);
+                trajChart->setAnimationOptions(QChart::SeriesAnimations);
+                trajChart->legend()->setAlignment(Qt::AlignBottom);
+                QFont legendFont = trajChart->legend()->font();
+                legendFont.setPointSizeF(9.0);
+                trajChart->legend()->setFont(legendFont);
+                QValueAxis *axX = new QValueAxis();
+                QValueAxis *axY = new QValueAxis();
+                axX->setLabelFormat("%d");
+                axX->setTickCount(qBound(4, nPts, 8));
+                axX->setRange(minYear, maxYear);
+                axY->setRange(0, 100);
+                axY->setTickCount(6);
+                axX->setGridLineVisible(false);
+                axY->setGridLineColor(QColor("#eee4d8"));
+                trajChart->addAxis(axX, Qt::AlignBottom);
+                trajChart->addAxis(axY, Qt::AlignLeft);
+                QScatterSeries *overtakeSeries = new QScatterSeries();
+                overtakeSeries->setName(QStringLiteral("Trend overtakes"));
+                overtakeSeries->setMarkerSize(9.0);
+                overtakeSeries->setColor(QColor("#d84315"));
+                auto appendOvertakes = [&](const QVector<QPointF> &a, const QVector<QPointF> &b) {
+                    for (int i = 1; i < qMin(a.size(), b.size()); ++i) {
+                        const double d1 = a[i - 1].y() - b[i - 1].y();
+                        const double d2 = a[i].y() - b[i].y();
+                        if ((d1 < 0 && d2 > 0) || (d1 > 0 && d2 < 0)) {
+                            overtakeSeries->append(a[i].x(), (a[i].y() + b[i].y()) * 0.5);
+                        }
+                    }
+                };
+                appendOvertakes(artPts, athPts);
+                appendOvertakes(romPts, athPts);
+                appendOvertakes(conPts, artPts);
+                trajChart->addSeries(overtakeSeries);
+                const QList<QLineSeries*> allSeries = {sArtisan, sRomantic, sAthlux, sMinimal, sConcept, sAnnual, gArtisan, gRomantic, gAthlux, gMinimal, gConcept, gAnnual, yearMarker};
+                for (QLineSeries *s : allSeries) {
+                    s->attachAxis(axX);
+                    s->attachAxis(axY);
+                    QObject::connect(s, &QLineSeries::hovered, trajChart, [s](const QPointF &point, bool state) {
+                        if (!state) return;
+                        QToolTip::showText(QCursor::pos(),
+                            QString("%1  •  %2 : %3")
+                                .arg(s->name())
+                                .arg(static_cast<int>(point.x()))
+                                .arg(static_cast<int>(point.y())));
+                    });
+                }
+                overtakeSeries->attachAxis(axX);
+                overtakeSeries->attachAxis(axY);
+                QObject::connect(overtakeSeries, &QScatterSeries::hovered, trajChart, [confidenceSignal, volatilityProxy, uncertaintyPenalty](const QPointF &point, bool state) {
+                    if (!state) return;
+                    QToolTip::showText(
+                        QCursor::pos(),
+                        QString("trend overtakes @ %1\nconfidence=%2%%\nvolatility=%3  uncertainty=%4")
+                            .arg(static_cast<int>(point.x()))
+                            .arg(confidenceSignal)
+                            .arg(volatilityProxy, 0, 'f', 1)
+                            .arg(uncertaintyPenalty, 0, 'f', 1));
+                });
+                sArtisan->clear(); sRomantic->clear(); sAthlux->clear(); sMinimal->clear(); sConcept->clear(); sAnnual->clear();
+                QTimer *drawTimer = new QTimer(trajChart);
+                int *drawIdx = new int(0);
+                QObject::connect(drawTimer, &QTimer::timeout, trajChart, [=]() mutable {
+                    const int i = *drawIdx;
+                    if (i >= nPts) {
+                        drawTimer->stop();
+                        drawTimer->deleteLater();
+                        delete drawIdx;
+                        return;
+                    }
+                    sArtisan->append(artPts.value(i));
+                    sRomantic->append(romPts.value(i));
+                    sAthlux->append(athPts.value(i));
+                    sMinimal->append(minPts.value(i));
+                    sConcept->append(conPts.value(i));
+                    sAnnual->append(annPts.value(i));
+                    *drawIdx = i + 1;
+                });
+                drawTimer->start(110);
+                QChartView *trajView = new QChartView(trajChart);
+                styleChartView(trajView);
+                trajView->setRubberBand(QChartView::HorizontalRubberBand);
+                trajView->setMinimumHeight(280);
+                trajView->setToolTip(QString("Confidence breakdown\nTemporal: %1\nCoherence: %2\nRanking gap: %3\nVolatility: %4\nUncertainty penalty: %5")
+                    .arg(temporalCertainty, 0, 'f', 1)
+                    .arg(signalCoherence, 0, 'f', 1)
+                    .arg(rankingGap, 0, 'f', 1)
+                    .arg(volatilityProxy, 0, 'f', 1)
+                    .arg(uncertaintyPenalty, 0, 'f', 1));
+                trajLay->addWidget(trajView);
+                visualRoot->addWidget(trajFrame);
+
+                QHBoxLayout *conceptLay = new QHBoxLayout();
+                conceptLay->setSpacing(10);
+                auto mkInfoChip = [](const QString &txt) -> QLabel* {
+                    QLabel *lb = new QLabel(txt);
+                    lb->setStyleSheet("font-size:10px; font-weight:800; color:#4e342e; background:#f3e9de; border-radius:8px; padding:3px 7px;");
+                    return lb;
+                };
+                auto mkMetricRow = [&](const QString &label, int val, const QString &chunkColor) -> QWidget* {
+                    QWidget *row = new QWidget();
+                    QHBoxLayout *rh = new QHBoxLayout(row);
+                    rh->setContentsMargins(0, 0, 0, 0);
+                    rh->setSpacing(8);
+                    QLabel *ll = new QLabel(label);
+                    ll->setMinimumWidth(66);
+                    ll->setStyleSheet("font-size:9px; color:#8B7355; letter-spacing:0.02em;");
+                    QProgressBar *pb = new QProgressBar();
+                    pb->setRange(0, 100);
+                    pb->setValue(qBound(0, val, 100));
+                    pb->setTextVisible(false);
+                    pb->setFixedHeight(4);
+                    pb->setStyleSheet(QString("QProgressBar { border:0; border-radius:2px; background:#e8e0d0; }"
+                                              "QProgressBar::chunk { background:%1; border-radius:2px; }").arg(chunkColor));
+                    QLabel *vv = new QLabel(QString::number(val));
+                    vv->setMinimumWidth(22);
+                    vv->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+                    vv->setStyleSheet("font-size:9px; color:#4a3828; font-weight:700;");
+                    rh->addWidget(ll);
+                    rh->addWidget(pb, 1);
+                    rh->addWidget(vv);
+                    return row;
+                };
+                for (int i = 0; i < 3; ++i) {
+                    const QJsonObject c = (i < conceptArr.size() && conceptArr.at(i).isObject()) ? conceptArr.at(i).toObject() : QJsonObject();
+                    const QString title = c.value(QStringLiteral("product_name")).toString(QString("Concept %1").arg(i + 1));
+                    const QString style = c.value(QStringLiteral("style")).toString(topStyles.value(i, topStyles.value(0, QStringLiteral("N/A"))));
+                    const QString pal = c.value(QStringLiteral("palette")).toString(palette.value(i, palette.value(0, QStringLiteral("N/A"))));
+                    const QString mat = c.value(QStringLiteral("material")).toString(fabrics.value(i, fabrics.value(0, QStringLiteral("N/A"))));
+                    const QString silh = c.value(QStringLiteral("silhouette")).toString(sil.value(i, sil.value(0, QStringLiteral("N/A"))));
+                    const int innovation = c.value(QStringLiteral("innovation_score")).toInt(64 + i * 5);
+                    const int market = c.value(QStringLiteral("market_score")).toInt(74 - i * 4);
+                    const int feasibility = c.value(QStringLiteral("feasibility_score")).toInt(72 - i * 5);
+                    const int timing = c.value(QStringLiteral("trend_timing_score")).toInt(68 - i * 3);
+                    const QString rationale = c.value(QStringLiteral("direction_badge")).toString(QStringLiteral("Fit signal marché + différenciation contrôlée."));
+                    const QString phase = phaseFromWindow(qBound(0, timing - 5, 100), timing, qBound(0, timing + (innovation - 50) / 10, 100));
+
+                    QFrame *card = new QFrame();
+                    card->setAttribute(Qt::WA_Hover, true);
+                    card->setStyleSheet(
+                        "QFrame { background: #fff; border: 1px solid #efe4d8; border-radius: 13px; }"
+                        "QFrame:hover { border: 1px solid #c28b58; background:#fffdf9; }");
+                    QVBoxLayout *cv = new QVBoxLayout(card);
+                    cv->setContentsMargins(10, 9, 10, 9);
+                    cv->setSpacing(6);
+                    QLabel *t = new QLabel(title);
+                    t->setWordWrap(true);
+                    t->setStyleSheet("font-size: 13px; font-weight: 900; color: #3e2723;");
+                    QLabel *phaseBadge = new QLabel(QString("%1 %2").arg(phaseIcon(phase), phase));
+                    phaseBadge->setStyleSheet("font-size:10px; font-weight:900; color:#fff; background:#6d4c41; border-radius:7px; padding:2px 7px;");
+                    QHBoxLayout *tRow = new QHBoxLayout();
+                    tRow->addWidget(t);
+                    tRow->addWidget(phaseBadge, 0, Qt::AlignRight);
+                    cv->addLayout(tRow);
+                    QHBoxLayout *chipRow = new QHBoxLayout();
+                    chipRow->setSpacing(5);
+                    chipRow->addWidget(mkInfoChip(style));
+                    chipRow->addWidget(mkInfoChip(pal));
+                    chipRow->addWidget(mkInfoChip(mat));
+                    chipRow->addWidget(mkInfoChip(silh));
+                    chipRow->addStretch();
+                    cv->addLayout(chipRow);
+                    cv->addWidget(mkMetricRow(QStringLiteral("Market fit"), innovation, "#d4841a"));
+                    cv->addWidget(mkMetricRow(QStringLiteral("Matière"), market, "#8B5E3C"));
+                    cv->addWidget(mkMetricRow(QStringLiteral("Silhouette"), feasibility, "#6B7F5E"));
+                    cv->addWidget(mkMetricRow(QStringLiteral("Global"), timing, "#2c5f8a"));
+                    QLabel *oneLine = new QLabel(rationale.left(78));
+                    oneLine->setStyleSheet("font-size: 10px; color: #5d4037; font-weight: 700;");
+                    cv->addWidget(oneLine);
+                    conceptLay->addWidget(card);
+                }
+                visualRoot->addLayout(conceptLay);
+
+                const QJsonArray rejectedArr = obj.value(QStringLiteral("rejected_concepts")).toArray();
+                QFrame *rejFrame = new QFrame();
+                rejFrame->setStyleSheet("QFrame { background: #fff7ef; border-radius: 10px; border: 1px solid #f0decd; }");
+                QHBoxLayout *rejLay = new QHBoxLayout(rejFrame);
+                rejLay->setContentsMargins(10, 7, 10, 7);
+                QLabel *rejTitle = new QLabel(QStringLiteral("Rejected Concepts"));
+                rejTitle->setStyleSheet("font-size: 11px; font-weight: 900; color: #7a4b2a;");
+                rejLay->addWidget(rejTitle);
+                const int maxRejectedShown = qMin(3, rejectedArr.size());
+                for (int i = 0; i < maxRejectedShown; ++i) {
+                    const QString line = rejectedArr.at(i).toString().trimmed();
+                    if (line.isEmpty()) continue;
+                    QLabel *li = new QLabel(line.left(64));
+                    li->setStyleSheet("font-size: 10px; color: #6d4c41; font-weight:700; background:#f8eadb; border-radius:7px; padding:3px 6px;");
+                    rejLay->addWidget(li);
+                }
+                rejLay->addStretch();
+                visualRoot->addWidget(rejFrame);
+
+                auto *breathFx = new QGraphicsOpacityEffect(visualFrame);
+                visualFrame->setGraphicsEffect(breathFx);
+                auto *breathAnim = new QPropertyAnimation(breathFx, "opacity", visualFrame);
+                breathAnim->setStartValue(0.93);
+                breathAnim->setEndValue(1.0);
+                breathAnim->setDuration(2200);
+                breathAnim->setEasingCurve(QEasingCurve::InOutSine);
+                breathAnim->setLoopCount(-1);
+                breathAnim->start(QAbstractAnimation::DeleteWhenStopped);
+
+                auto *fadeEffect = new QGraphicsOpacityEffect(visualFrame);
+                visualFrame->setGraphicsEffect(fadeEffect);
+                auto *fadeIn = new QPropertyAnimation(fadeEffect, "opacity", visualFrame);
+                fadeIn->setDuration(360);
+                fadeIn->setStartValue(0.0);
+                fadeIn->setEndValue(1.0);
+                fadeIn->setEasingCurve(QEasingCurve::OutCubic);
+                fadeIn->start(QAbstractAnimation::DeleteWhenStopped);
+
+                applySoftShadow(visualFrame);
+                l->addWidget(visualFrame);
+
+                l->addWidget(mkSectionTitle("Top 3 tendances - Ranking éditorial"));
+                QHBoxLayout *rankLay = new QHBoxLayout();
+                rankLay->setSpacing(12);
+                const QStringList medals = {"#D4AF37", "#C0C0C0", "#CD7F32"};
+                for (int i = 0; i < qMin(3, topStyles.size()); ++i) {
+                    QFrame *card = new QFrame();
+                    card->setStyleSheet("QFrame { background: rgba(255,255,255,0.98); border: none; border-radius: 14px; }");
+                    card->setMinimumHeight(180);
+                    QVBoxLayout *vl = new QVBoxLayout(card);
+                    vl->setContentsMargins(16, 14, 16, 14);
+                    QLabel *rank = new QLabel(QString("TOP %1").arg(i + 1));
+                    rank->setStyleSheet(QString("font-size: 11px; font-weight: 900; color: %1;").arg(medals.value(i, "#8d5524")));
+                    QLabel *sty = new QLabel(topStyles.value(i));
+                    sty->setStyleSheet("font-size: 16px; font-weight: 900; color: #3e2723;");
+                    QLabel *meta = new QLabel(QString("Palette: %1\nMatière: %2\nSilhouette: %3")
+                                              .arg(palette.value(i, palette.value(0, "-")))
+                                              .arg(fabrics.value(i, fabrics.value(0, "-")))
+                                              .arg(sil.value(i, sil.value(0, "-"))));
+                    meta->setStyleSheet("font-size: 12px; color: #6d4c41;");
+                    meta->setWordWrap(true);
+                    QProgressBar *pb = new QProgressBar();
+                    pb->setRange(0, 100);
+                    const int relScore = qBound(40, static_cast<int>(confPct) - i * 8, 100);
+                    pb->setValue(relScore);
+                    pb->setFormat(QString::number(relScore) + "%");
+                    pb->setStyleSheet(
+                        "QProgressBar { border: 1px solid #e0d7cc; border-radius: 7px; background: #faf8f5; text-align:center; }"
+                        "QProgressBar::chunk { background: #8d5524; border-radius: 6px; }");
+                    vl->addWidget(rank);
+                    vl->addWidget(sty);
+                    vl->addWidget(meta);
+                    vl->addWidget(pb);
+                    applySoftShadow(card);
+                    rankLay->addWidget(card);
+                }
+                l->addLayout(rankLay);
+
+                l->addSpacing(10);
+                {
+                    l->addWidget(mkSectionTitle("RADAR MOMENTUM TENDANCES"));
+                    QFrame *radarFrame = new QFrame();
+                    radarFrame->setStyleSheet("QFrame { background: rgba(255,255,255,0.97); border:1px solid #e0d8cc; border-radius:8px; }");
+                    QVBoxLayout *radLay = new QVBoxLayout(radarFrame);
+                    radLay->setContentsMargins(14, 14, 14, 14);
+                    QLabel *radar = new QLabel();
+                    radar->setAlignment(Qt::AlignCenter);
+                    QPixmap px(300, 300);
+                    px.fill(Qt::transparent);
+                    QPainter p(&px);
+                    p.setRenderHint(QPainter::Antialiasing, true);
+                    const QPointF c(px.width() * 0.5, px.height() * 0.5);
+                    const qreal R = 120.0;
+                    const QStringList axisN = {QStringLiteral("artisan"), QStringLiteral("minimal"), QStringLiteral("romantic"),
+                                               QStringLiteral("athlux"), QStringLiteral("conceptual"), QStringLiteral("annual")};
+                    const ForecastResultLocal frNow = computeFashionForecastLocal(targetYear, scenarioModeUi);
+                    const ForecastResultLocal frPrev = computeFashionForecastLocal(targetYear - 1, scenarioModeUi);
+                    QVector<QPointF> ptsNow, ptsPrev;
+                    constexpr qreal kPi = 3.14159265358979323846;
+                    for (int i = 0; i < 6; ++i) {
+                        const qreal a = -kPi * 0.5 + (kPi * 2.0 * i / 6.0);
+                        const QPointF tip(c.x() + std::cos(a) * R, c.y() + std::sin(a) * R);
+                        p.setPen(QPen(QColor("#d8cfc3"), 1));
+                        p.drawLine(c, tip);
+                        p.setPen(QColor("#7f6a58"));
+                        p.setFont(QFont("Segoe UI", 8));
+                        p.drawText(QRectF(tip.x() - 32, tip.y() - 8, 64, 16), Qt::AlignCenter, axisN.at(i));
+                        const qreal rn = qBound(0.0, frNow.trendScores[i], 100.0) / 100.0 * R;
+                        const qreal rp = qBound(0.0, frPrev.trendScores[i], 100.0) / 100.0 * R;
+                        ptsNow.push_back(QPointF(c.x() + std::cos(a) * rn, c.y() + std::sin(a) * rn));
+                        ptsPrev.push_back(QPointF(c.x() + std::cos(a) * rp, c.y() + std::sin(a) * rp));
+                    }
+                    QPainterPath prevPath, nowPath;
+                    prevPath.addPolygon(QPolygonF(ptsPrev));
+                    nowPath.addPolygon(QPolygonF(ptsNow));
+                    p.setPen(QPen(QColor("#6d655c"), 1.4));
+                    p.setBrush(QColor(100, 90, 80, 38));
+                    p.drawPath(prevPath);
+                    p.setPen(QPen(QColor("#d4841a"), 1.8));
+                    p.setBrush(QColor(212, 132, 26, 64));
+                    p.drawPath(nowPath);
+                    p.setPen(Qt::NoPen);
+                    p.setBrush(QColor("#d4841a"));
+                    p.drawEllipse(c, 4, 4);
+                    radar->setPixmap(px);
+                    radLay->addWidget(radar);
+                    l->addWidget(radarFrame);
+                }
+
+                QHBoxLayout *middle = new QHBoxLayout();
+                middle->setSpacing(14);
+                QVBoxLayout *leftCol = new QVBoxLayout();
+                QVBoxLayout *rightCol = new QVBoxLayout();
+                leftCol->setSpacing(12);
+                rightCol->setSpacing(12);
+
+                QFrame *histFrame = new QFrame();
+                histFrame->setStyleSheet("QFrame { background: rgba(255,255,255,0.97); border: none; border-radius: 14px; }");
+                QVBoxLayout *histLay = new QVBoxLayout(histFrame);
+                histLay->setContentsMargins(16, 14, 16, 14);
+                histLay->addWidget(mkSectionTitle("Inspirations historiques"));
+                if (decades.isEmpty()) {
+                    QLabel *empty = new QLabel("Aucune correspondance historique détectée.");
+                    empty->setStyleSheet("font-size: 12px; color: #8d6e63;");
+                    histLay->addWidget(empty);
+                } else {
+                    auto describeDecade = [](const QString &d) {
+                        if (d.contains("199")) return QString("Minimal structure et palette neutre.");
+                        if (d.contains("200")) return QString("Utility leather revival et esprit urbain.");
+                        if (d.contains("201")) return QString("Premium casual fonctionnel.");
+                        if (d.contains("202")) return QString("Influence durable et matières responsables.");
+                        return QString("Correspondance stylistique pertinente.");
+                    };
+
+                    QScrollArea *timelineScroll = new QScrollArea();
+                    timelineScroll->setWidgetResizable(true);
+                    timelineScroll->setFrameShape(QFrame::NoFrame);
+                    timelineScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+                    timelineScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+                    QWidget *timelineW = new QWidget();
+                    QHBoxLayout *timeline = new QHBoxLayout(timelineW);
+                    timeline->setContentsMargins(2, 2, 2, 2);
+                    timeline->setSpacing(8);
+                    const int currentY = QDate::currentDate().year();
+                    for (int y = 2020; y <= 2035; ++y) {
+                        QVBoxLayout *node = new QVBoxLayout();
+                        node->setSpacing(3);
+                        QPushButton *dot = new QPushButton();
+                        dot->setCursor(Qt::PointingHandCursor);
+                        dot->setFixedSize(y == targetYear ? 10 : 8, y == targetYear ? 10 : 8);
+                        if (y < currentY) {
+                            dot->setStyleSheet("QPushButton{background:#d4841a;border:none;border-radius:5px;}");
+                        } else if (y == currentY) {
+                            dot->setStyleSheet("QPushButton{background:#d4841a;border:1px solid #8d5524;border-radius:5px;}");
+                        } else {
+                            dot->setStyleSheet("QPushButton{background:transparent;border:1px solid #8d5524;border-radius:5px;}");
+                        }
+                        QLabel *d = new QLabel(QString::number(y));
+                        d->setAlignment(Qt::AlignCenter);
+                        d->setStyleSheet("font-size:9px; color:#5d4037; font-weight:850;");
+                        QLabel *nm = new QLabel(y <= targetYear ? topStyles.value((y - 2020) % qMax(1, topStyles.size()), dominant)
+                                                                 : QString("<i>%1</i>").arg(topStyles.value((y - 2020) % qMax(1, topStyles.size()), dominant)));
+                        nm->setAlignment(Qt::AlignCenter);
+                        nm->setStyleSheet("font-size:9px; color:#8d6e63;");
+                        nm->setTextFormat(Qt::RichText);
+                        nm->setMinimumWidth(68);
+                        node->addWidget(dot, 0, Qt::AlignHCenter);
+                        node->addWidget(d);
+                        node->addWidget(nm);
+                        QWidget *nodeW = new QWidget();
+                        nodeW->setLayout(node);
+                        timeline->addWidget(nodeW);
+                        QObject::connect(dot, &QPushButton::clicked, this, [this, y]() {
+                            ui->tabWidgetProduits->setProperty("fashionOracleTargetYear", y);
+                            ui->tabWidgetProduits->setProperty("fashionOracleActiveYear", y);
+                            QTimer::singleShot(0, this, [this]() { showHistoriqueModeDialog(); });
+                        });
+                        if (y < 2035) {
+                            QFrame *connector = new QFrame();
+                            connector->setFixedHeight(1);
+                            connector->setFixedWidth(20);
+                            connector->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+                            connector->setStyleSheet("background:#dbc8b5; border:none;");
+                            timeline->addWidget(connector, 0, Qt::AlignVCenter);
+                        }
+                    }
+                    timeline->addStretch();
+                    timelineScroll->setWidget(timelineW);
+                    histLay->addWidget(timelineScroll);
+                    histLay->addSpacing(3);
+
+                    const int timelineCount = qMin(4, decades.size());
+                    for (int i = 0; i < timelineCount; ++i) {
+                        const QString d = decades.value(i);
+                        QLabel *li = new QLabel(QString("<b>%1</b> - %2").arg(d, describeDecade(d)));
+                        li->setTextFormat(Qt::RichText);
+                        li->setStyleSheet("font-size: 12px; color: #6d4c41; padding-top:2px; line-height:1.45;");
+                        histLay->addWidget(li);
+                    }
+                }
+                applySoftShadow(histFrame);
+                leftCol->addWidget(histFrame);
+
+                const QString chartTrendB64 = obj.value(QStringLiteral("chart_trend_base64")).toString();
+                const QString chartCycleB64 = obj.value(QStringLiteral("chart_cycle_base64")).toString();
+                if (!chartTrendB64.isEmpty() || !chartCycleB64.isEmpty()) {
+                    QFrame *chartFrame = new QFrame();
+                    chartFrame->setStyleSheet("QFrame { background: rgba(255,255,255,0.97); border: none; border-radius: 14px; }");
+                    QVBoxLayout *chartLay = new QVBoxLayout(chartFrame);
+                    chartLay->setContentsMargins(14, 14, 14, 14);
+                    chartLay->addWidget(mkSectionTitle("Visual storytelling"));
+                    auto addChart = [chartLay](const QString &b64, const QString &title) {
+                        if (b64.isEmpty()) return;
+                        QLabel *t = new QLabel(title);
+                        t->setStyleSheet("font-size: 12px; font-weight: 850; color: #5d4037; margin-top: 2px;");
+                        QLabel *img = new QLabel();
+                        img->setAlignment(Qt::AlignCenter);
+                        QPixmap px;
+                        if (px.loadFromData(QByteArray::fromBase64(b64.toUtf8()), "PNG"))
+                            img->setPixmap(px.scaled(520, 220, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+                        chartLay->addWidget(t);
+                        chartLay->addWidget(img);
+                    };
+                    addChart(chartTrendB64, "Évolution des signaux tendance");
+                    addChart(chartCycleB64, "Distribution de similarité historique");
+                    applySoftShadow(chartFrame);
+                    leftCol->addWidget(chartFrame);
+                }
+
+                QFrame *recFrame = new QFrame();
+                recFrame->setStyleSheet("QFrame { background: rgba(255,255,255,0.97); border: none; border-radius: 14px; }");
+                QVBoxLayout *recLay = new QVBoxLayout(recFrame);
+                recLay->setContentsMargins(16, 14, 16, 14);
+                recLay->addWidget(mkSectionTitle("Recommandation stratégique produit"));
+                auto boolToBusiness = [](const QString &k, const QString &v) -> QString {
+                    if (v.compare("true", Qt::CaseInsensitive) == 0)
+                        return QString("Prioriser cet axe dans la prochaine capsule.");
+                    if (v.compare("false", Qt::CaseInsensitive) == 0)
+                        return QString("Axe secondaire à tester avec prudence.");
+                    return v;
+                };
+                auto recoLine = [recLay](const QString &k, const QString &v) {
+                    QLabel *lb = new QLabel(QString("• <b>%1</b> : %2").arg(k, v));
+                    lb->setTextFormat(Qt::RichText);
+                    lb->setWordWrap(true);
+                    lb->setStyleSheet("font-size: 12px; color: #5d4037; line-height:1.45;");
+                    recLay->addWidget(lb);
+                };
+                recoLine("Axe produit", QString("Développer une capsule %1 orientée désirabilité premium.").arg(dominant));
+                recoLine("Matières recommandées", fabrics.mid(0, 3).join(", "));
+                recoLine("Palette conseillée", palette.mid(0, 4).join(", "));
+                recoLine("Silhouettes à privilégier", sil.mid(0, 3).join(", "));
+                if (recommandations.isEmpty()) {
+                    recoLine("Opportunité marché", "Fenêtre favorable sur segment premium utilitaire.");
+                    recoLine("Niveau de risque / audace", "Audace modérée, risque contrôlé.");
+                } else {
+                    for (auto it = recommandations.begin(); it != recommandations.end(); ++it)
+                        recoLine(it.key(), boolToBusiness(it.key(), it.value()));
+                    recoLine("Niveau de risque / audace", confidence >= 0.75 ? "Risque faible, audace soutenue possible." : "Risque modéré, pilotage progressif.");
+                }
+                applySoftShadow(recFrame);
+                rightCol->addWidget(recFrame);
+
+                QFrame *historySummaryFrame = new QFrame();
+                historySummaryFrame->setStyleSheet("QFrame { background: rgba(255,255,255,0.97); border: none; border-radius: 14px; }");
+                QVBoxLayout *sumLay = new QVBoxLayout(historySummaryFrame);
+                sumLay->setContentsMargins(16, 14, 16, 14);
+                sumLay->addWidget(mkSectionTitle(QStringLiteral("Historique de mode")));
+                const QString fallbackSummary = QString(
+                    "Pour %1, les signaux prédictifs convergent vers une montée de %2, "
+                    "soutenue par des matières nobles, des palettes terreuses sophistiquées et des silhouettes fonctionnelles raffinées. "
+                    "Cette orientation ouvre une opportunité forte pour une ligne conciliant désirabilité, usage quotidien et perception qualité.")
+                    .arg(targetYear).arg(dominant);
+                QLabel *sum = new QLabel(summary.isEmpty() ? fallbackSummary : summary);
+                sum->setWordWrap(true);
+                sum->setStyleSheet("font-size: 12px; color: #5d4037; line-height: 1.55;");
+                sumLay->addWidget(sum);
+                applySoftShadow(historySummaryFrame);
+                rightCol->addWidget(historySummaryFrame);
+                rightCol->addStretch();
+
+                middle->addLayout(leftCol, 3);
+                middle->addLayout(rightCol, 2);
+                l->addLayout(middle);
+
+                l->addWidget(mkSectionTitle("Détail analytique complet"));
+                QTableWidget *tw = new QTableWidget();
+                tw->setColumnCount(6);
+                int rowsApi = qMax(1, qMax(qMax(topStyles.size(), palette.size()), qMax(fabrics.size(), sil.size())));
+                tw->setRowCount(rowsApi);
+                tw->setHorizontalHeaderLabels({"Rang", "Style", "Palette", "Matière", "Silhouette", "Poids"});
+                tw->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+                tw->verticalHeader()->setDefaultSectionSize(32);
+                tw->setAlternatingRowColors(true);
+                tw->setShowGrid(false);
+                tw->setStyleSheet(
+                    "QTableWidget { background:rgba(255,255,255,0.98); border:none; border-radius:12px; font-size:12px; }"
+                    "QHeaderView::section { background: #2f1b16; color: #f8eee4; padding: 10px; font-weight: 850; border: none; }"
+                    "QTableWidget::item { border-bottom: 1px solid #f0e7dc; padding: 6px; }"
+                    "QTableWidget::item:selected { background: #f9efe3; color: #3e2723; }");
+                for (int i = 0; i < rowsApi; ++i) {
+                    const QString medal = (i == 0 ? "🥇" : (i == 1 ? "🥈" : (i == 2 ? "🥉" : "•")));
+                    tw->setItem(i, 0, new QTableWidgetItem(QString("%1 %2").arg(medal).arg(i + 1)));
+                    tw->setItem(i, 1, new QTableWidgetItem(i < topStyles.size() ? topStyles[i] : QString()));
+                    tw->setItem(i, 2, new QTableWidgetItem(i < palette.size() ? palette[i] : QString()));
+                    tw->setItem(i, 3, new QTableWidgetItem(i < fabrics.size() ? fabrics[i] : QString()));
+                    tw->setItem(i, 4, new QTableWidgetItem(i < sil.size() ? sil[i] : QString()));
+                    const int weight = qBound(35, static_cast<int>(confPct) - i * 7, 99);
+                    tw->setItem(i, 5, new QTableWidgetItem(QString("%1%").arg(weight)));
+                }
+                applySoftShadow(tw);
+                l->addWidget(tw);
+
+                loadingBox->hide();
+                ui->tabWidgetProduits->setCurrentIndex(5);
+                if (reply)
+                    reply->deleteLater();
+                return;
+            }
+            if (reply)
+                reply->deleteLater();
+        }
+    }
+
+LOCAL_PREDICTION_FALLBACK:
+    {
+        loadingBox->hide();
+        qDebug() << "[FashionOracle] predict API failed after retries year=" << targetYear;
+        QLabel *badgeErr = new QLabel(
+            QStringLiteral("API Fashion Oracle indisponible après plusieurs tentatives (timeout). "
+                           "Vérifiez que le backend tourne sur le bon port (FASHION_ORACLE_PORT) et réessayez."));
+        badgeErr->setStyleSheet("background: #fdecea; color: #7f1d1d; border:1px solid #f8caca; padding: 12px; border-radius: 10px;");
+        badgeErr->setWordWrap(true);
+        badgeErr->setAlignment(Qt::AlignCenter);
+        l->addWidget(badgeErr);
+        QLabel *hint = new QLabel(
+            QStringLiteral("Aucun repli local : les résultats affichés doivent provenir de l’API réelle."));
+        hint->setStyleSheet("font-size:12px; color:#6d4c41; padding: 10px;");
+        hint->setWordWrap(true);
+        hint->setAlignment(Qt::AlignCenter);
+        l->addWidget(hint);
+        ui->tabWidgetProduits->setCurrentIndex(5);
+        return;
+    }
+    QSqlDatabase db = Connexion::getInstance() ? Connexion::getInstance()->getDatabase() : QSqlDatabase();
+    if (!db.isOpen()) {
+        QLabel *msg = new QLabel("Base Oracle non connectee: prediction indisponible.");
+        msg->setStyleSheet("background: #fff3cd; color: #856404; border:1px solid #ffeeba; padding: 12px; border-radius: 8px;");
+        msg->setAlignment(Qt::AlignCenter);
+        l->addWidget(msg);
+        ui->tabWidgetProduits->setCurrentIndex(5);
+        return;
+    }
+
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "SELECT NVL(TRIM(pr.COLLECTION), 'INCONNUE') AS COLLECTION, "
+        "TO_CHAR(NVL(p.DATE_LANCEMENT, NVL(p.DATE_FIN_PREVUE, SYSDATE)), 'YYYY-MM') AS YM, "
+        "SUM(NVL(p.QUANTITE, 1)) AS QTE "
+        "FROM PLANIFICATION p "
+        "JOIN PRODUITS pr ON pr.ID_PRODUIT = p.ID_PRODUIT "
+        "GROUP BY NVL(TRIM(pr.COLLECTION), 'INCONNUE'), "
+        "TO_CHAR(NVL(p.DATE_LANCEMENT, NVL(p.DATE_FIN_PREVUE, SYSDATE)), 'YYYY-MM') "
+        "ORDER BY YM"));
+
+    if (!q.exec()) {
+        QLabel *msg = new QLabel("Impossible de lire l'historique Oracle pour la prediction.");
+        msg->setStyleSheet("background: #fdecea; color: #b71c1c; border:1px solid #f5c6cb; padding: 12px; border-radius: 8px;");
+        msg->setAlignment(Qt::AlignCenter);
+        l->addWidget(msg);
+        l->addWidget(new QLabel(q.lastError().text()));
+        ui->tabWidgetProduits->setCurrentIndex(5);
+        return;
+    }
+
+    QMap<QString, QVector<ModeSeriePoint>> series;
+    QSet<QString> allMonths;
+    while (q.next()) {
+        const QString collection = q.value(QStringLiteral("COLLECTION")).toString().trimmed();
+        const QString ym = q.value(QStringLiteral("YM")).toString().trimmed();
+        const double qty = q.value(QStringLiteral("QTE")).toDouble();
+        if (collection.isEmpty() || ym.isEmpty())
+            continue;
+        series[collection].append({ym, qty});
+        allMonths.insert(ym);
+    }
+
+    if (series.isEmpty()) {
+        QLabel *msg = new QLabel("Pas assez de donnees historiques pour lancer une prediction mode.");
+        msg->setStyleSheet("background: #fff3cd; color: #856404; border:1px solid #ffeeba; padding: 12px; border-radius: 8px;");
+        msg->setAlignment(Qt::AlignCenter);
+        l->addWidget(msg);
+        ui->tabWidgetProduits->setCurrentIndex(5);
+        return;
+    }
+
+    QStringList months = allMonths.values();
+    months.sort();
+
+    QVector<ModePrediction> preds;
+    preds.reserve(series.size());
+
+    QVector<double> recentVals;
+    QVector<double> trendVals;
+    QVector<double> momVals;
+    QVector<double> seasVals;
+    QVector<double> volVals;
+
+    const QDate nextMonth = QDate::currentDate().addMonths(1);
+    const int targetMonth = nextMonth.month();
+
+    for (auto it = series.begin(); it != series.end(); ++it) {
+        QMap<QString, double> m;
+        for (const ModeSeriePoint &p : it.value())
+            m[p.ym] += p.qte;
+
+        QVector<double> y;
+        y.reserve(months.size());
+        for (const QString &ym : months)
+            y.append(m.value(ym, 0.0));
+
+        const double mu = moyenne(y);
+        const double slope = penteRegressionLineaire(y);
+        const double sigma = ecartType(y, mu);
+
+        QVector<double> rec = y;
+        const int startRec = qMax(0, rec.size() - 3);
+        const QVector<double> recSlice = rec.mid(startRec);
+        const double recMean = moyenne(recSlice);
+
+        const double momentum = (recMean - mu) / (mu + 1.0);
+
+        QVector<double> monthBucket;
+        for (auto jt = m.begin(); jt != m.end(); ++jt) {
+            const QDate d = QDate::fromString(jt.key() + QStringLiteral("-01"), QStringLiteral("yyyy-MM-dd"));
+            if (d.isValid() && d.month() == targetMonth)
+                monthBucket.append(jt.value());
+        }
+        const double seasonalAvg = monthBucket.isEmpty() ? mu : moyenne(monthBucket);
+        const double seasonalBoost = (seasonalAvg - mu) / (mu + 1.0);
+
+        ModePrediction pr;
+        pr.collection = it.key();
+        pr.baseMoyenne = mu;
+        pr.moyenneRecente = recMean;
+        pr.penteTendance = slope;
+        pr.momentum = momentum;
+        pr.saisonnalite = seasonalBoost;
+        pr.volatilite = sigma;
+        pr.pointsHistoriques = y.size();
+        preds.append(pr);
+
+        recentVals.append(recMean);
+        trendVals.append(slope);
+        momVals.append(momentum);
+        seasVals.append(seasonalBoost);
+        volVals.append(sigma);
+    }
+
+    const auto minmaxRecent = std::minmax_element(recentVals.begin(), recentVals.end());
+    const auto minmaxTrend = std::minmax_element(trendVals.begin(), trendVals.end());
+    const auto minmaxMom = std::minmax_element(momVals.begin(), momVals.end());
+    const auto minmaxSeas = std::minmax_element(seasVals.begin(), seasVals.end());
+    const auto minmaxVol = std::minmax_element(volVals.begin(), volVals.end());
+
+    for (ModePrediction &pr : preds) {
+        const double nRecent = normaliserMinMax(pr.moyenneRecente, *minmaxRecent.first, *minmaxRecent.second);
+        const double nTrend = normaliserMinMax(pr.penteTendance, *minmaxTrend.first, *minmaxTrend.second);
+        const double nMom = normaliserMinMax(pr.momentum, *minmaxMom.first, *minmaxMom.second);
+        const double nSeas = normaliserMinMax(pr.saisonnalite, *minmaxSeas.first, *minmaxSeas.second);
+        const double nVol = normaliserMinMax(pr.volatilite, *minmaxVol.first, *minmaxVol.second);
+
+        pr.score = (0.40 * nRecent + 0.25 * nTrend + 0.20 * nMom + 0.15 * nSeas) * 100.0;
+
+        const double confidenceRaw = 0.55 * (1.0 - nVol) + 0.45 * clamp01(static_cast<double>(pr.pointsHistoriques) / 8.0);
+        pr.confiance = clamp01(confidenceRaw) * 100.0;
+
+        const double growthFactor = 1.0 + (0.35 * pr.penteTendance / (pr.baseMoyenne + 1.0))
+                                    + (0.30 * pr.momentum)
+                                    + (0.20 * pr.saisonnalite);
+        pr.prevision = qMax(0.0, pr.moyenneRecente * qMax(0.4, growthFactor));
+    }
+
+    std::sort(preds.begin(), preds.end(), [](const ModePrediction &a, const ModePrediction &b) {
+        return a.score > b.score;
+    });
+
+    const QString moisLabel = QLocale::system().toString(nextMonth, QStringLiteral("MMMM yyyy"));
+    QLabel *kpi = new QLabel(QString(
+                                 "<div style='background:#fff;border:1px solid #d7ccc8;border-radius:10px;padding:10px;'>"
+                                 "<b>Top tendance predit :</b> %1"
+                                 " &nbsp;|&nbsp; <b>Score :</b> %2/100"
+                                 " &nbsp;|&nbsp; <b>Confiance :</b> %3%%"
+                                 " &nbsp;|&nbsp; <b>Projection %4 :</b> %5 unites"
+                                 "</div>")
+                                 .arg(preds.first().collection)
+                                 .arg(QString::number(preds.first().score, 'f', 1))
+                                 .arg(QString::number(preds.first().confiance, 'f', 0))
+                                 .arg(moisLabel)
+                                 .arg(QString::number(preds.first().prevision, 'f', 0)));
+    kpi->setTextFormat(Qt::RichText);
+    l->addWidget(kpi);
+
+    QTableWidget *tw = new QTableWidget();
+    tw->setColumnCount(7);
+    tw->setRowCount(preds.size());
+    tw->setHorizontalHeaderLabels({"Rang", "Collection", "Score tendance", "Projection", "Confiance", "Historique", "Signal"});
+    tw->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    tw->setAlternatingRowColors(true);
+    tw->setStyleSheet("QTableWidget { background:#fff; border:1px solid #d7ccc8; border-radius:8px; }");
+
+    for (int i = 0; i < preds.size(); ++i) {
+        const ModePrediction &pr = preds[i];
+        const QString signal = pr.score >= 70.0 ? "FORTE HAUSSE"
+                             : pr.score >= 50.0 ? "HAUSSE MODEREE"
+                             : pr.score >= 35.0 ? "STABLE"
+                                                : "A SURVEILLER";
+
+        tw->setItem(i, 0, new QTableWidgetItem(QString::number(i + 1)));
+        tw->setItem(i, 1, new QTableWidgetItem(pr.collection));
+        tw->setItem(i, 2, new QTableWidgetItem(QString::number(pr.score, 'f', 1) + "/100"));
+        tw->setItem(i, 3, new QTableWidgetItem(QString::number(pr.prevision, 'f', 0) + " unites"));
+        tw->setItem(i, 4, new QTableWidgetItem(QString::number(pr.confiance, 'f', 0) + "%"));
+        tw->setItem(i, 5, new QTableWidgetItem(QString::number(pr.pointsHistoriques) + " mois"));
+        tw->setItem(i, 6, new QTableWidgetItem(signal));
+    }
+
+    l->addWidget(tw);
+
+    QLabel *note = new QLabel(
+        "Historique de mode : le score combine la demande recente, la pente de tendance, le momentum et la saisonnalite. "
+        "La confiance baisse quand la volatilite augmente ou si l'historique est trop court.");
+    note->setWordWrap(true);
+    note->setStyleSheet("font-size:12px;color:#6d4c41;");
+    l->addWidget(note);
+
+    ui->tabWidgetProduits->setCurrentIndex(5);
+}
+
+
+void MainWindow::showStockCompareTab() {
+    if(ui->tabWidgetStock->count() < 5) return;
+    QWidget *onglet = ui->tabWidgetStock->widget(4);
+    if (onglet->layout()) { clearLayout(onglet->layout()); delete onglet->layout(); }
+
+    QVBoxLayout *l = new QVBoxLayout(onglet);
+    l->addStretch();
+
+    QLabel *titre = new QLabel("⚖️ COMPARATEUR DE FOURNISSEURS / LOTS");
+    titre->setStyleSheet("font-size: 24px; font-weight: bold; color: #16a085; margin-bottom: 20px; text-transform: uppercase;");
     titre->setAlignment(Qt::AlignCenter); l->addWidget(titre);
 
-    QTableView *tv = new QTableView();
-    tv->setStyleSheet("background: white; border: 1px solid #d7ccc8;");
-    tv->horizontalHeader()->setStretchLastSection(true);
-
-    // Requête de démonstration : On va lire la table PRODUITS d'Oracle !
-    QSqlQueryModel *model = new QSqlQueryModel();
-    model->setQuery("SELECT ID_PRODUIT as Référence, DESIGNATION as Nom, COUT as Coût_Actuel FROM PRODUITS");
-    tv->setModel(model);
-
-    l->addWidget(tv);
-    ui->tabWidgetProduits->setCurrentIndex(5); // Bascule sur l'onglet Historique
+    int idx = ui->tableStock->currentRow();
+    QLabel *desc = new QLabel();
+    if(idx >= 0 && idx < mesMatieres.size()) {
+        MatiereInfo m = mesMatieres[idx];
+        desc->setText(QString(
+                          "<div style='background:white; border-radius:12px; padding:30px; border:2px solid #16a085; color:#3e2723; font-size:15px;'>"
+                          "<h2 style='color:#16a085; margin-top:0; text-align:center;'>Analyse du lot : %1</h2><hr>"
+                          "<ul>"
+                          "<li><b>Qualité :</b> Grade %2</li>"
+                          "<li><b>Recommandation IA :</b> Ce lot de %3 est optimal pour la collection <i>Hiver</i>. Le fournisseur actuel offre un rapport qualité/prix 12% supérieur à la moyenne du marché.</li>"
+                          "<li><b>Alternative :</b> Lot Cuir-Agneau-002 (Fournisseur B) - Moins cher mais qualité inférieure.</li>"
+                          "</ul></div>").arg(m.code, m.qualite, m.categorie));
+    } else {
+        desc->setText("<div style='background:white; padding:20px; border-radius:10px; color:gray; font-style:italic;'>Veuillez sélectionner un lot dans la liste pour le comparer au marché.</div>");
+    }
+    desc->setAlignment(Qt::AlignCenter); l->addWidget(desc, 0, Qt::AlignCenter);
+    l->addStretch();
+    ui->tabWidgetStock->setCurrentIndex(4);
 }
 
 void MainWindow::showStockRavitaillementTab() {
@@ -18408,24 +23785,43 @@ void MainWindow::showDepotValeurGazTab()
     QWidget *onglet = ui->tabWidgetDepot->widget(6);
     if (onglet->layout()) { clearLayout(onglet->layout()); delete onglet->layout(); }
 
-    auto *mainVl = new QVBoxLayout(onglet);
+    onglet->setAutoFillBackground(true);
+    {
+        QPalette pal = onglet->palette();
+        pal.setColor(QPalette::Window, QColor(QStringLiteral("#f3f0eb")));
+        onglet->setPalette(pal);
+    }
+
+    auto *outer = new QVBoxLayout(onglet);
+    outer->setContentsMargins(0, 0, 0, 0);
+    outer->setSpacing(0);
+
+    auto *scroll = new QScrollArea(onglet);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setWidgetResizable(true);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setStyleSheet(QStringLiteral(
+        "QScrollArea { border: none; background: #f3f0eb; }"));
+
+    auto *content = new QWidget();
+    content->setObjectName(QStringLiteral("depot_gaz_scroll_inner"));
+    auto *mainVl = new QVBoxLayout(content);
     mainVl->setContentsMargins(16, 16, 16, 16);
-    mainVl->setSpacing(16);
+    mainVl->setSpacing(12);
 
     // Header
-    auto *header = new QFrame(); header->setStyleSheet("background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #4e342e, stop:1 #8d5524); border-radius: 10px; padding: 14px;");
+    auto *header = new QFrame(); header->setStyleSheet("background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #4e342e, stop:1 #8d5524); border-radius: 10px; padding: 10px 14px;");
     auto *hl = new QHBoxLayout(header);
     auto *ico = new QLabel("🔬"); ico->setStyleSheet("font-size: 28px;"); hl->addWidget(ico);
     auto *titreH = new QLabel("<b style='color:white;font-size:20px;'>Surveillance Gaz en Temps Réel</b><br><span style='color:#e0c097;font-size:12px;'>Monitoring Arduino • Alertes automatiques • Historique Oracle</span>");
     titreH->setTextFormat(Qt::RichText); hl->addWidget(titreH, 1);
     mainVl->addWidget(header);
 
-    // Real-time gaz card
-    auto *cardGaz = new QFrame(); cardGaz->setStyleSheet("background:white; border:1px solid #d7ccc8; border-radius:10px; padding:16px;");
-    cardGaz->setMinimumHeight(420);
-    cardGaz->setMaximumHeight(420);
+    // Real-time gaz card (hauteur souple : l’ancien bloc fixe 420px écrasait l’historique sous la fenêtre)
+    auto *cardGaz = new QFrame(); cardGaz->setStyleSheet("background:white; border:1px solid #d7ccc8; border-radius:10px; padding:12px;");
+    cardGaz->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
     auto *vlGaz = new QVBoxLayout(cardGaz);
-    vlGaz->setSpacing(14);
+    vlGaz->setSpacing(10);
     vlGaz->setContentsMargins(8, 8, 8, 8);
     auto *titreGaz = new QLabel("🔭  Valeur Gaz en Temps Réel (Arduino)");
     titreGaz->setStyleSheet("font-weight:bold; font-size:16px; color:#4e342e;");
@@ -18435,8 +23831,8 @@ void MainWindow::showDepotValeurGazTab()
     auto *lblGazVal = new QLabel("-- units");
     lblGazVal->setObjectName("lbl_gaz_realtime");
     lblGazVal->setAlignment(Qt::AlignCenter);
-    lblGazVal->setStyleSheet("font-size:64px; font-weight:900; color:white; background:#607d8b; border-radius:12px; padding:32px 20px;");
-    lblGazVal->setMinimumHeight(160);
+    lblGazVal->setStyleSheet("font-size:52px; font-weight:900; color:white; background:#607d8b; border-radius:12px; padding:20px 16px;");
+    lblGazVal->setMinimumHeight(110);
     vlGaz->addWidget(lblGazVal);
 
     // Threshold bar
@@ -18445,7 +23841,7 @@ void MainWindow::showDepotValeurGazTab()
     hlThresh->setContentsMargins(0, 0, 0, 0);
     auto mkT = [](const QString &txt, const QString &bg){
         auto *l = new QLabel(txt); l->setAlignment(Qt::AlignCenter);
-        l->setStyleSheet(QString("background:%1; color:white; font-weight:bold; font-size:12px; border-radius:7px; padding:14px 8px; min-height:48px;").arg(bg));
+        l->setStyleSheet(QString("background:%1; color:white; font-weight:bold; font-size:11px; border-radius:7px; padding:10px 6px; min-height:40px;").arg(bg));
         l->setWordWrap(true);
         return l;
     };
@@ -18458,13 +23854,13 @@ void MainWindow::showDepotValeurGazTab()
     auto *lblStatus = new QLabel("⏳  En attente de la valeur Arduino...");
     lblStatus->setObjectName("lbl_gaz_status");
     lblStatus->setAlignment(Qt::AlignCenter);
-    lblStatus->setStyleSheet("color:#607d8b; font-size:12px; margin-top:4px;");
+    lblStatus->setStyleSheet("color:#607d8b; font-size:12px; margin-top:2px;");
     vlGaz->addWidget(lblStatus);
-    vlGaz->addStretch();
-    mainVl->addWidget(cardGaz);
+    mainVl->addWidget(cardGaz, 0);
 
     // History table from Oracle
-    auto *cardHist = new QFrame(); cardHist->setStyleSheet("background:white; border:1px solid #d7ccc8; border-radius:10px; padding:14px;");
+    auto *cardHist = new QFrame(); cardHist->setStyleSheet("background:white; border:1px solid #d7ccc8; border-radius:10px; padding:12px;");
+    cardHist->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
     auto *vlHist = new QVBoxLayout(cardHist);
     auto *hlHistHeader = new QHBoxLayout();
     auto *titreHist = new QLabel("📊  Historique des Alertes Gaz — Base de Données Oracle");
@@ -18478,10 +23874,14 @@ void MainWindow::showDepotValeurGazTab()
     // KPI row
     auto *hlKpi = new QHBoxLayout();
     auto mkKpi = [](const QString &val, const QString &lbl, const QString &col){
-        auto *f = new QFrame(); f->setStyleSheet(QString("background:#fff8f5; border:1px solid #d7ccc8; border-radius:8px; padding:12px;"));
+        auto *f = new QFrame();
+        f->setMinimumHeight(88);
+        f->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+        f->setStyleSheet(QStringLiteral("background:#fff8f5; border:1px solid #d7ccc8; border-radius:8px; padding:12px;"));
         auto *v = new QVBoxLayout(f);
+        v->setSpacing(4);
         auto *vl = new QLabel(val); vl->setStyleSheet(QString("font-size:28px; font-weight:900; color:%1;").arg(col)); vl->setAlignment(Qt::AlignCenter); v->addWidget(vl);
-        auto *ll = new QLabel(lbl); ll->setStyleSheet("font-size:11px; color:#888; font-weight:bold;"); ll->setAlignment(Qt::AlignCenter); v->addWidget(ll);
+        auto *ll = new QLabel(lbl); ll->setStyleSheet("font-size:11px; color:#888; font-weight:bold;"); ll->setAlignment(Qt::AlignCenter); ll->setWordWrap(true); v->addWidget(ll);
         return f;
     };
 
@@ -18516,11 +23916,31 @@ void MainWindow::showDepotValeurGazTab()
     tbl->setStyleSheet("QHeaderView::section { background:#4e342e; color:#e0c097; padding:8px; font-weight:bold; } QTableWidget { border:none; }");
 
     auto loadHistory = [tbl, db]() {
+        const auto addPlaceholder = [](QTableWidget *t, const QString &firstColMsg) {
+            t->setRowCount(0);
+            t->insertRow(0);
+            auto *msg = new QTableWidgetItem(firstColMsg);
+            msg->setForeground(QColor(QStringLiteral("#5d4037")));
+            t->setItem(0, 0, msg);
+            for (int c = 1; c < 5; ++c) {
+                auto *cell = new QTableWidgetItem(QStringLiteral("—"));
+                cell->setForeground(QColor(QStringLiteral("#a1887f")));
+                t->setItem(0, c, cell);
+            }
+            t->setRowHeight(0, 40);
+        };
         tbl->setRowCount(0);
-        if (!db.isOpen()) return;
-        QSqlQuery q(db);
-        if (!q.exec("SELECT ID, EMPLACEMENT_ID, VALEUR_GAZ, MESSAGE, TO_CHAR(DATE_ALERT,'DD/MM/YYYY HH24:MI') FROM GAZ_ALERTS ORDER BY DATE_ALERT DESC FETCH FIRST 50 ROWS ONLY"))
+        if (!db.isOpen()) {
+            addPlaceholder(tbl, QStringLiteral("— Base de données non connectée —"));
             return;
+        }
+        QSqlQuery q(db);
+        if (!q.exec(QStringLiteral(
+                "SELECT ID, EMPLACEMENT_ID, VALEUR_GAZ, MESSAGE, TO_CHAR(DATE_ALERT,'DD/MM/YYYY HH24:MI') "
+                "FROM GAZ_ALERTS ORDER BY DATE_ALERT DESC FETCH FIRST 50 ROWS ONLY"))) {
+            addPlaceholder(tbl, QStringLiteral("— Impossible de lire GAZ_ALERTS (Oracle) —"));
+            return;
+        }
         int row = 0;
         while (q.next()) {
             tbl->insertRow(row);
@@ -18538,11 +23958,299 @@ void MainWindow::showDepotValeurGazTab()
             }
             ++row;
         }
+        if (tbl->rowCount() == 0)
+            addPlaceholder(tbl, QStringLiteral("— Aucune alerte enregistrée —"));
     };
     loadHistory();
     connect(btnActualiser, &QPushButton::clicked, loadHistory);
-    vlHist->addWidget(tbl);
-    mainVl->addWidget(cardHist, 1);
+    tbl->setMinimumHeight(260);
+    tbl->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::MinimumExpanding);
+    tbl->horizontalHeader()->setStretchLastSection(true);
+    tbl->verticalHeader()->setDefaultSectionSize(32);
+    vlHist->addWidget(tbl, 0);
+    mainVl->addWidget(cardHist, 0);
+
+    scroll->setWidget(content);
+    content->adjustSize();
+    const int minContentH = (std::max)(620, content->sizeHint().height());
+    content->setMinimumHeight(minContentH);
+    outer->addWidget(scroll, 1);
 
     ui->tabWidgetDepot->setCurrentIndex(6);
+}
+
+// =========================================================
+// ===             FASHION ORACLE BACKEND               ===
+// =========================================================
+QString MainWindow::resolveFashionOracleDir() const {
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QStringList candidates = {
+        QDir::cleanPath(appDir + "/fashion_oracle"),
+        QDir::cleanPath(appDir + "/../fashion_oracle"),
+        QDir::cleanPath(appDir + "/../../fashion_oracle"),
+        QStringLiteral("c:/integration2/integ0/integration2/projetcpp_Integration/fashion_oracle"),
+    };
+    for (const QString &dirPath : candidates) {
+        const QFileInfo mainPy(QDir(dirPath).filePath("app/main.py"));
+        if (!mainPy.exists())
+            continue;
+        const QFileInfo venvPy(QDir(dirPath).filePath(".venv/Scripts/python.exe"));
+        const QFileInfo venvNewPy(QDir(dirPath).filePath(".venv-new/Scripts/python.exe"));
+        if (venvPy.exists() || venvNewPy.exists())
+            return QDir::cleanPath(dirPath);
+    }
+    return QString();
+}
+
+QString MainWindow::resolveFashionOraclePython() const {
+    const QString backendDir = resolveFashionOracleDir();
+    if (backendDir.isEmpty())
+        return QString();
+    const QString vnew = QDir(backendDir).filePath(".venv-new/Scripts/python.exe");
+    if (QFileInfo::exists(vnew))
+        return QDir::cleanPath(vnew);
+    const QString legacy = QDir(backendDir).filePath(".venv/Scripts/python.exe");
+    return QFileInfo::exists(legacy) ? QDir::cleanPath(legacy) : QString();
+}
+
+bool MainWindow::isFashionOracleHealthy(int timeoutMs) const {
+    QNetworkAccessManager nam;
+    QNetworkRequest req(QUrl(fashionOracleBaseUrl() + QStringLiteral("/health")));
+#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
+    req.setTransferTimeout(qMax(timeoutMs, 15000));
+#endif
+    QEventLoop loop;
+    QNetworkReply *reply = nam.get(req);
+    QTimer timeout;
+    timeout.setSingleShot(true);
+    timeout.setInterval(timeoutMs);
+    QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
+    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    timeout.start();
+    loop.exec();
+
+    const bool ok = timeout.isActive() && reply->error() == QNetworkReply::NoError;
+    if (!ok) {
+        reply->abort();
+        reply->deleteLater();
+        return false;
+    }
+    const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+    reply->deleteLater();
+    const QJsonObject obj = doc.object();
+    return obj.value(QStringLiteral("status")).toString().compare(QStringLiteral("ok"), Qt::CaseInsensitive) == 0;
+}
+
+/** Environnement du sous-processus uvicorn : copie fashion_oracle/.env (cle=valeur) pour eviter IMAGE_MODEL vide. */
+static QProcessEnvironment fashionOracleEnvironmentForSubprocess(const QString &backendDir)
+{
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    const QString dotEnvPath = QDir(backendDir).filePath(QStringLiteral(".env"));
+    QFile f(dotEnvPath);
+    if (!f.open(QIODevice::ReadOnly)) {
+        qDebug() << "[FashionOracle] .env absent ou illisible path=" << dotEnvPath;
+        return env;
+    }
+    const QByteArray raw = f.readAll();
+    const QString text = QString::fromUtf8(raw);
+    const QStringList lines = text.split(QLatin1Char('\n'));
+    for (QString line : lines) {
+        if (line.endsWith(QLatin1Char('\r')))
+            line.chop(1);
+        line = line.trimmed();
+        if (line.isEmpty() || line.startsWith(QLatin1Char('#')))
+            continue;
+        const int eq = line.indexOf(QLatin1Char('='));
+        if (eq <= 0)
+            continue;
+        const QString key = line.left(eq).trimmed();
+        if (key.isEmpty())
+            continue;
+        QString val = line.mid(eq + 1).trimmed();
+        if (val.size() >= 2
+            && ((val.startsWith(QLatin1Char('"')) && val.endsWith(QLatin1Char('"')))
+                || (val.startsWith(QLatin1Char('\'')) && val.endsWith(QLatin1Char('\''))))) {
+            val = val.mid(1, val.size() - 2);
+        }
+        env.insert(key, val);
+    }
+    qDebug() << "[FashionOracle] subprocess env charge depuis" << dotEnvPath
+             << "IMAGE_MODEL=" << env.value(QStringLiteral("FASHION_ORACLE_IMAGE_MODEL")).left(40);
+    return env;
+}
+
+bool MainWindow::startFashionOracleBackendProcess(QString *errorOut) {
+    if (isFashionOracleHealthy(3000))
+        return true;
+
+    if (!m_fashionOracleBackendProcess) {
+        m_fashionOracleBackendProcess = new QProcess(this);
+        m_fashionOracleBackendProcess->setProcessChannelMode(QProcess::MergedChannels);
+        connect(m_fashionOracleBackendProcess, &QProcess::errorOccurred, this, [](QProcess::ProcessError err) {
+            qDebug() << "[FashionOracle] backend process error=" << err;
+        });
+    }
+
+    if (m_fashionOracleBackendProcess->state() != QProcess::NotRunning)
+        return true;
+
+    const QString backendDir = resolveFashionOracleDir();
+    const QString pythonExe = resolveFashionOraclePython();
+    if (backendDir.isEmpty() || pythonExe.isEmpty()) {
+        if (errorOut)
+            *errorOut = QStringLiteral("Les fichiers du moteur Fashion Oracle sont introuvables.");
+        return false;
+    }
+
+    m_fashionOracleBackendProcess->setWorkingDirectory(backendDir);
+    m_fashionOracleBackendProcess->setProgram(pythonExe);
+    m_fashionOracleBackendProcess->setArguments({
+        QStringLiteral("-m"),
+        QStringLiteral("uvicorn"),
+        QStringLiteral("app.main:app"),
+        QStringLiteral("--host"),
+        QStringLiteral("127.0.0.1"),
+        QStringLiteral("--port"),
+        QString::number(fashionOracleListenPort()),
+    });
+    m_fashionOracleBackendProcess->setProcessEnvironment(fashionOracleEnvironmentForSubprocess(backendDir));
+    m_fashionOracleBackendProcess->start();
+    if (!m_fashionOracleBackendProcess->waitForStarted(5000)) {
+        if (errorOut)
+            *errorOut = QStringLiteral("Le moteur de prédiction n’a pas pu être initialisé.");
+        return false;
+    }
+    m_fashionOracleBackendOwned = true;
+    return true;
+}
+
+bool MainWindow::ensureFashionOracleBackendReady(QString *errorOut, int startupTimeoutMs) {
+    // Delai court : 127.0.0.1 repond vite si le serveur est up ; evite de bloquer l UI 10 s par essai.
+    if (isFashionOracleHealthy(2500))
+        return true;
+
+    if (!startFashionOracleBackendProcess(errorOut))
+        return false;
+
+    QElapsedTimer elapsed;
+    elapsed.start();
+    while (elapsed.elapsed() < startupTimeoutMs) {
+        if (isFashionOracleHealthy(2500))
+            return true;
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        QEventLoop waitLoop;
+        QTimer t;
+        t.setSingleShot(true);
+        QObject::connect(&t, &QTimer::timeout, &waitLoop, &QEventLoop::quit);
+        t.start(450);
+        waitLoop.exec();
+    }
+    if (errorOut)
+        *errorOut = QStringLiteral("Le moteur de prédiction n’a pas pu être initialisé.");
+    return false;
+}
+
+static QString fashionOracleConceptTypeFr(const MainWindow::FashionOracleConcept &c)
+{
+    const QString e = c.productTypeEn.trimmed().toLower();
+    if (e == QLatin1String("jacket"))
+        return QStringLiteral("veste");
+    if (e == QLatin1String("bag"))
+        return QStringLiteral("sac");
+    if (e == QLatin1String("belt"))
+        return QStringLiteral("ceinture");
+    return QStringLiteral("veste");
+}
+
+QJsonObject MainWindow::buildGenerateVisualsPostJson(const FashionOracleConcept &concept)
+{
+    QJsonObject o;
+    o.insert(QStringLiteral("year"), concept.targetYear);
+    o.insert(QStringLiteral("type"), fashionOracleConceptTypeFr(concept));
+    o.insert(QStringLiteral("style"), concept.style);
+    o.insert(QStringLiteral("palette"), concept.palette);
+    o.insert(QStringLiteral("material"), concept.material);
+    o.insert(QStringLiteral("concept_index"), concept.conceptIndex);
+    o.insert(QStringLiteral("image_prompt"), buildPromptForConcept(concept));
+    return o;
+}
+
+QByteArray MainWindow::jsonPayloadForFashionOracleGenerateVisuals(const FashionOracleConcept &concept)
+{
+    return QJsonDocument(buildGenerateVisualsPostJson(concept)).toJson(QJsonDocument::Compact);
+}
+
+QNetworkReply *MainWindow::sendFashionOracleGenerateVisualRequest(
+    QNetworkAccessManager *nam,
+    const FashionOracleConcept &concept,
+    int transferTimeoutMs,
+    QByteArray *outSentJson)
+{
+    const QJsonObject jo = buildGenerateVisualsPostJson(concept);
+    QUrl url(fashionOracleBaseUrl() + QStringLiteral("/generate-visuals"));
+    QUrlQuery qy;
+    qy.addQueryItem(QStringLiteral("year"), QString::number(concept.targetYear));
+    qy.addQueryItem(QStringLiteral("limit"), QStringLiteral("3"));
+    qy.addQueryItem(QStringLiteral("concept_index"), QString::number(concept.conceptIndex));
+    qy.addQueryItem(QStringLiteral("type"), jo.value(QStringLiteral("type")).toString());
+    qy.addQueryItem(QStringLiteral("style"), concept.style);
+    qy.addQueryItem(QStringLiteral("palette"), concept.palette);
+    qy.addQueryItem(QStringLiteral("material"), concept.material);
+    qy.addQueryItem(QStringLiteral("image_prompt"), jo.value(QStringLiteral("image_prompt")).toString());
+    url.setQuery(qy);
+
+    QNetworkRequest req(url);
+#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
+    req.setTransferTimeout(transferTimeoutMs);
+#endif
+    const QByteArray logPayload = QJsonDocument(jo).toJson(QJsonDocument::Compact);
+    if (outSentJson)
+        *outSentJson = logPayload;
+    qDebug() << "[FashionOracle] GET generate-visuals (evite 405 si le serveur n accepte pas POST) url="
+             << url.toString(QUrl::FullyEncoded);
+    qDebug() << "[FashionOracle] equivalent JSON logique=" << QString::fromUtf8(logPayload);
+    return nam->get(req);
+}
+
+QString MainWindow::buildPromptForConcept(const FashionOracleConcept &concept)
+{
+    const QString pt = concept.productTypeEn.trimmed().toLower();
+    const QString y = QString::number(concept.targetYear);
+    const QString st = concept.style.trimmed();
+    const QString pal = concept.palette.trimmed();
+    const QString mat = concept.material.trimmed();
+
+    if (pt == QLatin1String("jacket") || pt == QLatin1String("veste")) {
+        return QStringLiteral(
+            "premium product photography, isolated product, no human, no face, no model, clean studio background, "
+            "soft lighting, high detail, luxury fashion product, product centered composition. "
+            "jacket only, no person wearing it, floating or ghost mannequin style, full jacket visible, front or 3/4 angle, "
+            "show structure and material clearly. "
+            "NEGATIVE: human, face, model, body, portrait, person, skin, hands, mannequin. "
+            "Style %1, palette %2, material %3, year %4.")
+            .arg(st, pal, mat, y);
+    }
+    if (pt == QLatin1String("bag") || pt == QLatin1String("sac")) {
+        return QStringLiteral(
+            "SAC SAC SAC — UN SEUL sac a main ou bandouliere, packshot fond blanc, objet seul, zero mannequin. "
+            "PAS de veste, PAS de blouson, PAS de manches, PAS de torse. La tendance %1 = details du sac seulement. "
+            "Matiere %3 = coque du sac (pas vetement). Palette %2. Annee %4. Photo produit 85 mm. "
+            "INTERDIT: veste utilitaire, gilet technique, parka, modele humain.")
+            .arg(st, pal, mat, y);
+    }
+    if (pt == QLatin1String("belt") || pt == QLatin1String("ceinture")) {
+        return QStringLiteral(
+            "premium product photography, isolated product, no human, no face, no model, clean studio background, "
+            "soft lighting, high detail, luxury fashion product, product centered composition. "
+            "belt only, clean studio shot, high detail, focus on leather and buckle. "
+            "NEGATIVE: human, face, model, body, portrait, person, skin, hands, mannequin. "
+            "Style %1, palette %2, material %3, year %4.")
+            .arg(st, pal, mat, y);
+    }
+    return QStringLiteral(
+        "premium product photography, isolated product, no human, no face, no model, clean studio background, "
+        "soft lighting, high detail, luxury fashion product, product centered composition. "
+        "NEGATIVE: human, face, model, body, portrait, person, skin, hands, mannequin. "
+        "Style %1, palette %2, material %3, year %4.")
+        .arg(st, pal, mat, y);
 }

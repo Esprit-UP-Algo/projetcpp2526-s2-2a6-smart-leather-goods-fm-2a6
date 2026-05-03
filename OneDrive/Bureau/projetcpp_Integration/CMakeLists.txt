@@ -10,8 +10,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # --- MODIFICATION 1 : Ajout de PrintSupport et Charts ici ---
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Gui LinguistTools PrintSupport Charts Sql Network TextToSpeech SerialPort)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Gui LinguistTools PrintSupport Charts Sql Network SerialPort TextToSpeech)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Gui LinguistTools PrintSupport Charts Sql)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Gui LinguistTools PrintSupport Charts Sql)
 
 set(TS_FILES ProjetCpp_fr_FR.ts)
 
@@ -20,6 +20,7 @@ set(PROJECT_SOURCES
         mainwindow.cpp
         mainwindow.h
         mainwindow.ui
+        employe.h employe.cpp
         ${TS_FILES}
 )
 
@@ -33,30 +34,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         etape.h etape.cpp
         matierepremiere.h matierepremiere.cpp
         depot.h depot.cpp
-        client.h client.cpp
-        employe.h employe.cpp
         produit.h produit.cpp
-        arduino.h arduino.cpp
-        assistant_voice.h assistant_voice.cpp
-        employee_ai.h employee_ai.cpp
-        knn_graph_widget.h knn_graph_widget.cpp
-        serialmanager.h serialmanager.cpp
-        smartmotorcontroller.h smartmotorcontroller.cpp
-        uianimator.h uianimator.cpp
-        costintelligenceengine.h costintelligenceengine.cpp
-        productanalyzer.h productanalyzer.cpp
-        tensionevaluator.h tensionevaluator.cpp
-        strategyengine.h strategyengine.cpp
-        executivesummarybuilder.h executivesummarybuilder.cpp
-        decisionengine.h decisionengine.cpp
-        costengine.h costengine.cpp
-        optimizationengine.h optimizationengine.cpp
-        insightengine.h insightengine.cpp
-        scoreengine.h scoreengine.cpp
-        simulationengine.h simulationengine.cpp
-        sensitivityengine.h sensitivityengine.cpp
-        breakpointengine.h breakpointengine.cpp
-        choixdelegate.h choixdelegate.cpp
     )
     qt_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
 else()
@@ -80,9 +58,6 @@ target_link_libraries(ProjetCpp PRIVATE
     Qt${QT_VERSION_MAJOR}::PrintSupport
     Qt${QT_VERSION_MAJOR}::Charts
     Qt${QT_VERSION_MAJOR}::Sql
-    Qt${QT_VERSION_MAJOR}::Network
-    Qt${QT_VERSION_MAJOR}::SerialPort
-    Qt${QT_VERSION_MAJOR}::TextToSpeech
 )
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
 if(${QT_VERSION} VERSION_LESS 6.1.0)
