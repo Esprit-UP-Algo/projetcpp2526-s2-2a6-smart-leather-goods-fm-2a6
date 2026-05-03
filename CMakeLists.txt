@@ -70,8 +70,8 @@ set(PROJECT_SOURCES
     client.cpp
     employe.h
     employe.cpp
-    smartmotorcontroller.h
-    smartmotorcontroller.cpp
+    serialmanager.h
+    serialmanager.cpp
 )
 
 if(QT_VERSION_MAJOR VERSION_GREATER_EQUAL 6)

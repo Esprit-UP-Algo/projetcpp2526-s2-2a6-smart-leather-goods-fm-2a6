@@ -76,8 +76,14 @@
 #include <QFont>
 #include <QEasingCurve>
 #include <QDialogButtonBox>
+#include <QStatusBar>
+#include <QSerialPortInfo>
+#include <QSettings>
+#include <QInputDialog>
+#include <QThread>
 #include <QNetworkAccessManager>
 #include <QNetworkRequest>
+#include <QMetaType>
 #include <QNetworkReply>
 #include <QUrlQuery>
 #include <QJsonDocument>
@@ -601,14 +607,14 @@ static QString filDorEnv(const char *name, const QString &defaultValue = QString
 void MainWindow::installerChoixMoteurProduitUi()
 {
     auto makeGroup = [this](bool isModif) -> QGroupBox* {
-        QGroupBox *grp = new QGroupBox(QStringLiteral("Ordre Moteur Smart"), this);
+        QGroupBox *grp = new QGroupBox(QStringLiteral("Moteur chaîne (Arduino)"), this);
         QVBoxLayout *lay = new QVBoxLayout(grp);
         lay->setContentsMargins(8, 6, 8, 6);
         lay->setSpacing(4);
 
-        QRadioButton *rb0 = new QRadioButton(QStringLiteral("3ème choix — Aucun mouvement moteur"), grp);
-        QRadioButton *rb1 = new QRadioButton(QStringLiteral("1er choix  — 1/2 cercle (180°)"), grp);
-        QRadioButton *rb2 = new QRadioButton(QStringLiteral("2ème choix — 1/4 cercle (90°)"), grp);
+        QRadioButton *rb0 = new QRadioButton(QStringLiteral("3ème choix — séquence"), grp);
+        QRadioButton *rb1 = new QRadioButton(QStringLiteral("1er choix — séquence"), grp);
+        QRadioButton *rb2 = new QRadioButton(QStringLiteral("2ème choix — séquence"), grp);
         rb1->setStyleSheet("QRadioButton{color:#27ae60;font-weight:bold;}");
         rb2->setStyleSheet("QRadioButton{color:#e67e22;font-weight:bold;}");
         rb0->setStyleSheet("QRadioButton{color:#7f8c8d;}");
@@ -655,16 +661,23 @@ void MainWindow::journaliserMoteurSmart(int idProduit, int idCommande, const QSt
     Connexion *cnx = Connexion::getInstance();
     if (!cnx || !cnx->estConnecte())
         return;
+    QSqlDatabase db = cnx->getDatabase();
+    if (!db.isOpen() && !db.open())
+        return;
     if (filDorEnv("FIL_DOR_LOG_MOTEUR", QStringLiteral("1")) != QStringLiteral("1"))
         return;
 
-    QSqlQuery ins(cnx->getDatabase());
+    QSqlQuery ins(db);
     ins.setForwardOnly(true);
     const QString table = filDorEnv("FIL_DOR_MOTEUR_TABLE", QStringLiteral("SMART_MOTEUR_LOG"));
 
     ins.prepare(QStringLiteral("INSERT INTO %1 (ID_PRODUIT, ID_COMMANDE, ACTION_CODE, DETAIL) VALUES (:p, :c, :a, :d)").arg(table));
     ins.bindValue(QStringLiteral(":p"), idProduit);
-    ins.bindValue(QStringLiteral(":c"), idCommande > 0 ? idCommande : QVariant());
+    // Correction ODBC/FK: quand idCommande <= 0, forcer un NULL entier explicite.
+    if (idCommande > 0)
+        ins.bindValue(QStringLiteral(":c"), idCommande);
+    else
+        ins.bindValue(QStringLiteral(":c"), QVariant(QMetaType(QMetaType::Int)));
     ins.bindValue(QStringLiteral(":a"), actionCode);
     ins.bindValue(QStringLiteral(":d"), detail);
 
@@ -675,45 +688,321 @@ void MainWindow::journaliserMoteurSmart(int idProduit, int idCommande, const QSt
 
 int MainWindow::declencherMoteurProduit(int idProduit, int idCommande)
 {
-    const int choix = Produit::getProductChoix(idProduit);
-    if (choix != 1 && choix != 2)
-        return 0;
+    if (idProduit <= 0) {
+        journaliserMoteurSmart(idProduit, idCommande, QStringLiteral("SKIP"),
+                               QStringLiteral("Aucun produit (ID invalide)"));
+        return -2;
+    }
 
-    m_smartMotor.setPortName(filDorEnv("FIL_DOR_ARDUINO_PORT", QString()));
-    if (m_smartMotor.portName().isEmpty()) {
-        qDebug() << "[SmartMoteur] FIL_DOR_ARDUINO_PORT non defini, aucun envoi UART.";
+    const int choix = Produit::getProductChoix(idProduit);
+    const QString configuredPort = getArduinoPort();
+
+    if (choix < 0 || choix > 2) {
+        journaliserMoteurSmart(idProduit, idCommande, QStringLiteral("SKIP"),
+                               QStringLiteral("Choix invalide en base"));
+        return -2;
+    }
+
+    if (configuredPort.isEmpty()) {
+        qDebug() << "[SmartMoteur] Aucun port Arduino valide.";
         journaliserMoteurSmart(idProduit, idCommande, QStringLiteral("SKIP"), QStringLiteral("Port serie non configure"));
         return -1;
     }
 
-    const QString cmd = (choix == 1) ? QStringLiteral("MOTOR:1") : QStringLiteral("MOTOR:2");
-    QString err;
-    const bool ok = m_smartMotor.sendCommand(cmd, &err);
-    if (!ok) {
-        qDebug() << "[SmartMoteur] echec UART:" << err;
-        journaliserMoteurSmart(idProduit, idCommande, cmd, err);
-        return -1;
+    if (!m_serialManager.isConnected()) {
+        if (!m_serialManager.connectPort(configuredPort)) {
+            journaliserMoteurSmart(idProduit, idCommande, QStringLiteral("SKIP"),
+                                   QStringLiteral("Connexion serie impossible"));
+            return -1;
+        }
     }
+
+    const int choixSerie = (choix == 0) ? 2 : choix;
+    const QString cmd = QStringLiteral("MOTOR:%1").arg(choixSerie);
+    Produit::logMoteurAction(idProduit, choix, QString(), cmd, configuredPort,
+                             QStringLiteral("PENDING"), -1, idCommande);
+
+    m_pendingMoteurProductId = idProduit;
+    m_pendingMoteurCommande = idCommande;
+    m_pendingMoteurCmd = cmd;
+    m_pendingMoteurPort = configuredPort;
+    m_pendingMoteurDbChoix = choix;
+    m_pendingMoteurStartedMs = QDateTime::currentMSecsSinceEpoch();
+
+    m_serialManager.sendCommand(cmd);
 
     const QString origine = (idCommande > 0)
         ? QStringLiteral("commande %1").arg(idCommande)
         : QStringLiteral("module produit (choix en base)");
-    const QString d = (choix == 1)
-        ? QStringLiteral("Choix=1 (base) -> %1, MOTOR:1").arg(origine)
-        : QStringLiteral("Choix=2 (base) -> %1, MOTOR:2").arg(origine);
+    QString d;
+    if (choixSerie == 1)
+        d = QStringLiteral("Choix=1 (base) -> %1, MOTOR:1").arg(origine);
+    else if (choixSerie == 2)
+        d = QStringLiteral("Choix=2 (base) -> %1, MOTOR:2").arg(origine);
+    else
+        d = QStringLiteral("Choix=3ème/0 (base) -> %1, MOTOR:2").arg(origine);
     journaliserMoteurSmart(idProduit, idCommande, cmd, d);
-    Produit::logMoteurAction(idProduit, choix);
-    qDebug() << "[SmartMoteur] UART OK, cmd=" << cmd << "idProduit=" << idProduit << "idCommande=" << idCommande;
+
     return choix;
+}
+
+QString MainWindow::getArduinoPort() const
+{
+    // Priorite 1: Oracle (ARDUINO_CONFIG.CLE=port_com ou PORT_COM)
+    const QString fromDb = Produit::getArduinoConfig(QStringLiteral("PORT_COM"),
+                                                     Produit::getArduinoConfig(QStringLiteral("port_com"), QString()));
+    if (!fromDb.trimmed().isEmpty()) {
+        qDebug() << "[Port] Depuis Oracle:" << fromDb.trimmed();
+        return fromDb.trimmed();
+    }
+
+    // Priorite 2: QSettings
+    QSettings s(QStringLiteral("MetierSmart"), QStringLiteral("config"));
+    const QString fromSettings = s.value(QStringLiteral("arduino/port"), QString()).toString().trimmed();
+    if (!fromSettings.isEmpty()) {
+        qDebug() << "[Port] Depuis QSettings:" << fromSettings;
+        return fromSettings;
+    }
+
+    // Priorite 3: auto-detection par description
+    const auto ports = QSerialPortInfo::availablePorts();
+    for (const QSerialPortInfo &info : ports) {
+        const QString d = info.description();
+        if (d.contains(QStringLiteral("Arduino"), Qt::CaseInsensitive)
+            || d.contains(QStringLiteral("CH340"), Qt::CaseInsensitive)
+            || d.contains(QStringLiteral("USB Serial"), Qt::CaseInsensitive)) {
+            qDebug() << "[Port] Detecte auto:" << info.portName();
+            return info.portName();
+        }
+    }
+
+    qDebug() << "[Port] Defaut COM5";
+    return QStringLiteral("COM5");
+}
+
+void MainWindow::majIndicateurMoteur(const QString &texte)
+{
+    if (!m_lblMoteurEtat)
+        return;
+    m_lblMoteurEtat->setText(texte);
+    QTimer::singleShot(5000, this, [this]() {
+        if (m_lblMoteurEtat)
+            m_lblMoteurEtat->setText(QStringLiteral("⚙ Moteur : —"));
+    });
+}
+
+void MainWindow::traiterReponseArduino(const QString &reponse,
+                                       int idProduit,
+                                       int choix,
+                                       int idCommande,
+                                       const QString &commande,
+                                       const QString &portCom,
+                                       int dureeMs)
+{
+    const QString r = reponse.trimmed().toUpper();
+    QString statut = QStringLiteral("DONE");
+    if (r == QStringLiteral("DONE:1")) {
+        majIndicateurMoteur(QStringLiteral("✓ 1er choix terminé (90°)"));
+    } else if (r == QStringLiteral("DONE:2")) {
+        majIndicateurMoteur(QStringLiteral("✓ 2ème choix terminé (180°)"));
+    } else if (r == QStringLiteral("TIMEOUT")) {
+        statut = QStringLiteral("ERROR");
+        majIndicateurMoteur(QStringLiteral("⚠ Timeout — pas de DONE Arduino"));
+    } else if (r.startsWith(QStringLiteral("SKIP"))) {
+        statut = QStringLiteral("SKIP");
+        majIndicateurMoteur(QStringLiteral("— Aucun mouvement"));
+    } else if (r == QStringLiteral("READY") || r == QStringLiteral("PONG")) {
+        statut = QStringLiteral("INFO");
+        majIndicateurMoteur(QStringLiteral("✓ Arduino connecté"));
+        if (statusBar())
+            statusBar()->showMessage(QStringLiteral("✓ Arduino prêt"), 3000);
+    } else if (!r.isEmpty()) {
+        statut = QStringLiteral("ERROR");
+        majIndicateurMoteur(QStringLiteral("ℹ Réponse: %1").arg(r));
+    }
+
+    if (!r.isEmpty())
+        journaliserMoteurSmart(idProduit, idCommande, QStringLiteral("RX"), r);
+
+    const bool tryUpdatePending = !commande.isEmpty() && idProduit > 0
+        && (statut == QStringLiteral("DONE") || statut == QStringLiteral("ERROR"))
+        && (r == QStringLiteral("DONE:1") || r == QStringLiteral("DONE:2") || r == QStringLiteral("TIMEOUT"));
+
+    const bool updated = tryUpdatePending
+        && Produit::updateLatestPendingMoteurLog(idProduit, commande, r, statut, dureeMs);
+
+    if (!updated)
+        Produit::logMoteurAction(idProduit, choix, r, commande, portCom, statut, dureeMs, idCommande);
+}
+
+void MainWindow::autoDetectArduino()
+{
+    auto listHasPort = [](const QStringList &list, const QString &port) -> bool {
+        for (const QString &p : list) {
+            if (p.compare(port, Qt::CaseInsensitive) == 0)
+                return true;
+        }
+        return false;
+    };
+
+    QStringList tryPorts;
+    const QString fromOra = Produit::getArduinoConfig(QStringLiteral("PORT_COM"),
+                                                      Produit::getArduinoConfig(QStringLiteral("port_com"), QString()))
+                              .trimmed();
+    if (!fromOra.isEmpty())
+        tryPorts << fromOra;
+
+    for (int i = 1; i <= 9; ++i) {
+        const QString com = QStringLiteral("COM%1").arg(i);
+        if (!listHasPort(tryPorts, com))
+            tryPorts << com;
+    }
+
+    auto pingPort = [this](const QString &port) -> bool {
+        if (!m_serialManager.connectPort(port))
+            return false;
+
+        QEventLoop loop;
+        QTimer t;
+        t.setSingleShot(true);
+        t.start(2000);
+        bool gotPong = false;
+        QMetaObject::Connection c1 = QObject::connect(&t, &QTimer::timeout, &loop, &QEventLoop::quit);
+        QMetaObject::Connection c2 = QObject::connect(&m_serialManager, &SerialManager::pongReceived, &loop, [&gotPong, &loop]() {
+            gotPong = true;
+            loop.quit();
+        });
+
+        m_serialManager.sendCommand(QStringLiteral("PING"));
+        loop.exec();
+        QObject::disconnect(c1);
+        QObject::disconnect(c2);
+        return gotPong;
+    };
+
+    for (const QString &port : tryPorts) {
+        qDebug() << "[AutoDetect] Essai port:" << port;
+        if (!pingPort(port))
+            continue;
+
+        Produit::setArduinoConfig(QStringLiteral("PORT_COM"), port);
+        Produit::setArduinoConfig(QStringLiteral("port_com"), port);
+        if (statusBar())
+            statusBar()->showMessage(QStringLiteral("Arduino détecté sur %1").arg(port), 5000);
+        majIndicateurMoteur(QStringLiteral("✓ Arduino connecté (%1)").arg(port));
+        return;
+    }
+
+    QStringList lines;
+    const QList<QSerialPortInfo> infos = QSerialPortInfo::availablePorts();
+    for (const QSerialPortInfo &info : infos)
+        lines << QStringLiteral("%1 — %2").arg(info.portName(), info.description());
+
+    QMessageBox::warning(
+        this,
+        QStringLiteral("Moteur chaîne — Arduino"),
+        QStringLiteral("Aucune réponse PONG (délai 2 s).\n\n"
+                       "Ports série détectés sur ce PC :\n%1\n\n"
+                       "Fermez le Serial Monitor Arduino IDE si le port est occupé.")
+            .arg(lines.isEmpty() ? QStringLiteral("(aucun)") : lines.join(QStringLiteral("\n"))));
 }
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
     , m_namCostSim(this)
+    , m_serialManager(this)
 {
     ui->setupUi(this);
     installerChoixMoteurProduitUi();
+    m_lblMoteurEtat = new QLabel(QStringLiteral("⚙ Moteur : —"), this);
+    if (statusBar())
+        statusBar()->addPermanentWidget(m_lblMoteurEtat);
+
+    connect(&m_serialManager, &SerialManager::arduinoReady, this, [this]() {
+        if (statusBar())
+            statusBar()->showMessage(QStringLiteral("✓ Arduino connecté — Prêt"), 3000);
+        if (ui->btn_moteur_prod)
+            ui->btn_moteur_prod->setEnabled(true);
+        qDebug() << "[MainWindow] Arduino READY";
+    });
+
+    connect(&m_serialManager, &SerialManager::motorMoving, this, [this](int canal) {
+        QString mvt;
+        if (canal == 1)
+            mvt = QStringLiteral("⚙ 0°→45°→90°→0° en cours...");
+        else
+            mvt = QStringLiteral("⚙ 0°→180°→0° en cours...");
+        if (statusBar())
+            statusBar()->showMessage(QStringLiteral("⚙ En mouvement : %1…").arg(mvt));
+        if (ui->btn_moteur_prod) {
+            ui->btn_moteur_prod->setEnabled(false);
+            ui->btn_moteur_prod->setText(QStringLiteral("⚙ Moteur chaîne…"));
+        }
+        qDebug() << "[MainWindow] MOVING:" << canal;
+    });
+
+    connect(&m_serialManager, &SerialManager::motorTimedOut, this, [this]() {
+        if (m_pendingMoteurProductId <= 0 || !m_pendingMoteurCmd.startsWith(QStringLiteral("MOTOR:")))
+            return;
+        const int idProd = m_pendingMoteurProductId;
+        const int idCmd = m_pendingMoteurCommande;
+        const int dbCh = m_pendingMoteurDbChoix;
+        const QString cmd = m_pendingMoteurCmd;
+        const QString port = m_pendingMoteurPort;
+        const int dureeMs = m_pendingMoteurStartedMs > 0
+            ? static_cast<int>(QDateTime::currentMSecsSinceEpoch() - m_pendingMoteurStartedMs)
+            : -1;
+        traiterReponseArduino(QStringLiteral("TIMEOUT"), idProd, dbCh >= 0 ? dbCh : 0, idCmd, cmd, port, dureeMs);
+        majIndicateurMoteur(QStringLiteral("⚠ Pas de réponse Arduino (timeout)"));
+        m_pendingMoteurProductId = -1;
+        m_pendingMoteurCommande = -1;
+        m_pendingMoteurCmd.clear();
+        m_pendingMoteurPort.clear();
+        m_pendingMoteurDbChoix = -1;
+        m_pendingMoteurStartedMs = 0;
+        if (ui->btn_moteur_prod) {
+            ui->btn_moteur_prod->setEnabled(true);
+            ui->btn_moteur_prod->setText(QStringLiteral("⚙ Tourner moteur (chaîne)"));
+        }
+    });
+
+    connect(&m_serialManager, &SerialManager::motorDone, this, [this](int canal) {
+        if (m_pendingMoteurProductId <= 0)
+            return;
+        const QString attendu = (canal == 1) ? QStringLiteral("MOTOR:1") : QStringLiteral("MOTOR:2");
+        if (m_pendingMoteurCmd != attendu)
+            return;
+
+        QString mvt;
+        if (canal == 1)
+            mvt = QStringLiteral("✓ 1er choix terminé (90°)");
+        else
+            mvt = QStringLiteral("✓ 2ème choix terminé (180°)");
+        if (statusBar())
+            statusBar()->showMessage(mvt, 3000);
+        if (ui->btn_moteur_prod) {
+            ui->btn_moteur_prod->setEnabled(true);
+            ui->btn_moteur_prod->setText(QStringLiteral("⚙ Tourner moteur (chaîne)"));
+        }
+
+        const int dureeMs = m_pendingMoteurStartedMs > 0
+            ? static_cast<int>(QDateTime::currentMSecsSinceEpoch() - m_pendingMoteurStartedMs)
+            : -1;
+        const int dbCh = m_pendingMoteurDbChoix;
+        traiterReponseArduino(QStringLiteral("DONE:%1").arg(canal), m_pendingMoteurProductId,
+                              dbCh >= 0 ? dbCh : canal,
+                              m_pendingMoteurCommande, m_pendingMoteurCmd, m_pendingMoteurPort, dureeMs);
+        m_pendingMoteurProductId = -1;
+        m_pendingMoteurCommande = -1;
+        m_pendingMoteurCmd.clear();
+        m_pendingMoteurPort.clear();
+        m_pendingMoteurDbChoix = -1;
+        m_pendingMoteurStartedMs = 0;
+        qDebug() << "[MainWindow] DONE:" << canal;
+    });
+
+    autoDetectArduino();
 
     if (ui->sb_stock_qte) {
         ui->sb_stock_qte->setMinimum(0.01);
@@ -1341,39 +1630,66 @@ MainWindow::MainWindow(QWidget *parent)
         ui->btn_moteur_prod->setStyleSheet(styleBtnSave());
         ui->btn_moteur_prod->setCursor(Qt::PointingHandCursor);
         connect(ui->btn_moteur_prod, &QPushButton::clicked, this, [this]() {
-            int idProd = selectedProdId;
-            QString designation;
-            if (idProd <= 0 && ui->tableProduits && ui->tableProduits->currentRow() >= 0) {
-                QTableWidgetItem *it = ui->tableProduits->item(ui->tableProduits->currentRow(), 0);
-                QTableWidgetItem *itDes = ui->tableProduits->item(ui->tableProduits->currentRow(), 1);
-                if (it)
-                    idProd = it->text().toInt();
-                if (itDes)
-                    designation = itDes->text();
+            if (!ui->tableProduits || ui->tableProduits->currentRow() < 0) {
+                if (statusBar())
+                    statusBar()->showMessage(QStringLiteral("Sélectionnez une ligne produit dans le tableau."), 2500);
+                alerteWarning(QStringLiteral("Moteur chaîne"),
+                              QStringLiteral("Sélectionnez d'abord un produit dans le tableau (ligne active)."));
+                return;
             }
-            if (idProd <= 0) {
-                alerteWarning(QStringLiteral("Produit"), QStringLiteral("Sélectionnez d'abord un produit dans la liste."));
+            const int row = ui->tableProduits->currentRow();
+            bool okId = false;
+            QTableWidgetItem *itId = ui->tableProduits->item(row, 0);
+            if (!itId) {
+                alerteWarning(QStringLiteral("Moteur chaîne"), QStringLiteral("Ligne produit invalide."));
+                return;
+            }
+            const int idProd = itId->text().toInt(&okId);
+            if (!okId || idProd <= 0) {
+                alerteWarning(QStringLiteral("Moteur chaîne"), QStringLiteral("Identifiant produit invalide."));
+                return;
+            }
+            selectedProdId = idProd;
+            QString designation;
+            if (QTableWidgetItem *itDes = ui->tableProduits->item(row, 1))
+                designation = itDes->text();
+
+            const int choix = Produit::getProductChoix(idProd);
+            qDebug() << "[Moteur] ID=" << idProd << "CHOIX=" << choix << "Produit=" << designation;
+
+            if (choix < 0 || choix > 2) {
+                alerteWarning(QStringLiteral("Moteur chaîne"), QStringLiteral("Choix moteur invalide en base."));
                 return;
             }
 
-            qDebug() << "[MoteurSmart] Produit ID=" << idProd << designation;
-            const int st = declencherMoteurProduit(idProd, -1);
-            if (st == 1) {
-                alerteSucces(QStringLiteral("Moteur Smart"),
-                             QStringLiteral("✓ %1\n\n1er choix — 1/2 cercle (180°)\nOrdre envoyé à l'Arduino.")
-                                 .arg(designation));
-            } else if (st == 2) {
-                alerteSucces(QStringLiteral("Moteur Smart"),
-                             QStringLiteral("✓ %1\n\n2ème choix — 1/4 cercle (90°)\nOrdre envoyé à l'Arduino.")
-                                 .arg(designation));
-            } else if (st == 0) {
-                alerteInfo(QStringLiteral("Moteur Smart"),
-                           QStringLiteral("⚠ %1\n\nCe produit est en 3ème choix.\nAucun ordre moteur envoyé.\n\nPour changer : Modifier Produit -> champ Ordre Moteur.")
-                               .arg(designation));
-            } else {
-                alerteWarning(QStringLiteral("Moteur Smart"),
-                              QStringLiteral("Choix detecte, mais echec UART. Verifiez FIL_DOR_ARDUINO_PORT (ex: COM3) et le branchement."));
+            QString port = Produit::getArduinoConfig(QStringLiteral("PORT_COM"),
+                                                     Produit::getArduinoConfig(QStringLiteral("port_com"), QString()));
+            if (port.trimmed().isEmpty())
+                port = QStringLiteral("COM5");
+
+            if (!m_serialManager.isConnected()) {
+                if (!m_serialManager.connectPort(port)) {
+                    QMessageBox::warning(this, QStringLiteral("Moteur chaîne"),
+                                         QStringLiteral("Arduino non connecté sur %1\nVérifiez le câble USB.").arg(port));
+                    return;
+                }
             }
+
+            const int choixSerie = (choix == 0) ? 2 : choix;
+            const QString cmd = QStringLiteral("MOTOR:%1").arg(choixSerie);
+            Produit::logMoteurAction(idProd, choix, QString(), cmd, port, QStringLiteral("PENDING"), -1, -1);
+
+            m_pendingMoteurProductId = idProd;
+            m_pendingMoteurCommande = -1;
+            m_pendingMoteurCmd = cmd;
+            m_pendingMoteurPort = port;
+            m_pendingMoteurDbChoix = choix;
+            m_pendingMoteurStartedMs = QDateTime::currentMSecsSinceEpoch();
+
+            m_serialManager.sendCommand(cmd);
+            qDebug() << "[Moteur] Envoyé:" << cmd << "pour" << designation;
+            if (statusBar())
+                statusBar()->showMessage(QStringLiteral("⚙ Commande envoyée à l'Arduino…"), 2000);
         });
     }
 
@@ -3994,8 +4310,19 @@ void MainWindow::on_btn_valider_produit_clicked() {
         int newId = -1;
         if (qLast.exec(QStringLiteral("SELECT MAX(ID_PRODUIT) FROM PRODUITS")) && qLast.next())
             newId = qLast.value(0).toInt();
-        if (newId > 0)
-            Produit::setProductChoix(newId, choixMoteurDepuisFormulaireNouveau());
+        if (newId > 0) {
+            const bool okChoix = Produit::setProductChoix(newId, choixMoteurDepuisFormulaireNouveau());
+            if (okChoix && Produit::getArduinoConfig(QStringLiteral("auto_trigger"), QStringLiteral("1")) == QStringLiteral("1")) {
+                const int stAuto = declencherMoteurProduit(newId, -1);
+                if (stAuto == 1) statusBar()->showMessage(QStringLiteral("⚙ Auto-envoi MOTOR:1 (produit %1)").arg(newId), 4000);
+                else if (stAuto == 2) statusBar()->showMessage(QStringLiteral("⚙ Auto-envoi MOTOR:2 (produit %1)").arg(newId), 4000);
+                else if (stAuto == 0) statusBar()->showMessage(QStringLiteral("⚙ Auto-envoi MOTOR:2 — 3e choix (produit %1)").arg(newId), 4000);
+                else if (stAuto == -1) statusBar()->showMessage(QStringLiteral("⚙ Échec moteur UART (produit %1)").arg(newId), 4000);
+                else statusBar()->showMessage(QStringLiteral("⚙ Choix moteur enregistré (produit %1)").arg(newId), 3500);
+            } else if (okChoix) {
+                statusBar()->showMessage(QStringLiteral("⚙ Choix moteur enregistré (auto_trigger désactivé)"), 3500);
+            }
+        }
 
         alerteSucces("Succès", "Produit ajouté !");
         rafraichirListeProduits(ui->le_search_coll->text());
@@ -4042,7 +4369,17 @@ void MainWindow::on_btn_valider_modif_produit_clicked() {
 
     Produit p(selectedProdId, nomTrim, cout, coll.trimmed(), cuir.trimmed(), temps, idClient, idEmpl);
     if(p.modifier(selectedProdId)) {
-        Produit::setProductChoix(selectedProdId, choixMoteurDepuisFormulaireModif());
+        const bool okChoix = Produit::setProductChoix(selectedProdId, choixMoteurDepuisFormulaireModif());
+        if (okChoix && Produit::getArduinoConfig(QStringLiteral("auto_trigger"), QStringLiteral("1")) == QStringLiteral("1")) {
+            const int stAuto = declencherMoteurProduit(selectedProdId, -1);
+            if (stAuto == 1) statusBar()->showMessage(QStringLiteral("⚙ Auto-envoi MOTOR:1 (produit %1)").arg(selectedProdId), 4000);
+            else if (stAuto == 2) statusBar()->showMessage(QStringLiteral("⚙ Auto-envoi MOTOR:2 (produit %1)").arg(selectedProdId), 4000);
+            else if (stAuto == 0) statusBar()->showMessage(QStringLiteral("⚙ Auto-envoi MOTOR:2 — 3e choix (produit %1)").arg(selectedProdId), 4000);
+            else if (stAuto == -1) statusBar()->showMessage(QStringLiteral("⚙ Échec moteur UART (produit %1)").arg(selectedProdId), 4000);
+            else statusBar()->showMessage(QStringLiteral("⚙ Choix moteur enregistré (produit %1)").arg(selectedProdId), 3500);
+        } else if (okChoix) {
+            statusBar()->showMessage(QStringLiteral("⚙ Choix moteur enregistré (auto_trigger désactivé)"), 3500);
+        }
         alerteSucces("Succès", "Produit modifié avec succès !");
         rafraichirListeProduits(ui->le_search_coll->text());
         ui->tabWidgetProduits->setCurrentIndex(0);

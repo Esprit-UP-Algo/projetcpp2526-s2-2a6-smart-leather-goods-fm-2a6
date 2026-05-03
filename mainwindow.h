@@ -37,7 +37,7 @@
 #include <QHeaderView>
 #include <QPointer>
 
-#include "smartmotorcontroller.h"
+#include "serialmanager.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -213,6 +213,16 @@ private:
     int choixMoteurDepuisFormulaireModif() const;
     void journaliserMoteurSmart(int idProduit, int idCommande, const QString &actionCode, const QString &detail) const;
     int declencherMoteurProduit(int idProduit, int idCommande = -1);
+    QString getArduinoPort() const;
+    void majIndicateurMoteur(const QString &texte);
+    void traiterReponseArduino(const QString &reponse,
+                               int idProduit,
+                               int choix,
+                               int idCommande,
+                               const QString &commande = QString(),
+                               const QString &portCom = QString(),
+                               int dureeMs = -1);
+    void autoDetectArduino();
 
 
     void rafraichirListeDepots();
@@ -263,13 +273,22 @@ private:
     QPointer<QTextEdit> m_costSimHtmlOut;
     QPointer<QNetworkReply> m_histCapsuleReply;
 
-    SmartMotorController m_smartMotor;
+    SerialManager m_serialManager;
+
+    int m_pendingMoteurProductId = -1;
+    int m_pendingMoteurCommande = -1;
+    QString m_pendingMoteurCmd;
+    QString m_pendingMoteurPort;
+    qint64 m_pendingMoteurStartedMs = 0;
+    /// CHOIX produit en base (0, 1 ou 2) — distinct du canal série 1/2/3 pour les logs.
+    int m_pendingMoteurDbChoix = -1;
     QRadioButton *m_rbChoixNew0 = nullptr;
     QRadioButton *m_rbChoixNew1 = nullptr;
     QRadioButton *m_rbChoixNew2 = nullptr;
     QRadioButton *m_rbChoixMod0 = nullptr;
     QRadioButton *m_rbChoixMod1 = nullptr;
     QRadioButton *m_rbChoixMod2 = nullptr;
+    QLabel *m_lblMoteurEtat = nullptr;
 };
 
 #endif

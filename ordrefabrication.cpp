@@ -1,4 +1,5 @@
 #include "ordrefabrication.h"
+#include "connexion.h"
 #include <QDebug>
 #include <QSqlError>
 
@@ -52,19 +53,73 @@ bool OrdreFabrication::ajouter() {
     if (!m_derniereErreurSaisie.isEmpty())
         return false;
 
-    QSqlQuery query;
-    query.prepare("INSERT INTO PLANIFICATION (ID_COMMANDE, ID_PRODUIT, QUANTITE, ID_STOCK_MP, DATE_LANCEMENT, DATE_FIN_PREVUE, STATUT, ID_EMPLOYE) "
-                  "VALUES (SEQ_PLAN.NEXTVAL, :prod, :qte, :mat, :deb, :fin, :stat, :emp)");
+    Connexion *cnx = Connexion::getInstance();
+    if (!cnx) {
+        m_derniereErreurSaisie = QStringLiteral("Connexion Oracle indisponible.");
+        return false;
+    }
+    QSqlDatabase db = cnx->getDatabase();
+    if (!db.isOpen() && !db.open()) {
+        m_derniereErreurSaisie = db.lastError().text();
+        return false;
+    }
 
-    query.bindValue(":prod", id_produit.toInt());
-    query.bindValue(":qte", quantite);
-    query.bindValue(":mat", id_matiere.toInt());
-    query.bindValue(":deb", date_lancement);
-    query.bindValue(":fin", date_fin_prevue);
-    query.bindValue(":stat", statut);
-    query.bindValue(":emp", id_employe.toInt());
+    auto doInsert = [&](QSqlDatabase &dbRef) -> bool {
+        QSqlQuery query(dbRef);
+        query.prepare("INSERT INTO PLANIFICATION (ID_COMMANDE, ID_PRODUIT, QUANTITE, ID_STOCK_MP, DATE_LANCEMENT, DATE_FIN_PREVUE, STATUT, ID_EMPLOYE) "
+                      "VALUES (SEQ_PLAN.NEXTVAL, :prod, :qte, :mat, :deb, :fin, :stat, :emp)");
+        query.bindValue(":prod", id_produit.toInt());
+        query.bindValue(":qte", quantite);
+        query.bindValue(":mat", id_matiere.toInt());
+        query.bindValue(":deb", date_lancement);
+        query.bindValue(":fin", date_fin_prevue);
+        query.bindValue(":stat", statut);
+        query.bindValue(":emp", id_employe.toInt());
+        return query.exec();
+    };
 
-    return query.exec();
+    if (!db.transaction()) {
+        m_derniereErreurSaisie = db.lastError().text();
+        return false;
+    }
+    if (doInsert(db)) {
+        if (!db.commit()) {
+            m_derniereErreurSaisie = db.lastError().text();
+            db.rollback();
+            return false;
+        }
+        return true;
+    }
+
+    const QString err1 = db.lastError().text();
+    db.rollback();
+    if (err1.contains(QStringLiteral("S1010"), Qt::CaseInsensitive)
+        || err1.contains(QStringLiteral("Erreur de séquence"), Qt::CaseInsensitive)
+        || err1.contains(QStringLiteral("function sequence"), Qt::CaseInsensitive)) {
+        db.close();
+        if (!db.open()) {
+            m_derniereErreurSaisie = db.lastError().text();
+            return false;
+        }
+        if (!db.transaction()) {
+            m_derniereErreurSaisie = db.lastError().text();
+            return false;
+        }
+        if (doInsert(db)) {
+            if (!db.commit()) {
+                m_derniereErreurSaisie = db.lastError().text();
+                db.rollback();
+                return false;
+            }
+            return true;
+        }
+        m_derniereErreurSaisie = db.lastError().text();
+        db.rollback();
+        return false;
+    }
+
+    m_derniereErreurSaisie = err1;
+    return false;
 }
 
 bool OrdreFabrication::modifier(int id) {
