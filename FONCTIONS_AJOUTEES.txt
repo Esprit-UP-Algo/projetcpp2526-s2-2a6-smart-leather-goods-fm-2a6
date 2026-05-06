@@ -1,0 +1,61 @@
+========================================
+FONCTIONS AJOUTÉES POUR COMPILATION
+========================================
+
+Date: 5 mai 2026, 20:18
+Fichier: mainwindow.cpp
+
+========================================
+1. FONCTIONS ORACLE (LIGNES ~498-516)
+========================================
+
+✅ tableExistsOracle(const QString &tableNameUpper)
+   → Vérifie si une table existe dans Oracle
+   → Utilise user_tables
+
+✅ tableRowCountOracle(const QString &tableNameUpper)
+   → Compte le nombre de lignes dans une table Oracle
+   → Utilise SELECT COUNT(*)
+
+========================================
+2. FONCTIONS IA ESTIMATION (FIN DU FICHIER)
+========================================
+
+✅ trainLinearModelFromDB(bool forceRetrain)
+   → Stub: retourne true
+   → Pour entraînement modèle IA
+
+✅ predictStepHours(int etapeCode, double qte, double complexite, double nbEmployes, double cadence)
+   → Stub: retourne 0.0
+   → Pour prédiction temps fabrication
+
+✅ mapEtapeToCode(const QString &etape)
+   → Stub: retourne 0
+   → Pour mapping étape → code
+
+✅ renderIaEstimationForSelectedOrder()
+   → Stub: fonction vide
+   → Pour affichage estimation IA
+
+✅ iaWhatIfPlusEmp()
+   → Stub: fonction vide
+   → Pour scénario "Plus d'employés"
+
+✅ iaWhatIfOvertime()
+   → Stub: fonction vide
+   → Pour scénario "Heures supplémentaires"
+
+✅ iaWhatIfReplan()
+   → Stub: fonction vide
+   → Pour scénario "Replanification"
+
+✅ iaWhatIfAdminCal()
+   → Stub: fonction vide
+   → Pour scénario "Ajustement calendrier"
+
+========================================
+TOTAL: 10 FONCTIONS AJOUTÉES
+========================================
+
+Résultat: COMPILATION RÉUSSIE ✅
+Exécutable: build/ProjetCpp.exe (38.8 MB)

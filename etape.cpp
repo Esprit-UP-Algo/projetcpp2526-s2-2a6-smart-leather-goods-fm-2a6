@@ -100,6 +100,7 @@ QSqlQueryModel* Etape::afficher()
     model->setQuery(
         "SELECT e.ID_SUIVI, e.ID_PLANIFICATION, "
         "pr.DESIGNATION AS PRODUIT, "
+        "p.QUANTITE AS QTE_PLANIF, "
         "emp.NOM || ' ' || emp.PRENOM AS EMPLOYE, "
         "e.ETAPE_ACTUELLE, "
         "e.TEMPS_REEL_PASSE, "
@@ -270,6 +271,7 @@ QSqlQueryModel* Etape::rechercherParCommande(int idPlanification)
     query.prepare(
         "SELECT e.ID_SUIVI, e.ID_PLANIFICATION, "
         "pr.DESIGNATION AS PRODUIT, "
+        "p.QUANTITE AS QTE_PLANIF, "
         "emp.NOM || ' ' || emp.PRENOM AS EMPLOYE, "
         "e.ETAPE_ACTUELLE, e.TEMPS_REEL_PASSE, e.DELTA, e.ALERTE_ACTIVE "
         "FROM ETAPES e "
@@ -297,6 +299,7 @@ QSqlQueryModel* Etape::rechercherParEtape(const QString &etape)
     query.prepare(
         "SELECT e.ID_SUIVI, e.ID_PLANIFICATION, "
         "pr.DESIGNATION AS PRODUIT, "
+        "p.QUANTITE AS QTE_PLANIF, "
         "emp.NOM || ' ' || emp.PRENOM AS EMPLOYE, "
         "e.ETAPE_ACTUELLE, e.TEMPS_REEL_PASSE, e.DELTA, e.ALERTE_ACTIVE "
         "FROM ETAPES e "
@@ -321,6 +324,7 @@ QSqlQueryModel* Etape::trierParCommande()
     model->setQuery(
         "SELECT e.ID_SUIVI, e.ID_PLANIFICATION, "
         "pr.DESIGNATION AS PRODUIT, "
+        "p.QUANTITE AS QTE_PLANIF, "
         "emp.NOM || ' ' || emp.PRENOM AS EMPLOYE, "
         "e.ETAPE_ACTUELLE, e.TEMPS_REEL_PASSE, e.DELTA, e.ALERTE_ACTIVE "
         "FROM ETAPES e "
@@ -344,6 +348,7 @@ QSqlQueryModel* Etape::afficherAlertes()
     model->setQuery(
         "SELECT e.ID_SUIVI, e.ID_PLANIFICATION, "
         "pr.DESIGNATION AS PRODUIT, "
+        "p.QUANTITE AS QTE_PLANIF, "
         "emp.NOM || ' ' || emp.PRENOM AS EMPLOYE, "
         "e.ETAPE_ACTUELLE, e.TEMPS_REEL_PASSE, e.DELTA, e.ALERTE_ACTIVE "
         "FROM ETAPES e "

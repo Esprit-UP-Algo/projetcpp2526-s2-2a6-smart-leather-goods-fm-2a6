@@ -1,0 +1,10 @@
+﻿C:\Qt\Tools\CMake_64\bin\cmake.exe : no such file or directory
+Au caractère Ligne:1 : 1
++ C:\Qt\Tools\CMake_64\bin\cmake.exe --build . 2>&1 | Out-File -FilePat ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (no such file or directory:String) 
+    [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+CMake Error: Generator: execution of make failed. Make command was: nmake -f 
+Makefile /nologo

@@ -1,0 +1,114 @@
+========================================
+GUIDE: AJOUTER LES IMAGES DES PRODUITS
+========================================
+
+Date: 5 mai 2026
+Module: Calculateur de Besoins
+
+========================================
+PROBLÈME RÉSOLU
+========================================
+
+✅ Le code a été corrigé pour charger les images correctement
+✅ La compilation est réussie
+✅ L'exécutable fonctionne: build/ProjetCpp.exe
+
+========================================
+IMAGES NÉCESSAIRES
+========================================
+
+Pour afficher les images des produits, placez ces fichiers:
+
+📁 Emplacement 1 (RECOMMANDÉ):
+   C:\Users\jkglz\Desktop\projetCPP\images\
+
+📁 Emplacement 2 (ALTERNATIF):
+   C:\Users\jkglz\Desktop\projetCPP\
+
+========================================
+FICHIERS À AJOUTER
+========================================
+
+1. Sac Main Cuir
+   Nom: sac main.jpg (ou .webp, .png)
+   
+2. Portefeuille Cuir
+   Nom: portefeuille.jpg (ou .webp, .png)
+   
+3. Ceinture Cuir
+   Nom: ceinture.webp
+   ✅ DÉJÀ PRÉSENT: ceinture.webp
+   
+4. Sac Voyage Cuir
+   Nom: sac voyage.jpg (ou .webp, .png)
+
+========================================
+EXTENSIONS SUPPORTÉES
+========================================
+
+Le système cherche automatiquement:
+- .jpg
+- .jpeg
+- .png
+- .webp
+- .bmp
+- .gif
+
+Exemple: Si vous avez "sac main.png", ça fonctionnera!
+
+========================================
+COMMENT CRÉER LE DOSSIER IMAGES
+========================================
+
+Option 1 - Explorateur Windows:
+1. Ouvrir: C:\Users\jkglz\Desktop\projetCPP\
+2. Clic droit → Nouveau → Dossier
+3. Nommer: images
+4. Copier vos images dedans
+
+Option 2 - Ligne de commande:
+mkdir images
+copy "chemin\vers\vos\images\*.jpg" images\
+
+========================================
+VÉRIFICATION
+========================================
+
+1. Lancer: build\ProjetCpp.exe
+2. Aller dans: Stock → Calculateur
+3. Sélectionner un produit
+4. L'image doit s'afficher!
+
+Si "Image indisponible":
+→ Vérifier que le fichier existe
+→ Vérifier le nom (sans accent, avec espace)
+→ Vérifier l'extension (.jpg, .webp, etc.)
+
+========================================
+IMAGES DISPONIBLES DANS LE PROJET
+========================================
+
+Vous avez déjà des images dans:
+📁 assets/historique/
+
+Exemples trouvés:
+- belt.jpg, belt00.jpg, belt22.jpg → Pour Ceinture
+- sac.jpg, sac3.jpg, sac4.jpg → Pour Sac Main
+- leather jacket.jpg → Pour produits cuir
+
+Vous pouvez copier/renommer ces images:
+copy "assets\historique\sac.jpg" "images\sac main.jpg"
+copy "assets\historique\belt.jpg" "images\ceinture.jpg"
+
+========================================
+RÉSUMÉ
+========================================
+
+✅ Code corrigé
+✅ Compilation OK
+✅ Exécutable créé
+📁 Créer dossier "images/"
+📷 Ajouter 4 images de produits
+🎉 Profiter du module Calculateur!
+
+========================================

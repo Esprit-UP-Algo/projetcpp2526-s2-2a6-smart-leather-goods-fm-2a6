@@ -1,0 +1,155 @@
+-- ============================================
+-- Script simple d'ajout des tables Arduino et Gaz
+-- Projet: FIL D'OR
+-- ============================================
+
+SET SERVEROUTPUT ON;
+
+PROMPT ========================================;
+PROMPT Ajout des tables Arduino et Gaz
+PROMPT ========================================;
+PROMPT;
+
+-- =============================================
+-- 1. TABLE ARDUINO_CONFIG
+-- =============================================
+PROMPT [1/3] Création table ARDUINO_CONFIG...;
+
+-- Supprimer si existe
+BEGIN
+   EXECUTE IMMEDIATE 'DROP TABLE ARDUINO_CONFIG CASCADE CONSTRAINTS';
+   DBMS_OUTPUT.PUT_LINE('Table ARDUINO_CONFIG supprimée');
+EXCEPTION
+   WHEN OTHERS THEN
+      IF SQLCODE != -942 THEN RAISE; END IF;
+END;
+/
+
+-- Créer la table
+CREATE TABLE ARDUINO_CONFIG (
+    CLE VARCHAR2(50) PRIMARY KEY,
+    VALEUR VARCHAR2(255) NOT NULL
+);
+
+PROMPT Table ARDUINO_CONFIG créée;
+
+-- Insérer les données
+MERGE INTO ARDUINO_CONFIG c
+USING (SELECT 'PORT_COM' AS CLE, 'COM5' AS VALEUR FROM dual) s
+ON (c.CLE = s.CLE)
+WHEN MATCHED THEN 
+    UPDATE SET c.VALEUR = s.VALEUR
+WHEN NOT MATCHED THEN 
+    INSERT (CLE, VALEUR) VALUES (s.CLE, s.VALEUR);
+
+COMMIT;
+
+PROMPT Données ARDUINO_CONFIG insérées;
+SELECT * FROM ARDUINO_CONFIG;
+
+-- =============================================
+-- 2. TABLE MOTEUR_LOGS
+-- =============================================
+PROMPT;
+PROMPT [2/3] Création table MOTEUR_LOGS...;
+
+-- Supprimer si existe
+BEGIN
+   EXECUTE IMMEDIATE 'DROP TABLE MOTEUR_LOGS CASCADE CONSTRAINTS';
+   DBMS_OUTPUT.PUT_LINE('Table MOTEUR_LOGS supprimée');
+EXCEPTION
+   WHEN OTHERS THEN
+      IF SQLCODE != -942 THEN RAISE; END IF;
+END;
+/
+
+-- Créer la table
+CREATE TABLE MOTEUR_LOGS (
+    LOG_ID NUMBER PRIMARY KEY,
+    PRODUCT_ID NUMBER NOT NULL,
+    TIMESTAMP TIMESTAMP DEFAULT SYSTIMESTAMP,
+    ACTION VARCHAR2(100),
+    STATUT VARCHAR2(50),
+    MESSAGE VARCHAR2(500),
+    CONSTRAINT FK_MOTEUR_PRODUCT FOREIGN KEY (PRODUCT_ID) 
+        REFERENCES PRODUITS(ID_PRODUIT) ON DELETE CASCADE
+);
+
+-- Créer séquence
+CREATE SEQUENCE SEQ_MOTEUR_LOGS START WITH 1 INCREMENT BY 1;
+
+PROMPT Table MOTEUR_LOGS créée;
+
+-- =============================================
+-- 3. TABLE GAZ_ALERTS
+-- =============================================
+PROMPT;
+PROMPT [3/3] Création table GAZ_ALERTS...;
+
+-- Supprimer si existe
+BEGIN
+   EXECUTE IMMEDIATE 'DROP TABLE GAZ_ALERTS CASCADE CONSTRAINTS';
+   DBMS_OUTPUT.PUT_LINE('Table GAZ_ALERTS supprimée');
+EXCEPTION
+   WHEN OTHERS THEN
+      IF SQLCODE != -942 THEN RAISE; END IF;
+END;
+/
+
+-- Créer la table exactement comme demandé
+CREATE TABLE "PROJET_CPP"."GAZ_ALERTS" (
+    "ID" NUMBER, 
+    "EMPLACEMENT_ID" NUMBER, 
+    "VALEUR_GAZ" NUMBER, 
+    "MESSAGE" VARCHAR2(255 BYTE), 
+    "DATE_ALERT" DATE DEFAULT SYSDATE, 
+    PRIMARY KEY ("ID")
+    USING INDEX PCTFREE 10 INITRANS 2 MAXTRANS 255 COMPUTE STATISTICS 
+    STORAGE(INITIAL 65536 NEXT 1048576 MINEXTENTS 1 MAXEXTENTS 2147483645
+    PCTINCREASE 0 FREELISTS 1 FREELIST GROUPS 1 
+    BUFFER_POOL DEFAULT FLASH_CACHE DEFAULT CELL_FLASH_CACHE DEFAULT)
+    TABLESPACE "SYSTEM" ENABLE
+) 
+SEGMENT CREATION IMMEDIATE 
+PCTFREE 10 PCTUSED 40 INITRANS 1 MAXTRANS 255 
+NOCOMPRESS LOGGING
+STORAGE(INITIAL 65536 NEXT 1048576 MINEXTENTS 1 MAXEXTENTS 2147483645
+PCTINCREASE 0 FREELISTS 1 FREELIST GROUPS 1 
+BUFFER_POOL DEFAULT FLASH_CACHE DEFAULT CELL_FLASH_CACHE DEFAULT)
+TABLESPACE "SYSTEM";
+
+-- Créer séquence
+CREATE SEQUENCE SEQ_GAZ_ALERTS START WITH 1 INCREMENT BY 1;
+
+PROMPT Table GAZ_ALERTS créée;
+
+-- =============================================
+-- VÉRIFICATION
+-- =============================================
+PROMPT;
+PROMPT ========================================;
+PROMPT VÉRIFICATION
+PROMPT ========================================;
+PROMPT;
+
+-- Vérifier les tables
+SELECT table_name AS "TABLE CRÉÉE" 
+FROM user_tables 
+WHERE table_name IN ('ARDUINO_CONFIG', 'MOTEUR_LOGS', 'GAZ_ALERTS')
+ORDER BY table_name;
+
+PROMPT;
+PROMPT ========================================;
+PROMPT INSTALLATION TERMINÉE!
+PROMPT ========================================;
+PROMPT;
+PROMPT Tables créées:
+PROMPT - ARDUINO_CONFIG
+PROMPT - MOTEUR_LOGS  
+PROMPT - GAZ_ALERTS
+PROMPT;
+PROMPT Pour tester:
+PROMPT SELECT * FROM ARDUINO_CONFIG;
+PROMPT SELECT * FROM MOTEUR_LOGS;
+PROMPT SELECT * FROM GAZ_ALERTS;
+PROMPT;

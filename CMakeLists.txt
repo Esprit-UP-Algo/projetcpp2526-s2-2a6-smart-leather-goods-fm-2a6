@@ -10,8 +10,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # --- MODIFICATION 1 : Ajout de PrintSupport et Charts ici ---
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Gui LinguistTools PrintSupport Charts Sql Network TextToSpeech SerialPort)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Gui LinguistTools PrintSupport Charts Sql Network SerialPort TextToSpeech)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Gui LinguistTools PrintSupport Charts Sql Network TextToSpeech SerialPort Multimedia)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Gui LinguistTools PrintSupport Charts Sql Network SerialPort TextToSpeech Multimedia)
 
 set(TS_FILES ProjetCpp_fr_FR.ts)
 
@@ -57,6 +57,12 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         sensitivityengine.h sensitivityengine.cpp
         breakpointengine.h breakpointengine.cpp
         choixdelegate.h choixdelegate.cpp
+        chatbotwidget.h chatbotwidget.cpp chatbotwidget.ui
+        classificationiawidget.h classificationiawidget.cpp
+        anciennetewidget.h anciennetewidget.cpp anciennetewidget.ui
+        rfidreader/rfidreader.h rfidreader/rfidreader.cpp
+        arduinomanager.h arduinomanager.cpp
+        arduinowidget.h arduinowidget.cpp arduinowidget.ui
     )
     qt_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
 else()
@@ -83,6 +89,7 @@ target_link_libraries(ProjetCpp PRIVATE
     Qt${QT_VERSION_MAJOR}::Network
     Qt${QT_VERSION_MAJOR}::SerialPort
     Qt${QT_VERSION_MAJOR}::TextToSpeech
+    Qt${QT_VERSION_MAJOR}::Multimedia
 )
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
 if(${QT_VERSION} VERSION_LESS 6.1.0)

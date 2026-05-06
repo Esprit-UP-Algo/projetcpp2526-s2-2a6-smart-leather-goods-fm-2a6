@@ -20,6 +20,23 @@ SerialManager::SerialManager(QObject *parent)
     m_busyTimer->setSingleShot(true);
     connect(m_busyTimer, &QTimer::timeout, this, &SerialManager::onBusyTimeout);
     connect(m_serial, &QSerialPort::readyRead, this, &SerialManager::onReadyRead);
+
+    // Bug fix 1: handle hardware errors so the port doesn't silently die.
+    connect(m_serial, &QSerialPort::errorOccurred, this, [this](QSerialPort::SerialPortError err) {
+        if (err == QSerialPort::NoError)
+            return;
+        qDebug() << "[Serial] errorOccurred:" << err << m_serial->errorString();
+        m_rxBuffer.clear();
+        m_busy = false;
+        m_busyTimer->stop();
+        // On resource/device error (Arduino reset, USB disconnect): close port so
+        // isConnected() returns false and callers can detect the loss and reconnect.
+        if (err == QSerialPort::ResourceError || err == QSerialPort::DeviceNotFoundError) {
+            if (m_serial->isOpen())
+                m_serial->close();
+            emit connectionLost();
+        }
+    });
 }
 
 bool SerialManager::connectPort(const QString &portName)
@@ -47,23 +64,34 @@ bool SerialManager::connectPort(const QString &portName)
         qDebug() << "[Serial] Ouverture impossible:" << name << m_serial->errorString();
         return false;
     }
-    m_serial->readAll();
+    m_serial->readAll(); // flush stale bytes from OS buffer
+    m_lastPort = name;
     return true;
 }
 
+bool SerialManager::reconnect()
+{
+    if (m_lastPort.isEmpty())
+        return false;
+    qDebug() << "[Serial] Reconnexion sur" << m_lastPort;
+    return connectPort(m_lastPort);
+}
+
+// Bug fix 2: PING must NOT consume the motor-busy lock.
+// autoDetectArduino manages its own QEventLoop+QTimer for the PING/PONG handshake;
+// SerialManager must not interfere by setting m_busy for PING.
 void SerialManager::reallySend(const QString &cmd)
 {
-    m_busy = true;
-
-    int timeout = 4000;
-    if (cmd == QStringLiteral("MOTOR:1") || cmd == QStringLiteral("1"))
-        timeout = 4000;
-    else if (cmd == QStringLiteral("MOTOR:2") || cmd == QStringLiteral("2"))
-        timeout = 3000;
-    else if (cmd.compare(QStringLiteral("PING"), Qt::CaseInsensitive) == 0)
-        timeout = 2500;
-
-    m_busyTimer->start(timeout);
+    const bool isPing = cmd.compare(QStringLiteral("PING"), Qt::CaseInsensitive) == 0;
+    if (!isPing) {
+        m_busy = true;
+        int timeout = 5000;
+        if (cmd == QStringLiteral("MOTOR:1") || cmd == QStringLiteral("1"))
+            timeout = 4000;
+        else if (cmd == QStringLiteral("MOTOR:2") || cmd == QStringLiteral("2"))
+            timeout = 3000;
+        m_busyTimer->start(timeout);
+    }
     m_serial->write((cmd + QStringLiteral("\n")).toUtf8());
     m_serial->flush();
 }
@@ -78,7 +106,6 @@ void SerialManager::sendCommand(const QString &cmd)
     const bool motor = isMotorCommand(cmd);
 
     if (m_busy && motor) {
-        // Ne pas vider le port ici : un DONE:1/2 peut être déjà en transit — readAll() causait des timeouts aléatoires.
         m_busyTimer->stop();
         m_busy = false;
     } else if (m_busy && !motor) {
@@ -99,6 +126,23 @@ void SerialManager::sendCommand(const QString &cmd)
 bool SerialManager::isConnected() const
 {
     return m_serial && m_serial->isOpen();
+}
+
+void SerialManager::disconnectPort()
+{
+    m_busyTimer->stop();
+    m_busy = false;
+    m_rxBuffer.clear();
+    if (m_serial && m_serial->isOpen())
+        m_serial->close();
+}
+
+void SerialManager::sendBuzzerCommand(const QString &cmd)
+{
+    if (!m_serial || !m_serial->isOpen())
+        return;
+    m_serial->write((cmd.trimmed() + QStringLiteral("\n")).toUtf8());
+    m_serial->flush();
 }
 
 void SerialManager::processLine(const QString &line)
@@ -126,9 +170,12 @@ void SerialManager::processLine(const QString &line)
         m_busyTimer->stop();
         emit motorDone(2);
     } else if (t == QStringLiteral("PONG")) {
-        m_busy = false;
-        m_busyTimer->stop();
+        // PONG is only used during autoDetect PING; no busy state to clear.
         emit pongReceived();
+    } else if (t.startsWith(QStringLiteral("UID:"))) {
+        const QString uid = t.mid(4).trimmed();
+        if (!uid.isEmpty())
+            emit badgeDetected(uid);
     }
 }
 
@@ -153,14 +200,15 @@ void SerialManager::onReadyRead()
         m_rxBuffer.clear();
 }
 
+// Bug fix 3: do NOT drain the serial buffer on timeout.
+// The old code called readAll() + rxBuffer.clear() here, which silently discarded
+// buffered RFID UID lines that arrived during a motor move — causing RFID to
+// "only read one card" and then stop responding.
 void SerialManager::onBusyTimeout()
 {
     const bool wasBusy = m_busy;
     m_busy = false;
     m_busyTimer->stop();
-    if (m_serial && m_serial->isOpen())
-        m_serial->readAll();
-    m_rxBuffer.clear();
     if (wasBusy)
         emit motorTimedOut();
 }
