@@ -1,0 +1,147 @@
+================================================================================
+                    INSTRUCTIONS CRITIQUES - LISEZ ATTENTIVEMENT
+================================================================================
+
+Qt Creator continue d'utiliser NMake malgré le nettoyage.
+
+VOICI LA SOLUTION QUI VA FONCTIONNER:
+
+================================================================================
+                    MÉTHODE 1: FORCER LE KIT MINGW
+================================================================================
+
+1. FERMEZ Qt Creator COMPLÈTEMENT
+   - Vérifiez dans le Gestionnaire des tâches qu'il est bien fermé
+
+2. ROUVREZ Qt Creator
+
+3. NE PAS ouvrir le projet tout de suite!
+
+4. Allez dans: Outils → Options (ou Tools → Options)
+
+5. Dans le panneau de gauche, cliquez sur: Kits
+
+6. Vous verrez une liste de kits. Cherchez:
+   "Desktop Qt 6.7.3 MinGW 64-bit"
+
+7. Cliquez dessus pour le sélectionner
+
+8. En bas, vérifiez:
+   - Compilateur C: gcc.exe (PAS cl.exe!)
+   - Compilateur C++: g++.exe (PAS cl.exe!)
+   - Générateur CMake: MinGW Makefiles (PAS NMake!)
+
+9. Si le générateur CMake dit "NMake Makefiles":
+   - Cliquez sur le menu déroulant
+   - Sélectionnez: "MinGW Makefiles"
+
+10. Cliquez: Appliquer puis OK
+
+11. MAINTENANT, ouvrez le projet:
+    - Fichier → Ouvrir un fichier ou projet
+    - Sélectionnez: CMakeLists.txt
+
+12. Dans le panneau de configuration:
+    - COCHEZ UNIQUEMENT: Desktop Qt 6.7.3 MinGW 64-bit
+    - DÉCOCHEZ TOUT LE RESTE (surtout les kits MSVC!)
+
+13. Cliquez: Configure Project
+
+14. Attendez la configuration
+
+15. Build → Rebuild All
+
+
+================================================================================
+                    MÉTHODE 2: SI LA MÉTHODE 1 NE FONCTIONNE PAS
+================================================================================
+
+1. FERMEZ Qt Creator
+
+2. Ouvrez PowerShell dans le dossier du projet
+
+3. Exécutez ces commandes UNE PAR UNE:
+
+   $env:PATH = "C:\Qt\Tools\mingw1310_64\bin;C:\Qt\Tools\CMake_64\bin;$env:PATH"
+   
+   cd build
+   
+   cmake -G "MinGW Makefiles" -DCMAKE_PREFIX_PATH=C:\Qt\6.7.3\mingw_64 ..
+   
+   cmake --build .
+
+4. Si ça compile, l'exécutable sera dans: build\ProjetCpp.exe
+
+5. Lancez-le: .\ProjetCpp.exe
+
+
+================================================================================
+                    MÉTHODE 3: DÉSACTIVER TOUS LES KITS MSVC
+================================================================================
+
+1. Dans Qt Creator: Outils → Options → Kits
+
+2. Pour CHAQUE kit qui contient "MSVC" ou "Visual Studio":
+   - Sélectionnez-le
+   - Cliquez sur "Supprimer" (ou désactivez-le)
+
+3. Gardez UNIQUEMENT les kits MinGW
+
+4. Cliquez: Appliquer puis OK
+
+5. Fermez et rouvrez Qt Creator
+
+6. Ouvrez CMakeLists.txt
+
+7. Seul le kit MinGW devrait être disponible
+
+
+================================================================================
+                    VÉRIFICATION CRITIQUE
+================================================================================
+
+Après avoir ouvert le projet, vérifiez dans l'onglet "Sortie":
+
+VOUS DEVEZ VOIR:
+    ✅ -- The CXX compiler identification is GNU
+    ✅ -- Check for working CXX compiler: .../g++.exe
+    ✅ -- Configuring done
+
+VOUS NE DEVEZ PAS VOIR:
+    ❌ Running 'nmake'
+    ❌ The CXX compiler identification is MSVC
+    ❌ NMake Makefiles
+
+Si vous voyez encore "nmake", recommencez la MÉTHODE 1.
+
+
+================================================================================
+                    POURQUOI CE PROBLÈME PERSISTE?
+================================================================================
+
+Qt Creator a plusieurs kits configurés:
+- Desktop Qt 6.7.3 MinGW 64-bit (celui qu'on veut)
+- Desktop Qt 6.7.3 MSVC 64-bit (celui qui cause le problème)
+
+Quand vous ouvrez le projet, Qt Creator sélectionne automatiquement un kit.
+Si il sélectionne le kit MSVC, il essaie d'utiliser NMake.
+
+La solution: Forcer la sélection du kit MinGW ou désactiver les kits MSVC.
+
+
+================================================================================
+                    EN CAS D'ÉCHEC TOTAL
+================================================================================
+
+Si RIEN ne fonctionne:
+
+1. Installez Visual Studio Build Tools (pour avoir NMake)
+   OU
+2. Utilisez la MÉTHODE 2 (compilation en ligne de commande)
+   OU
+3. Désinstallez et réinstallez Qt Creator
+
+
+================================================================================
+                    COMMENCEZ PAR LA MÉTHODE 1!
+================================================================================

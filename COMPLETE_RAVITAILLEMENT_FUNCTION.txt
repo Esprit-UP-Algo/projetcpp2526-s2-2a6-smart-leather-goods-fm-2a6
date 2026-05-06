@@ -1,0 +1,37 @@
+COMPLETE FUNCTION READY TO COPY
+
+The complete showStockRavitaillementTab() function from the Integration folder has been read successfully.
+
+SOURCE FILE: projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration (2)/mainwindow.cpp
+LINES: 5897-8761 (2865 lines total)
+
+DESTINATION FILE: mainwindow.cpp  
+CURRENT LOCATION: Lines 13315-15461 (2146 lines - INCOMPLETE)
+
+ACTION REQUIRED:
+Due to the massive size of this function (2865 lines), I cannot use strReplace directly as it would exceed token limits.
+
+RECOMMENDED APPROACH:
+1. The user should manually copy the function from the Integration folder
+2. OR use a PowerShell/batch script to extract and replace the function
+3. OR I can create a separate file with the complete function that can be manually integrated
+
+The function includes ALL features shown in the screenshots:
+✅ Stepper visual (①→②→③)
+✅ Dynamic urgency banner  
+✅ Material selection with photo preview
+✅ Order form (Type/Quality/Supplier/Quantity)
+✅ Real-time KPIs (Supplier/Budget/Coverage/Risk)
+✅ Supplier comparison table with scoring
+✅ 14-day stock projection chart
+✅ Purchase scenarios (Conservative/Optimal/Anticipatory)
+✅ EOQ/Wilson advanced parameters (collapsible)
+✅ History table with filters and charts
+✅ Complete Oracle database integration
+✅ All button handlers and event connections
+
+NEXT STEPS:
+Would you like me to:
+A) Create a PowerShell script to perform the replacement automatically?
+B) Create a separate .cpp file with just this function for manual integration?
+C) Provide step-by-step manual instructions?

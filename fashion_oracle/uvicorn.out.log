@@ -1,0 +1,8 @@
+DOTENV file = C:\integration2\integ0\integration2\projetcpp_Integration\fashion_oracle\.env exists = True
+BOOT pid = 2316
+BOOT http_port_hint (FASHION_ORACLE_HTTP_PORT|PORT) = not_set
+IMAGE_PROVIDER = huggingface
+IMAGE_MODEL = 'black-forest-labs/FLUX.1-schnell'
+generation_version = product_only_v7
+IMAGE_PROVIDER = huggingface
+IMAGE_MODEL = black-forest-labs/FLUX.1-schnell

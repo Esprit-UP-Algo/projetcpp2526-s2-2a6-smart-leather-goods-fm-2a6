@@ -1,0 +1,76 @@
+=================================================================
+  INSTRUCTIONS POUR COPIER LE MODULE RAVITAILLEMENT
+=================================================================
+
+Cher utilisateur,
+
+Le module Ravitaillement du dossier Integration (2) est très volumineux 
+(environ 2800 lignes de code). Voici comment le copier EXACTEMENT:
+
+MÉTHODE MANUELLE (Recommandée - 5 minutes):
+============================================
+
+1. Ouvrir les DEUX fichiers dans des éditeurs séparés:
+   
+   SOURCE (Integration):
+   projetcpp2526-s2-2a6-smart-leather-goods-fm-2a6-Integration (2)/mainwindow.cpp
+   
+   DESTINATION (Projet principal):
+   mainwindow.cpp
+
+2. Dans le fichier SOURCE:
+   - Aller à la ligne 5897
+   - Sélectionner TOUT jusqu'à la ligne 8761 (fin de la fonction)
+   - Copier (Ctrl+C)
+
+3. Dans le fichier DESTINATION:
+   - Aller à la ligne 13315 (début de showStockRavitaillementTab)
+   - Sélectionner TOUTE la fonction actuelle (jusqu'à son accolade fermante)
+   - Coller (Ctrl+V) pour remplacer
+
+4. Sauvegarder le fichier DESTINATION
+
+5. Compiler:
+   cd build
+   cmake -G "MinGW Makefiles" -DCMAKE_PREFIX_PATH="C:/Qt/6.7.3/mingw_64" ..
+   mingw32-make
+
+VÉRIFICATION:
+=============
+
+Après la copie, votre fonction showStockRavitaillementTab() doit contenir:
+
+✓ Stepper visuel (①→②→③)
+✓ Bandeau d'urgence dynamique
+✓ Sélection matière avec photo
+✓ Formulaire de commande (Type/Qualité/Fournisseur/Quantité)
+✓ KPIs temps réel (Fournisseur/Budget/Couverture/Risque)
+✓ Tableau comparatif fournisseurs
+✓ Projection stock 14 jours
+✓ Scénarios d'achat (Conservateur/Optimal/Anticipatif)
+✓ Optimisation EOQ/Wilson
+✓ Historique avec graphiques
+
+TABLES ORACLE REQUISES:
+=======================
+
+Avant de compiler, exécutez:
+@sql/creer_tables_ravitaillement.sql
+
+Cela créera:
+- FOURNISSEURS (9 fournisseurs de test)
+- RAVITAILLEMENT_LOG (historique)
+- CALCUL_BESOINS_LOG (calculs)
+
+AIDE:
+=====
+
+Si vous avez des problèmes:
+1. Consultez INTEGRATION_RAVITAILLEMENT_COMPLETE.md
+2. Consultez GUIDE_RAPIDE_RAVITAILLEMENT.md
+3. Vérifiez que Qt Charts est bien lié dans CMakeLists.txt
+
+=================================================================
+Date: 05/05/2026
+Version: 1.0
+=================================================================

@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ChatbotWidget</class>
+ <widget class="QDialog" name="ChatbotWidget">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>760</width>
+    <height>560</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Assistant FIL D'OR</string>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">QDialog {
+  background-color: #2C2C2A;
+  color: #f5f5f3;
+}
+QTextBrowser {
+  background-color: #232320;
+  border: 1px solid #8d5524;
+  border-radius: 12px;
+  color: #f5f5f3;
+  padding: 8px;
+  selection-background-color: transparent;
+  selection-color: #f5f5f3;
+}
+QLineEdit {
+  background-color: #383833;
+  color: #f9f9f7;
+  border: 1px solid #8d5524;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+QLineEdit:focus {
+  border: 1px solid #d4af37;
+}
+QPushButton {
+  background-color: #8d5524;
+  color: #f8f3eb;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-weight: 700;
+}
+QPushButton:hover {
+  background-color: #a96b35;
+}
+QPushButton:disabled {
+  background-color: #615c55;
+  color: #c9c7c1;
+}</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <property name="spacing">
+    <number>10</number>
+   </property>
+   <property name="leftMargin">
+    <number>12</number>
+   </property>
+   <property name="topMargin">
+    <number>12</number>
+   </property>
+   <property name="rightMargin">
+    <number>12</number>
+   </property>
+   <property name="bottomMargin">
+    <number>12</number>
+   </property>
+   <item>
+    <widget class="QLabel" name="lblTitle">
+     <property name="styleSheet">
+      <string notr="true">font-size: 18px; font-weight: 800; color: #d4af37;</string>
+     </property>
+     <property name="text">
+      <string>Assistant conversationnel FIL D'OR</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QTextBrowser" name="tbConversation"/>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayout">
+     <item>
+      <widget class="QLineEdit" name="leQuestion">
+       <property name="placeholderText">
+        <string>Posez une question sur RH, produits, clients, dépôt, planification, matières premières...</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnSend">
+       <property name="minimumSize">
+        <size>
+         <width>110</width>
+         <height>0</height>
+        </size>
+       </property>
+       <property name="text">
+        <string>Envoyer</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnVoice">
+       <property name="minimumSize">
+        <size>
+         <width>40</width>
+         <height>0</height>
+        </size>
+       </property>
+       <property name="text">
+        <string>🎤</string>
+       </property>
+       <property name="toolTip">
+        <string>Parler avec l'assistant</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnSpeak">
+       <property name="minimumSize">
+        <size>
+         <width>40</width>
+         <height>0</height>
+        </size>
+       </property>
+       <property name="text">
+        <string>🔊</string>
+       </property>
+       <property name="toolTip">
+        <string>Écouter la réponse</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QLabel" name="lblStatus">
+     <property name="styleSheet">
+      <string notr="true">color: #c9b79c; font-size: 12px;</string>
+     </property>
+     <property name="text">
+      <string>Prêt</string>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
