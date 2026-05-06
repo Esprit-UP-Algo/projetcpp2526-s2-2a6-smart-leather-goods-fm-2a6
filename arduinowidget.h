@@ -55,6 +55,9 @@ public:
 
     void afficherPage(int index);
 
+    // Permet à MainWindow de pousser les données DHT11 sans ouvrir un second port
+    void mettreAJourDonneesExternes(double humidite, double temperature);
+
 private slots:
     // Slots pour la gestion de la connexion Arduino
     void onBtnConnecterClicked();

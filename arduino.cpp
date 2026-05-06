@@ -55,7 +55,7 @@ bool Arduino::isConnected() const
 
 bool Arduino::connectArduino()
 {
-    return connectToBoard("COM7");
+    return connectToBoard("COM5");
 }
 
 void Arduino::disconnectArduino()

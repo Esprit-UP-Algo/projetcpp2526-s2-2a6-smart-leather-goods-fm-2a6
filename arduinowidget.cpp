@@ -85,13 +85,9 @@ ArduinoWidget::ArduinoWidget(QWidget *parent)
     // Rafraîchir la liste des ports au démarrage
     rafraichirListePorts();
     
-    // Tentative de connexion automatique sur COM5 si disponible
-    int indexCOM5 = ui->cbPort->findText("COM5");
-    if (indexCOM5 >= 0) {
-        ui->cbPort->setCurrentIndex(indexCOM5);
-        // Connexion automatique après 500ms (laisser l'UI se charger)
-        QTimer::singleShot(500, this, &ArduinoWidget::onBtnConnecterClicked);
-    }
+    // COM5 est déjà ouvert par MainWindow (arduino + gaz).
+    // L'auto-connexion ici créerait un conflit de port — on ne la fait pas.
+    // Les données DHT11 arrivent via mettreAJourDonneesExternes().
 }
 
 ArduinoWidget::~ArduinoWidget()
@@ -251,6 +247,21 @@ void ArduinoWidget::rafraichirListePorts()
     } else {
         ui->cbPort->addItems(ports);
         ui->btnConnecter->setEnabled(true);
+    }
+}
+
+void ArduinoWidget::mettreAJourDonneesExternes(double humidite, double temperature)
+{
+    // Appelé par MainWindow qui gère COM5 ; on délègue au slot habituel.
+    onDonneesRecues(humidite, temperature);
+
+    // Mettre à jour le statut connexion si ce n'est pas encore fait
+    if (!m_arduinoManager->estConnecte()) {
+        ui->lblStatut->setText("Connecté (COM5 partagé)");
+        ui->lblStatut->setStyleSheet("color: #2e7d32; font-weight: bold; font-size: 14px;");
+        ui->btnExporter->setEnabled(true);
+        if (!m_timerSauvegarde->isActive())
+            m_timerSauvegarde->start();
     }
 }
 

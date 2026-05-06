@@ -13,11 +13,11 @@ public:
     ~Arduino();
 
     // Connexion avec nom de port explicite (utilisé dans mainwindow)
-    bool connectToBoard(const QString &portName = "COM7");
+    bool connectToBoard(const QString &portName = "COM5");
     void disconnectFromBoard();
     bool isConnected() const;
 
-    // Connexion simplifiée port fixe (COM7)
+    // Connexion simplifiée port fixe (COM5 — capteur gaz dépôt)
     bool connectArduino();
     void disconnectArduino();
 

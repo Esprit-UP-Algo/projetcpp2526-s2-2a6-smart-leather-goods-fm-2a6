@@ -8,10 +8,12 @@
 #include "client.h"
 #include "arduino.h"
 #include "serialmanager.h"
+#include "classificationiawidget.h"
+#include "assistant_voice.h"
+#include "rfidreader/rfidreader.h"
+#include "chatbotwidget.h"
+#include "arduinowidget.h"
 #include <QSqlQueryModel>
-#include <QRadioButton>
-#include <QJsonObject>
-#include <QByteArray>
 #include <QMainWindow>
 #include <QTableWidget>
 #include <QVector>
@@ -20,6 +22,12 @@
 #include <QPainter>
 #include <QPrinter>
 #include <QFileDialog>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QTextToSpeech>
+#include <QProcess>
+#include <QTimer>
+#include <QResizeEvent>
 
 // --- INCLUDES ---
 #include <QDialog>
@@ -32,6 +40,7 @@
 #include <QPushButton>
 #include <QSpinBox>
 #include <QDoubleSpinBox>
+#include <QRadioButton>
 #include <QGroupBox>
 #include <QTextEdit>
 #include <QHeaderView>
@@ -95,24 +104,18 @@ public:
     ~MainWindow();
 
     struct FashionOracleConcept {
-        int conceptIndex = 1;
         QString productTypeEn;
-        QString categoryLabel;
+        QString styleEn;
+        QString materialEn;
+        QString colorEn;
+        QString targetAudienceEn;
+        QString occasionEn;
+        int targetYear = 2025;
         QString style;
         QString palette;
         QString material;
-        int targetYear = 2026;
+        int conceptIndex = 0;
     };
-    using FashionConcept = FashionOracleConcept;
-
-    static QJsonObject buildGenerateVisualsPostJson(const FashionOracleConcept &concept);
-    static QByteArray jsonPayloadForFashionOracleGenerateVisuals(const FashionOracleConcept &concept);
-    static QNetworkReply *sendFashionOracleGenerateVisualRequest(
-        QNetworkAccessManager *nam,
-        const FashionOracleConcept &concept,
-        int transferTimeoutMs,
-        QByteArray *outSentJson = nullptr);
-    static QString buildPromptForConcept(const FashionOracleConcept &concept);
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -374,29 +377,12 @@ private:
     void showDepotValeurGazTab();
     void setupDepotExpertUI();
 
-    // Smart output (Atelier) : moteur + journalisation
-    void installerChoixMoteurProduitUi();
-    int choixMoteurDepuisFormulaireNouveau() const;
-    int choixMoteurDepuisFormulaireModif() const;
-    void journaliserMoteurSmart(int idProduit, int idCommande, const QString &actionCode, const QString &detail) const;
-    int declencherMoteurProduit(int idProduit, int idCommande = -1);
-    QString getArduinoPort() const;
-    void traiterReponseArduino(const QString &reponse,
-                               int idProduit,
-                               int choix,
-                               int idCommande,
-                               const QString &commande = QString(),
-                               const QString &portCom = QString(),
-                               int dureeMs = -1);
-    void autoDetectArduino();
-
     // Module Stock
     bool validerMatiereAjout();
     void rafraichirListeMatieres();
     void calculerStatsStock();
     void preparerFormulaireStock(bool estModif, int idx = -1);
     void showStockRavitaillementTab();
-    void showStockCompareTab();
     void showStockCalculTab();
     void setupStockExpertUI();
     void preparerFormulairePlanif(bool estModification);
@@ -543,36 +529,6 @@ private:
     // Une petite fonction utilitaire pour le design des cartes KPI
     QFrame* creerCarteStat(QString icone, QString val, QString titre, QString couleurFond);
 
-    // FashionOracle backend
-    bool isFashionOracleHealthy(int timeoutMs = 1200) const;
-    bool startFashionOracleBackendProcess(QString *errorOut = nullptr);
-    bool ensureFashionOracleBackendReady(QString *errorOut = nullptr, int startupTimeoutMs = 30000);
-    QString resolveFashionOracleDir() const;
-    QString resolveFashionOraclePython() const;
-
-    QProcess *m_fashionOracleBackendProcess = nullptr;
-    bool m_fashionOracleBackendOwned = false;
-
-    QNetworkAccessManager m_namCostSim;
-    QPointer<QNetworkReply> m_costSimReply;
-    QPointer<QTextEdit> m_costSimHtmlOut;
-    QPointer<QNetworkReply> m_histCapsuleReply;
-
-    SerialManager m_serialManager;
-
-    int m_pendingMoteurProductId = -1;
-    int m_pendingMoteurCommande = -1;
-    QString m_pendingMoteurCmd;
-    QString m_pendingMoteurPort;
-    qint64 m_pendingMoteurStartedMs = 0;
-    int m_pendingMoteurDbChoix = -1;
-    QRadioButton *m_rbChoixNew0 = nullptr;
-    QRadioButton *m_rbChoixNew1 = nullptr;
-    QRadioButton *m_rbChoixNew2 = nullptr;
-    QRadioButton *m_rbChoixMod0 = nullptr;
-    QRadioButton *m_rbChoixMod1 = nullptr;
-    QRadioButton *m_rbChoixMod2 = nullptr;
-
     // --- Assistant RH IA (OpenRouter) ---
     QNetworkAccessManager *m_namOpenRouter = nullptr;
     QNetworkReply *m_classificationReply = nullptr;
@@ -610,6 +566,78 @@ private:
     void rafraichirAssistantVueChat();
     void parlerTexteAssistant(const QString &texte);
     void programmerReecouteMicroAssistantSiBesoin();
+
+    // --- Arduino / Serial Manager ---
+    SerialManager m_serialManager;   // COM8 : RFID + buzzer
+    SerialManager m_servoManager;    // COM6 : servo uniquement
+    int m_pendingMoteurProductId = -1;
+    int m_pendingMoteurCommande = -1;
+    QString m_pendingMoteurCmd;
+    QString m_pendingMoteurPort;
+    int m_pendingMoteurDbChoix = -1;
+    qint64 m_pendingMoteurStartedMs = 0;
+    QTimer *m_arduinoKeepalive = nullptr;
+    qint64 m_gazLastInsertMs = 0;
+    QRadioButton *m_rbChoixMod0 = nullptr;
+    QRadioButton *m_rbChoixMod1 = nullptr;
+    QRadioButton *m_rbChoixMod2 = nullptr;
+    QRadioButton *m_rbChoixNew0 = nullptr;
+    QRadioButton *m_rbChoixNew1 = nullptr;
+    QRadioButton *m_rbChoixNew2 = nullptr;
+    ArduinoWidget *m_arduinoWidget = nullptr;
+
+    void installerChoixMoteurProduitUi();
+    int choixMoteurDepuisFormulaireNouveau() const;
+    int choixMoteurDepuisFormulaireModif() const;
+    void journaliserMoteurSmart(int idProduit, int idCommande, const QString &actionCode, const QString &detail) const;
+    int declencherMoteurProduit(int idProduit, int idCommande);
+    QString getArduinoPort() const;
+    void traiterReponseArduino(const QString &reponse, int idProduit, int dbChoix, int idCommande, const QString &cmd, const QString &port, int dureeMs);
+    void autoDetectArduino();
+    void showArduinoSmartTab();
+
+    // --- RFID ---
+    RFIDReader *m_rfidReader = nullptr;
+    QString m_currentRFIDPort;
+    bool m_rfidAutoFillEnabled = false;
+
+    void initialiserRFID();
+    void initialiserPageRFID();
+    void ouvrirPointageRFIDTab();
+    void actualiserStatutLecteurRFID();
+    void afficherResultatScanSurPageRFID(const QString &uid, bool employeConnu, const EmployeInfo &info);
+    void onBadgeScanned(const QString &uid);
+    void onRFIDConnectionChanged(bool connected);
+    void appendRfidJournal(const QString &message);
+
+    // --- Chatbot / Fashion Oracle ---
+    QNetworkAccessManager m_namCostSim;
+    QNetworkReply *m_costSimReply = nullptr;
+    QString m_costSimHtmlOut;
+    QNetworkReply *m_histCapsuleReply = nullptr;
+    QPushButton *m_chatBubbleButton = nullptr;
+    ClassificationIAWidget *m_classificationIaWidget = nullptr;
+    ChatbotWidget *m_chatbotWidget = nullptr;
+    QProcess *m_fashionOracleBackendProcess = nullptr;
+    bool m_fashionOracleBackendOwned = false;
+
+    QString resolveFashionOracleDir() const;
+    QString resolveFashionOraclePython() const;
+    bool isFashionOracleHealthy(int timeoutMs = 3000) const;
+    bool startFashionOracleBackendProcess(QString *errorOut = nullptr);
+    bool ensureFashionOracleBackendReady(QString *errorOut = nullptr, int startupTimeoutMs = 15000);
+    QJsonObject buildGenerateVisualsPostJson(const FashionOracleConcept &concept);
+    QByteArray jsonPayloadForFashionOracleGenerateVisuals(const FashionOracleConcept &concept);
+    QNetworkReply* sendFashionOracleGenerateVisualRequest(QNetworkAccessManager *nam, const FashionOracleConcept &concept, int timeoutMs = 60000, QByteArray *payloadOut = nullptr);
+    QString buildPromptForConcept(const FashionOracleConcept &concept);
+    void ouvrirChatbotFilDor();
+    void positionnerBulleChat();
+
+    // --- Stock Compare Tab ---
+    void showStockCompareTab();
+
+    // --- Resize Event ---
+    void resizeEvent(QResizeEvent *event) override;
 };
 
 #endif // MAINWINDOW_H

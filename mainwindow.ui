@@ -1905,13 +1905,6 @@ QTabBar::tab:hover:!selected { background: #e0c097; }</string>
                </widget>
               </item>
               <item>
-               <widget class="QPushButton" name="btn_moteur_prod">
-                <property name="text">
-                 <string>⚙ Tourner moteur (chaîne)</string>
-                </property>
-               </widget>
-              </item>
-              <item>
                <widget class="QPushButton" name="btn_stats_prod">
                 <property name="text">
                  <string>📊 Stats</string>

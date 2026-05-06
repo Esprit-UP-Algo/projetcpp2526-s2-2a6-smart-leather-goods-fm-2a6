@@ -194,9 +194,8 @@ void ArduinoManager::tentativeReconnexion()
 
 bool ArduinoManager::parserLigne(const QString &ligne, double &humidite, double &temperature)
 {
-    // Format attendu: "H:33.00;T:40.30"
-    // Expression régulière pour extraire les valeurs
-    static QRegularExpression regex(R"(H:([\d.]+);T:([\d.]+))");
+    // Format attendu: "H:33.00;T:40.30" ou "H:33.00;T:40.30;G:185"
+    static QRegularExpression regex(R"(H:([\d.]+);T:([\d.-]+))");
     QRegularExpressionMatch match = regex.match(ligne);
 
     if (match.hasMatch()) {
